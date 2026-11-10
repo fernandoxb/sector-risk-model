@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa de Riscos Setoriais</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: biblioteca de riscos | tela da rede | painel de detalhe. Paleta "terminal de risco": neutros azulados, acento cobalto, severidade semântica à parte. */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --ink:#141a24; --muted:#5b6474; --line:#d9dee7; --accent:#2747d6;
+  --grid:#e7ebf1; --accent-soft:rgba(39,71,214,.10);
+  --sev-low:#2f8f5b; --sev-med:#c99a12; --sev-high:#d96a1c; --sev-crit:#c8323c;
+  --cat-macro:#2747d6; --cat-setor:#0f8a8a; --cat-evento:#8a4fc4; --cat-outro:#6b7280;
+  --pos:#c8323c; --neg:#2f8f5b;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f131a; --surface:#171c25; --ink:#e7ebf2; --muted:#9aa3b2; --line:#2b3240; --accent:#7d93ff;
+    --grid:#202734; --accent-soft:rgba(125,147,255,.14);
+    --sev-low:#4cc283; --sev-med:#e2b53a; --sev-high:#f08a3e; --sev-crit:#f05a63;
+    --cat-macro:#7d93ff; --cat-setor:#3cc4c4; --cat-evento:#b98af0; --cat-outro:#9aa3b2;
+    --pos:#f05a63; --neg:#4cc283; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f131a; --surface:#171c25; --ink:#e7ebf2; --muted:#9aa3b2; --line:#2b3240; --accent:#7d93ff;
+  --grid:#202734; --accent-soft:rgba(125,147,255,.14);
+  --sev-low:#4cc283; --sev-med:#e2b53a; --sev-high:#f08a3e; --sev-crit:#f05a63;
+  --cat-macro:#7d93ff; --cat-setor:#3cc4c4; --cat-evento:#b98af0; --cat-outro:#9aa3b2;
+  --pos:#f05a63; --neg:#4cc283; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.45;display:flex;flex-direction:column}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+h1{font-size:16px;font-weight:600;margin:0;text-wrap:balance}
+.stats{display:flex;gap:16px;font-family:var(--font-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.stats b{color:var(--ink);font-weight:500}
+.stats .crit b{color:var(--sev-crit)}
+.toolbar{margin-left:auto;display:flex;flex-wrap:wrap;gap:8px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:6px 10px;cursor:pointer;font-size:13px}
+.btn:hover{border-color:var(--accent)}
+.btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:var(--sev-crit)}
+main{flex:1;display:grid;grid-template-columns:250px minmax(0,1fr) 320px;min-height:0}
+aside{background:var(--surface);overflow:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
+aside.left{border-right:1px solid var(--line)}
+aside.right{border-left:1px solid var(--line)}
+h2{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;font-weight:600}
+.search{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.lib-group ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.lib-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;background:none;padding:5px 6px;border-radius:5px;cursor:grab}
+.lib-item:hover{background:var(--accent-soft)}
+.lib-item.placed{color:var(--muted)}
+.lib-item.placed::after{content:"no mapa";white-space:nowrap;margin-left:auto;font-size:11px;font-family:var(--font-mono)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.add-row{display:flex;gap:6px}
+.add-row input{flex:1;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.canvas-wrap{position:relative;min-width:0;min-height:0}
+svg#map{width:100%;height:100%;display:block;touch-action:none;user-select:none}
+.hint{position:absolute;left:12px;bottom:10px;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:5px 9px;pointer-events:none;max-width:calc(100% - 24px)}
+.hint.mode{color:var(--accent);border-color:var(--accent)}
+.node{cursor:pointer}
+.node rect.box{fill:var(--surface);stroke-width:1.5}
+.node.sel rect.box{stroke-width:3}
+.node.pending rect.box{stroke-dasharray:5 3;stroke-width:2.5}
+.node text.name{font-size:13px;font-weight:600;fill:var(--ink)}
+.node text.sub{font-size:11px;font-family:var(--font-mono);fill:var(--muted)}
+.dim{opacity:.22}
+.edge{cursor:pointer}
+.edge path.hit{stroke:transparent;stroke-width:14;fill:none}
+.edge path.vis{fill:none}
+.edge.sel path.vis{stroke-dasharray:6 4}
+.edge text{font-family:var(--font-mono);font-size:12px;font-weight:500}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;color:var(--muted)}
+.field input[type=text],.field select,.field textarea{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);width:100%}
+.field textarea{min-height:64px;resize:vertical}
+.range-row{display:flex;align-items:center;gap:10px}
+.range-row input{flex:1;accent-color:var(--accent)}
+.range-row output{font-family:var(--font-mono);width:18px;text-align:right}
+.score{display:flex;align-items:baseline;gap:10px;padding:10px 12px;border-radius:8px;border-left:4px solid var(--sev);background:var(--bg)}
+.score .num{font-family:var(--font-mono);font-size:26px;font-weight:500;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;color:#fff;background:var(--sev)}
+.links{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.links li button{width:100%;display:flex;gap:8px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:5px 8px;cursor:pointer;font-size:13px}
+.links .sgn{font-family:var(--font-mono);font-weight:600;width:14px}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;border:0;background:var(--surface);padding:6px;cursor:pointer;font-size:13px}
+.seg button.on{background:var(--accent);color:#fff}
+.matrix{display:grid;grid-template-columns:18px repeat(5,1fr);gap:2px;font-family:var(--font-mono);font-size:10px;color:var(--muted)}
+.cell{aspect-ratio:1;border-radius:3px;position:relative;opacity:.9}
+.cell .m{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--ink);border:1.5px solid var(--surface);cursor:pointer;padding:0}
+.cell .m.sel{background:var(--accent);width:12px;height:12px}
+.axis{display:flex;align-items:center;justify-content:center}
+.top-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.top-list button{width:100%;display:grid;grid-template-columns:1fr auto;gap:8px;text-align:left;border:0;border-left:3px solid var(--sev);background:var(--bg);border-radius:4px;padding:6px 8px;cursor:pointer}
+.top-list .n{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted);font-size:13px;margin:0}
+ol.steps{margin:0;padding-left:18px;color:var(--muted);font-size:13px;display:flex;flex-direction:column;gap:4px}
+.io textarea{width:100%;min-height:90px;font-family:var(--font-mono);font-size:11px;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.databox{display:flex;flex-direction:column;gap:6px}
+.mt{width:100%;border-collapse:collapse;font-size:12.5px}
+.mt td{padding:4px 0;border-bottom:1px solid var(--line)}
+.mt td:last-child{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.toast{font-size:12px;color:var(--sev-low);min-height:16px}
+@media (max-width:900px){
+  main{grid-template-columns:1fr;grid-template-rows:auto 60vh auto}
+  aside.left,aside.right{border:0;border-bottom:1px solid var(--line);max-height:none}
+}
+@media (prefers-reduced-motion:no-preference){.btn,.lib-item{transition:background .12s,border-color .12s}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mapa de Riscos Setoriais</h1>
+  <div class="stats" id="stats"></div>
+  <div class="toolbar">
+    <button class="btn" id="modeBtn" title="Atalho: L">Ligar riscos</button>
+    <button class="btn on" id="cascBtn">Cadeia de impacto</button>
+    <button class="btn" id="resetBtn">Repor exemplo</button>
+    <button class="btn danger" id="clearBtn">Limpar mapa</button>
+  </div>
+</header>
+<main>
+  <aside class="left" aria-label="Biblioteca de riscos">
+    <div>
+      <h2>Biblioteca</h2>
+      <input class="search" id="search" type="search" placeholder="Procurar risco…" aria-label="Procurar risco">
+    </div>
+    <div id="lib"></div>
+    <div>
+      <h2>Novo risco</h2>
+      <div class="add-row">
+        <input id="newName" type="text" placeholder="Ex.: Greve nos portos" aria-label="Nome do novo risco">
+        <button class="btn" id="addBtn">Adicionar</button>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </aside>
+  <div class="canvas-wrap">
+    <svg id="map" viewBox="0 0 1000 640" preserveAspectRatio="xMidYMid meet" role="application" aria-label="Rede de riscos">
+      <defs>
+        <pattern id="gridpat" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="var(--grid)" stroke-width="1"/></pattern>
+        <marker id="arr-pos" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--pos)"/></marker>
+        <marker id="arr-neg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--neg)"/></marker>
+      </defs>
+      <rect x="0" y="0" width="1000" height="640" fill="url(#gridpat)" id="bgrect"/>
+      <g id="edges"></g>
+      <g id="nodes"></g>
+    </svg>
+    <div class="hint" id="hint"></div>
+  </div>
+  <aside class="right" id="panel" aria-label="Detalhe"></aside>
+</main>
+<script>
+const CATS = {
+  macro:{label:"Macro e mercado", color:"var(--cat-macro)"},
+  setor:{label:"Setores (ETF)", color:"var(--cat-setor)"},
+  evento:{label:"Eventos", color:"var(--cat-evento)"},
+  outro:{label:"Outros", color:"var(--cat-outro)"}
+};
+const LIBRARY = [
+  ["juros","Subida de juros","macro"],["inflacao","Inflação persistente","macro"],["petroleo","Choque no petróleo","macro"],
+  ["recessao","Recessão nos EUA","macro"],["vix","Volatilidade alta (VIX)","macro"],["spreads","Spreads de crédito a alargar","macro"],
+  ["dolar","Dólar forte","macro"],["desemprego","Desemprego a subir","macro"],
+  ["xlk","Tecnologia (XLK)","setor"],["xlf","Financeiro (XLF)","setor"],["xle","Energia (XLE)","setor"],["xlv","Saúde (XLV)","setor"],
+  ["xli","Industriais (XLI)","setor"],["xly","Consumo discricionário (XLY)","setor"],["xlp","Consumo básico (XLP)","setor"],
+  ["xlu","Utilities (XLU)","setor"],["xlb","Materiais (XLB)","setor"],["xlre","Imobiliário (XLRE)","setor"],["xlc","Comunicações (XLC)","setor"],
+  ["bigtech","Regulação de Big Tech","evento"],["geopol","Tensão geopolítica","evento"],["ciber","Ciberataque sistémico","evento"],["supply","Rutura na cadeia de abastecimento","evento"]
+];
+const LIBMAP = Object.fromEntries(LIBRARY.map(([id,name,cat])=>[id,{id,name,cat}]));
+const EXAMPLE = {
+  nodes:[
+    ["inflacao",130,90,3,4],["petroleo",130,240,3,4],["recessao",130,430,2,5],
+    ["juros",410,110,4,4],["vix",410,330,3,3],["spreads",410,530,2,4],
+    ["xlre",770,50,3,4],["xlu",770,130,2,3],["xlk",770,210,3,4],["xle",770,290,3,3],["xly",770,370,3,4],["xli",770,450,2,3],["xlf",770,560,3,4]
+  ].map(([id,x,y,p,i])=>({id,name:LIBMAP[id].name,cat:LIBMAP[id].cat,x,y,p,i,notes:""})),
+  edges:[
+    ["inflacao","juros","+",3],["petroleo","inflacao","+",2],["juros","xlre","+",3],["juros","xlu","+",2],["juros","xlk","+",2],
+    ["juros","xlf","-",1],["petroleo","xle","-",2],["petroleo","xly","+",2],["recessao","xly","+",3],["recessao","xli","+",3],
+    ["recessao","spreads","+",2],["recessao","vix","+",2],["spreads","xlf","+",3],["vix","xlk","+",2]
+  ].map(([from,to,sign,w],k)=>({id:"e"+k,from,to,sign,w}))
+};
+const DATA = /*DATA*/{"asof":"2026-11-09","metodo":{"impacto":"Quintil do CVaR 97.5% a 1 dia (3 anos) entre os 11 setores","cvar_level":0.975,"cvar_years":3,"convencao":"VaR e CVaR em perda positiva, retornos simples","probabilidade":"Quintil do percentil da volatilidade de 63 dias face à história do próprio setor"},"sectors":{"XLK":{"nome":"Tecnologia","inicio":"2005-01-04","vol_1y":0.286353,"vol_lr":0.227291,"vol_63d":0.303122,"vol_pct":0.875069,"vol_garch":0.635392,"var95":0.025948,"var99":0.04422,"cvar":0.046472,"var99_garch":0.101533,"max_dd":-0.530359,"dd_now":-0.154059,"beta":1.497229,"garch":{"mu":0.1372,"omega":0.0279,"alpha[1]":0.0367,"gamma[1]":0.1556,"beta[1]":0.8784,"nu":5.8648},"impacto":5,"probabilidade":5},"XLF":{"nome":"Financeiro","inicio":"2005-01-04","vol_1y":0.153253,"vol_lr":0.28773,"vol_63d":0.161628,"vol_pct":0.455934,"vol_garch":0.243727,"var95":0.015031,"var99":0.027874,"cvar":0.029375,"var99_garch":0.038385,"max_dd":-0.826866,"dd_now":-0.020439,"beta":0.749019,"garch":{"mu":0.0689,"omega":0.0719,"alpha[1]":0.0398,"gamma[1]":0.1706,"beta[1]":0.8268,"nu":6.6232},"impacto":4,"probabilidade":3},"XLE":{"nome":"Energia","inicio":"2005-01-04","vol_1y":0.23322,"vol_lr":0.298361,"vol_63d":0.237311,"vol_pct":0.544618,"vol_garch":0.340351,"var95":0.022013,"var99":0.035009,"cvar":0.040594,"var99_garch":0.053515,"max_dd":-0.712628,"dd_now":-0.115396,"beta":0.432117,"garch":{"mu":0.0584,"omega":0.0227,"alpha[1]":0.0393,"gamma[1]":0.0437,"beta[1]":0.9311,"nu":7.3844},"impacto":5,"probabilidade":3},"XLV":{"nome":"Saúde","inicio":"2005-01-04","vol_1y":0.169292,"vol_lr":0.167035,"vol_63d":0.189438,"vol_pct":0.833855,"vol_garch":0.208341,"var95":0.013829,"var99":0.025121,"cvar":0.025077,"var99_garch":0.03266,"max_dd":-0.391702,"dd_now":-0.007013,"beta":0.432517,"garch":{"mu":0.057,"omega":0.0271,"alpha[1]":0.047,"gamma[1]":0.0842,"beta[1]":0.8826,"nu":7.0639},"impacto":1,"probabilidade":5},"XLI":{"nome":"Industriais","inicio":"2005-01-04","vol_1y":0.182214,"vol_lr":0.208072,"vol_63d":0.176527,"vol_pct":0.633855,"vol_garch":0.284927,"var95":0.015561,"var99":0.024137,"cvar":0.028592,"var99_garch":0.04491,"max_dd":-0.622627,"dd_now":-0.092038,"beta":0.88956,"garch":{"mu":0.0672,"omega":0.0265,"alpha[1]":0.0154,"gamma[1]":0.1251,"beta[1]":0.9001,"nu":6.8003},"impacto":3,"probabilidade":4},"XLY":{"nome":"Consumo discricionário","inicio":"2005-01-04","vol_1y":0.199115,"vol_lr":0.219695,"vol_63d":0.20264,"vol_pct":0.671021,"vol_garch":0.315981,"var95":0.020063,"var99":0.036243,"cvar":0.034536,"var99_garch":0.049158,"max_dd":-0.590475,"dd_now":-0.022147,"beta":1.145126,"garch":{"mu":0.0863,"omega":0.0202,"alpha[1]":0.0623,"gamma[1]":0.1009,"beta[1]":0.8795,"nu":7.8006},"impacto":5,"probabilidade":4},"XLP":{"nome":"Consumo básico","inicio":"2005-01-04","vol_1y":0.157216,"vol_lr":0.142011,"vol_63d":0.181482,"vol_pct":0.904692,"vol_garch":0.216645,"var95":0.012882,"var99":0.01988,"cvar":0.020663,"var99_garch":0.034096,"max_dd":-0.323875,"dd_now":-0.011421,"beta":0.183141,"garch":{"mu":0.0455,"omega":0.0227,"alpha[1]":0.0662,"gamma[1]":0.0553,"beta[1]":0.8753,"nu":7.0723},"impacto":1,"probabilidade":5},"XLU":{"nome":"Utilities","inicio":"2005-01-04","vol_1y":0.157986,"vol_lr":0.185641,"vol_63d":0.156061,"vol_pct":0.568537,"vol_garch":0.145525,"var95":0.016126,"var99":0.023495,"cvar":0.026085,"var99_garch":0.022455,"max_dd":-0.464809,"dd_now":-0.063397,"beta":0.316036,"garch":{"mu":0.0656,"omega":0.0281,"alpha[1]":0.0344,"gamma[1]":0.0594,"beta[1]":0.9075,"nu":7.4741},"impacto":2,"probabilidade":3},"XLB":{"nome":"Materiais","inicio":"2005-01-04","vol_1y":0.182421,"vol_lr":0.231637,"vol_63d":0.167448,"vol_pct":0.430727,"vol_garch":0.231924,"var95":0.015985,"var99":0.026361,"cvar":0.028178,"var99_garch":0.035629,"max_dd":-0.598248,"dd_now":-0.017811,"beta":0.765307,"garch":{"mu":0.0395,"omega":0.0358,"alpha[1]":0.0203,"gamma[1]":0.1229,"beta[1]":0.8927,"nu":10.4436},"impacto":3,"probabilidade":3},"XLRE":{"nome":"Imobiliário","inicio":"2015-10-09","vol_1y":0.147237,"vol_lr":0.202786,"vol_63d":0.155399,"vol_pct":0.482202,"vol_garch":0.179725,"var95":0.016751,"var99":0.026993,"cvar":0.02816,"var99_garch":0.027948,"max_dd":-0.388248,"dd_now":-0.021609,"beta":0.501323,"garch":{"mu":0.0501,"omega":0.0255,"alpha[1]":0.0276,"gamma[1]":0.0857,"beta[1]":0.9075,"nu":7.8099},"impacto":2,"probabilidade":3},"XLC":{"nome":"Comunicações","inicio":"2018-06-20","vol_1y":0.168655,"vol_lr":0.22158,"vol_63d":0.203029,"vol_pct":0.634099,"vol_garch":0.20604,"var95":0.015759,"var99":0.028157,"cvar":0.029495,"var99_garch":0.032384,"max_dd":-0.466536,"dd_now":-0.097779,"beta":0.82664,"garch":{"mu":0.0706,"omega":0.0637,"alpha[1]":0.0255,"gamma[1]":0.1643,"beta[1]":0.8544,"nu":6.4839},"impacto":4,"probabilidade":4}},"corr":{"tickers":["XLK","XLF","XLE","XLV","XLI","XLY","XLP","XLU","XLB","XLRE","XLC"],"matrix":[[1.0,0.208,-0.153,-0.09,0.561,0.462,-0.385,-0.061,0.282,-0.036,0.199],[0.208,1.0,-0.133,0.425,0.491,0.57,0.234,0.126,0.478,0.485,0.469],[-0.153,-0.133,1.0,-0.089,-0.139,-0.325,0.05,0.042,-0.047,-0.052,-0.237],[-0.09,0.425,-0.089,1.0,0.27,0.346,0.515,0.246,0.423,0.51,0.29],[0.561,0.491,-0.139,0.27,1.0,0.525,0.07,0.324,0.625,0.383,0.249],[0.462,0.57,-0.325,0.346,0.525,1.0,0.236,0.128,0.525,0.393,0.632],[-0.385,0.234,0.05,0.515,0.07,0.236,1.0,0.386,0.385,0.54,0.217],[-0.061,0.126,0.042,0.246,0.324,0.128,0.386,1.0,0.341,0.581,0.008],[0.282,0.478,-0.047,0.423,0.625,0.525,0.385,0.341,1.0,0.478,0.277],[-0.036,0.485,-0.052,0.51,0.383,0.393,0.54,0.581,0.478,1.0,0.355],[0.199,0.469,-0.237,0.29,0.249,0.632,0.217,0.008,0.277,0.355,1.0]]}}/*END*/;
+const STORE = "riskmap.v1";
+let S = load() || clone(EXAMPLE);
+let sel = null;          // {type:'node'|'edge', id}
+let mode = "select";     // 'select' | 'link'
+let pending = null;      // node id when linking
+let cascade = true;
+let filter = "";
+let note = "";
+
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function load(){try{const t=localStorage.getItem(STORE);if(!t)return null;const o=JSON.parse(t);return valid(o)?o:null}catch(e){return null}}
+function save(){try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){}}
+function valid(o){return o&&Array.isArray(o.nodes)&&Array.isArray(o.edges)&&o.nodes.every(n=>n.id&&n.name)&&o.edges.every(e=>e.from&&e.to)}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function node(id){return S.nodes.find(n=>n.id===id)}
+function score(n){return n.p*n.i}
+function md(n){return DATA&&DATA.sectors?DATA.sectors[String(n.id).toUpperCase()]:null}
+function applyData(){if(!DATA)return;for(const n of S.nodes){const m=md(n);if(m&&n.auto!==false){n.p=m.probabilidade;n.i=m.impacto;n.auto=true}}}
+const pct=v=>(v*100).toFixed(1)+"%";
+function sev(s){return s>=15?["crit","Crítico"]:s>=10?["high","Alto"]:s>=5?["med","Médio"]:["low","Baixo"]}
+function sevVar(s){return "var(--sev-"+sev(s)[0]+")"}
+function size(n){return {w:Math.max(178,Math.min(260,n.name.length*7.4+34)),h:46}}
+function uid(p){return p+Math.random().toString(36).slice(2,8)}
+
+// cadeia de impacto: riscos a jusante do nó selecionado
+function downstream(id){
+  const seen=new Map([[id,0]]),q=[id];
+  while(q.length){const c=q.shift();for(const e of S.edges)if(e.from===c&&!seen.has(e.to)){seen.set(e.to,seen.get(c)+1);q.push(e.to)}}
+  return seen;
+}
+
+function boxPoint(n,tx,ty){
+  const {w,h}=size(n),cx=n.x,cy=n.y,dx=tx-cx,dy=ty-cy;
+  if(!dx&&!dy)return [cx,cy];
+  const s=1/Math.max(Math.abs(dx)/(w/2+4),Math.abs(dy)/(h/2+4));
+  return [cx+dx*s,cy+dy*s];
+}
+
+function render(skipPanel){
+  const chain = cascade&&sel&&sel.type==="node" ? downstream(sel.id) : null;
+  const chainEdge = e => chain&&chain.has(e.from)&&chain.has(e.to)&&chain.get(e.to)>chain.get(e.from);
+  // ligações
+  let eh="";
+  for(const e of S.edges){
+    const a=node(e.from),b=node(e.to);if(!a||!b)continue;
+    const rev=S.edges.some(o=>o.from===e.to&&o.to===e.from);
+    let [x1,y1]=boxPoint(a,b.x,b.y),[x2,y2]=boxPoint(b,a.x,a.y);
+    const mx=(x1+x2)/2,my=(y1+y2)/2,len=Math.hypot(x2-x1,y2-y1)||1;
+    const off=rev?28:0,cx=mx-(y2-y1)/len*off,cy=my+(x2-x1)/len*off;
+    const col=e.sign==="+"?"var(--pos)":"var(--neg)";
+    const d=`M${x1.toFixed(1)} ${y1.toFixed(1)}Q${cx.toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+    const lx=(x1+2*cx+x2)/4,ly=(y1+2*cy+y2)/4;
+    const cls=["edge",sel&&sel.type==="edge"&&sel.id===e.id?"sel":"",chain&&!chainEdge(e)?"dim":""].join(" ");
+    eh+=`<g class="${cls}" data-edge="${e.id}"><path class="hit" d="${d}"/><path class="vis" d="${d}" stroke="${col}" stroke-width="${0.8+e.w*0.9}" marker-end="url(#arr-${e.sign==="+"?"pos":"neg"})"/>`+
+        `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="9" fill="var(--surface)" stroke="${col}"/><text x="${lx.toFixed(1)}" y="${(ly+4).toFixed(1)}" text-anchor="middle" fill="${col}">${e.sign==="+"?"+":"−"}</text></g>`;
+  }
+  document.getElementById("edges").innerHTML=eh;
+  // nós
+  let nh="";
+  for(const n of S.nodes){
+    const {w,h}=size(n),s=score(n);
+    const cls=["node",sel&&sel.type==="node"&&sel.id===n.id?"sel":"",pending===n.id?"pending":"",chain&&!chain.has(n.id)?"dim":""].join(" ");
+    const depth=chain&&chain.has(n.id)&&chain.get(n.id)>0?` · nível ${chain.get(n.id)}`:"";
+    nh+=`<g class="${cls}" data-node="${esc(n.id)}" transform="translate(${n.x-w/2},${n.y-h/2})">`+
+        `<rect class="box" width="${w}" height="${h}" rx="7" stroke="${CATS[n.cat]?.color||CATS.outro.color}"/>`+
+        `<rect x="0" y="0" width="5" height="${h}" rx="2" fill="${sevVar(s)}"/>`+
+        `<text class="name" x="14" y="19">${esc(n.name)}</text>`+
+        `<text class="sub" x="14" y="36">P${n.p} × I${n.i} = ${s}${md(n)&&n.auto?" · medido":""}${depth}</text></g>`;
+  }
+  document.getElementById("nodes").innerHTML=nh;
+  renderStats();renderLib();if(!skipPanel)renderPanel(chain);renderHint();save();
+}
+
+function renderStats(){
+  const crit=S.nodes.filter(n=>score(n)>=15).length;
+  document.getElementById("stats").innerHTML=`<span><b>${S.nodes.length}</b> riscos</span><span><b>${S.edges.length}</b> ligações</span><span class="crit"><b>${crit}</b> críticos</span><span>${DATA?`dados até <b>${DATA.asof}</b>`:"sem dados de mercado"}</span>`;
+  document.getElementById("modeBtn").classList.toggle("on",mode==="link");
+  document.getElementById("cascBtn").classList.toggle("on",cascade);
+}
+function renderHint(){
+  const h=document.getElementById("hint");
+  if(mode==="link"){h.className="hint mode";h.textContent=pending?`Agora clica no risco que "${node(pending)?.name}" influencia. Esc cancela.`:"Modo ligar: clica no risco de origem e depois no risco afetado.";}
+  else{h.className="hint";h.textContent="Arrasta riscos da biblioteca para a tela. Arrasta os blocos para os mover. L ativa o modo ligar.";}
+}
+function renderLib(){
+  const placed=new Set(S.nodes.map(n=>n.id)),f=filter.toLowerCase();
+  let html="";
+  for(const [cat,meta] of Object.entries(CATS)){
+    const items=LIBRARY.filter(([id,name,c])=>c===cat&&name.toLowerCase().includes(f));
+    if(!items.length)continue;
+    html+=`<div class="lib-group"><h2>${meta.label}</h2><ul>`+items.map(([id,name])=>`<li><button class="lib-item ${placed.has(id)?"placed":""}" draggable="true" data-lib="${id}"><span class="dot" style="background:${meta.color}"></span>${esc(name)}</button></li>`).join("")+`</ul></div>`;
+  }
+  document.getElementById("lib").innerHTML=html||`<p class="muted">Nada encontrado. Cria-o em "Novo risco".</p>`;
+  document.getElementById("legend").innerHTML=`<span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--pos)" stroke-width="2"/></svg>+ agrava</span><span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--neg)" stroke-width="2"/></svg>− atenua</span><span><span class="dot" style="background:var(--sev-crit)"></span>barra = severidade</span>`;
+}
+
+function matrixHTML(){
+  let h=`<div class="matrix" role="grid" aria-label="Matriz probabilidade × impacto">`;
+  for(let p=5;p>=1;p--){
+    h+=`<div class="axis">${p}</div>`;
+    for(let i=1;i<=5;i++){
+      const inCell=S.nodes.filter(n=>n.p===p&&n.i===i);
+      const dots=inCell.map((n,k)=>{const col=k%3,row=Math.floor(k/3);return `<button class="m ${sel&&sel.id===n.id?"sel":""}" style="left:${12+col*28}%;top:${12+row*28}%" data-pick="${esc(n.id)}" title="${esc(n.name)}" aria-label="${esc(n.name)}"></button>`}).join("");
+      h+=`<div class="cell" style="background:color-mix(in srgb, ${sevVar(p*i)} 30%, transparent)">${dots}</div>`;
+    }
+  }
+  h+=`<div></div>`+[1,2,3,4,5].map(i=>`<div class="axis">${i}</div>`).join("")+`</div><p class="muted" style="font-size:11px;margin-top:4px">Vertical: probabilidade · horizontal: impacto</p>`;
+  return h;
+}
+
+function renderPanel(chain){
+  const P=document.getElementById("panel");
+  if(sel&&sel.type==="node"&&node(sel.id)){
+    const n=node(sel.id),s=score(n),[sk,sl]=sev(s);
+    const out=S.edges.filter(e=>e.from===n.id),inn=S.edges.filter(e=>e.to===n.id);
+    const li=(e,other)=>`<li><button data-edge-pick="${e.id}"><span class="sgn" style="color:${e.sign==="+"?"var(--pos)":"var(--neg)"}">${e.sign==="+"?"+":"−"}</span>${esc(node(other)?.name||other)}<span class="muted" style="margin-left:auto;font-size:11px">${"●".repeat(e.w)}</span></button></li>`;
+    const affected=chain?chain.size-1:0;
+    P.innerHTML=`
+      <div><h2>Risco selecionado</h2>
+      <div class="score" style="--sev:var(--sev-${sk})"><span class="num">${s}</span><span><span class="pill" style="--sev:var(--sev-${sk})">${sl}</span><br><span class="muted">probabilidade × impacto</span></span></div></div>
+      <div class="field"><label for="fName">Nome</label><input type="text" id="fName" value="${esc(n.name)}"></div>
+      <div class="field"><label for="fCat">Categoria</label><select id="fCat">${Object.entries(CATS).map(([k,v])=>`<option value="${k}" ${k===n.cat?"selected":""}>${v.label}</option>`).join("")}</select></div>
+      <div class="field"><label for="fP">Probabilidade (1 rara · 5 quase certa)</label><div class="range-row"><input type="range" id="fP" min="1" max="5" value="${n.p}"><output id="oP">${n.p}</output></div></div>
+      <div class="field"><label for="fI">Impacto (1 mínimo · 5 severo)</label><div class="range-row"><input type="range" id="fI" min="1" max="5" value="${n.i}"><output id="oI">${n.i}</output></div></div>
+      ${dataBox(n)}
+      <div class="field"><label for="fN">Notas e fontes</label><textarea id="fN" placeholder="Porquê esta avaliação? Que dados a suportam?">${esc(n.notes||"")}</textarea></div>
+      ${cascade?`<p class="muted"><b style="color:var(--ink)">${affected}</b> ${affected===1?"risco afetado":"riscos afetados"} em cadeia.</p>`:""}
+      <div><h2>Influencia</h2>${out.length?`<ul class="links">${out.map(e=>li(e,e.to)).join("")}</ul>`:`<p class="muted">Sem ligações de saída.</p>`}</div>
+      <div><h2>É influenciado por</h2>${inn.length?`<ul class="links">${inn.map(e=>li(e,e.from)).join("")}</ul>`:`<p class="muted">Sem ligações de entrada.</p>`}</div>
+      <div class="row"><button class="btn" id="linkFrom">Ligar a partir daqui</button><button class="btn danger" id="delNode">Remover risco</button></div>
+      <div><h2>Matriz de risco</h2>${matrixHTML()}</div>`;
+    const upd=()=>{n.name=document.getElementById("fName").value.trim()||n.name;n.cat=document.getElementById("fCat").value;n.p=+document.getElementById("fP").value;n.i=+document.getElementById("fI").value;n.notes=document.getElementById("fN").value;};
+    document.getElementById("fName").addEventListener("change",()=>{upd();render()});
+    document.getElementById("fCat").addEventListener("change",()=>{upd();render()});
+    for(const k of ["P","I"])document.getElementById("f"+k).addEventListener("input",()=>{upd();n.auto=false;document.getElementById("o"+k).textContent=n[k.toLowerCase()];renderSoft()});
+    for(const k of ["P","I"])document.getElementById("f"+k).addEventListener("change",()=>render());
+    document.getElementById("fN").addEventListener("input",()=>{upd();save()});
+    document.getElementById("linkFrom").onclick=()=>{mode="link";pending=n.id;render()};
+    document.getElementById("delNode").onclick=()=>removeNode(n.id);
+    const ub=document.getElementById("useData");if(ub)ub.onclick=()=>{n.auto=true;applyData();render()};
+    return;
+  }
+  if(sel&&sel.type==="edge"){
+    const e=S.edges.find(x=>x.id===sel.id);
+    if(e){
+      P.innerHTML=`
+        <div><h2>Ligação selecionada</h2><p style="margin:0"><b>${esc(node(e.from)?.name)}</b> → <b>${esc(node(e.to)?.name)}</b></p></div>
+        <div class="field"><label>Efeito</label><div class="seg"><button data-sign="+" class="${e.sign==="+"?"on":""}">+ agrava</button><button data-sign="-" class="${e.sign==="-"?"on":""}">− atenua</button></div></div>
+        <div class="field"><label>Intensidade</label><div class="seg">${[1,2,3].map(w=>`<button data-w="${w}" class="${e.w===w?"on":""}">${["Fraca","Média","Forte"][w-1]}</button>`).join("")}</div></div>
+        <div class="row"><button class="btn" id="flip">Inverter sentido</button><button class="btn danger" id="delEdge">Remover ligação</button></div>
+        <div><h2>Matriz de risco</h2>${matrixHTML()}</div>`;
+      P.querySelectorAll("[data-sign]").forEach(b=>b.onclick=()=>{e.sign=b.dataset.sign;render()});
+      P.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{e.w=+b.dataset.w;render()});
+      document.getElementById("flip").onclick=()=>{[e.from,e.to]=[e.to,e.from];render()};
+      document.getElementById("delEdge").onclick=()=>{S.edges=S.edges.filter(x=>x!==e);sel=null;render()};
+      return;
+    }
+  }
+  const top=[...S.nodes].sort((a,b)=>score(b)-score(a)||b.i-a.i).slice(0,6);
+  P.innerHTML=`
+    <div><h2>Como usar</h2><ol class="steps"><li>Arrasta riscos da biblioteca para a tela, ou clica neles.</li><li>Ativa <b>Ligar riscos</b>, clica na origem e depois no risco afetado.</li><li>Seleciona um risco para avaliar a probabilidade e o impacto e ver a cadeia de impacto. Nos setores, a avaliação vem dos dados de mercado.</li></ol></div>
+    <div><h2>Riscos mais severos</h2>${top.length?`<ul class="top-list">${top.map(n=>`<li><button data-pick="${esc(n.id)}" style="--sev:${sevVar(score(n))}"><span>${esc(n.name)}</span><span class="n">${score(n)}</span></button></li>`).join("")}</ul>`:`<p class="muted">O mapa está vazio.</p>`}</div>
+    <div><h2>Matriz de risco</h2>${matrixHTML()}</div>
+    <div class="io"><h2>Exportar / importar (JSON)</h2>
+      <textarea id="io" aria-label="JSON do mapa" spellcheck="false">${esc(JSON.stringify(S,null,1))}</textarea>
+      <div class="row" style="margin-top:6px"><button class="btn" id="copyBtn">Copiar JSON</button><button class="btn" id="importBtn">Carregar JSON colado</button><label class="btn" for="fileIn">Abrir ficheiro…</label><input type="file" id="fileIn" accept=".json,application/json" hidden></div>
+      <div class="toast" id="toast">${esc(note)}</div>
+      <p class="muted" style="font-size:12px">Este JSON é o formato que o pipeline Python vai ler mais tarde. Mostra o exemplo inicial (ilustrativo).</p>
+    </div>`;
+  note="";
+  document.getElementById("copyBtn").onclick=async()=>{try{await navigator.clipboard.writeText(JSON.stringify(S,null,1));toast("JSON copiado.")}catch(e){const t=document.getElementById("io");t.select();toast("Seleciona o texto e copia com Cmd+C.")}};
+  document.getElementById("importBtn").onclick=()=>importText(document.getElementById("io").value);
+  document.getElementById("fileIn").onchange=ev=>{const f=ev.target.files[0];if(!f)return;f.text().then(importText)};
+}
+function dataBox(n){
+  const m=md(n);if(!m)return "";
+  const rows=[["Volatilidade (1 ano)",pct(m.vol_1y)],["Volatilidade prevista (GARCH)",pct(m.vol_garch)],["Vol. 63 dias: percentil histórico",Math.round(m.vol_pct*100)+"º"],
+    [`VaR 99% (1 dia, ${DATA.metodo.cvar_years} anos)`,pct(-m.var99)],[`CVaR ${(DATA.metodo.cvar_level*100).toLocaleString("pt-PT")}% (1 dia, ${DATA.metodo.cvar_years} anos)`,pct(-m.cvar)],["VaR 99% condicional (GARCH)",pct(-m.var99_garch)],
+    ["Drawdown máximo",pct(m.max_dd)],["Drawdown atual",pct(m.dd_now)],["Beta face ao SPY (3 anos)",m.beta.toFixed(2)]];
+  return `<div class="databox"><h2>Dados de mercado · até ${DATA.asof}</h2><table class="mt">${rows.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>
+    <p class="muted" style="font-size:12px">${n.auto?`Avaliação medida: impacto = quintil do CVaR entre setores (${m.impacto}); probabilidade = regime de volatilidade (${m.probabilidade}).`:`Avaliação manual. Os dados sugerem P${m.probabilidade} × I${m.impacto}.`}</p>
+    ${n.auto?"":`<button class="btn" id="useData">Usar avaliação dos dados</button>`}</div>`;
+}
+function toast(t){const el=document.getElementById("toast");if(el)el.textContent=t}
+function importText(t){
+  try{const o=JSON.parse(t);if(!valid(o))throw 0;o.nodes.forEach(n=>{n.p=+n.p||3;n.i=+n.i||3;n.cat=CATS[n.cat]?n.cat:"outro";n.x=+n.x||500;n.y=+n.y||320});o.edges.forEach((e,k)=>{e.id=e.id||"e"+k;e.sign=e.sign==="-"?"-":"+";e.w=[1,2,3].includes(+e.w)?+e.w:2});S=o;applyData();sel=null;note="Mapa carregado.";render()}
+  catch(e){toast("JSON inválido: precisa de \"nodes\" e \"edges\".")}
+}
+// re-render leve durante o arrastar dos sliders
+function renderSoft(){render(true)}
+
+function addNode(id,name,cat,x,y){
+  if(node(id)){sel={type:"node",id};render();return}
+  S.nodes.push({id,name,cat,x:clampX(x),y:clampY(y),p:3,i:3,notes:""});
+  applyData();sel={type:"node",id};render();
+}
+function removeNode(id){S.nodes=S.nodes.filter(n=>n.id!==id);S.edges=S.edges.filter(e=>e.from!==id&&e.to!==id);sel=null;pending=null;render()}
+function clampX(x){return Math.max(80,Math.min(920,x))}
+function clampY(y){return Math.max(30,Math.min(610,y))}
+function freeSpot(){let x=500,y=320,k=0;while(S.nodes.some(n=>Math.abs(n.x-x)<120&&Math.abs(n.y-y)<50)&&k<40){k++;x=500+((k%5)-2)*130;y=320+(Math.floor(k/5)%5-2)*60}return [x,y]}
+
+const svg=document.getElementById("map");
+function svgPt(ev){const p=svg.createSVGPoint();p.x=ev.clientX;p.y=ev.clientY;return p.matrixTransform(svg.getScreenCTM().inverse())}
+
+let drag=null;
+svg.addEventListener("pointerdown",ev=>{
+  const g=ev.target.closest("[data-node]");
+  if(g){const n=node(g.dataset.node),pt=svgPt(ev);drag={id:n.id,dx:n.x-pt.x,dy:n.y-pt.y,moved:false,sx:ev.clientX,sy:ev.clientY};svg.setPointerCapture(ev.pointerId);return}
+  const e=ev.target.closest("[data-edge]");
+  if(e){sel={type:"edge",id:e.dataset.edge};render();return}
+  if(mode!=="link"){sel=null;pending=null;render()}
+});
+svg.addEventListener("pointermove",ev=>{
+  if(!drag)return;
+  if(!drag.moved&&Math.hypot(ev.clientX-drag.sx,ev.clientY-drag.sy)<4)return;
+  drag.moved=true;const n=node(drag.id),pt=svgPt(ev);n.x=clampX(pt.x+drag.dx);n.y=clampY(pt.y+drag.dy);render();
+});
+svg.addEventListener("pointerup",()=>{
+  if(!drag)return;const d=drag;drag=null;
+  if(d.moved)return;
+  if(mode==="link"){
+    if(!pending){pending=d.id;render();return}
+    if(pending!==d.id&&!S.edges.some(e=>e.from===pending&&e.to===d.id)){const e={id:uid("e"),from:pending,to:d.id,sign:"+",w:2};S.edges.push(e);sel={type:"edge",id:e.id}}
+    pending=null;mode="select";render();return;
+  }
+  sel={type:"node",id:d.id};render();
+});
+svg.addEventListener("dragover",ev=>ev.preventDefault());
+svg.addEventListener("drop",ev=>{ev.preventDefault();const id=ev.dataTransfer.getData("text/plain");const it=LIBMAP[id];if(!it)return;const pt=svgPt(ev);addNode(it.id,it.name,it.cat,pt.x,pt.y)});
+
+document.getElementById("lib").addEventListener("dragstart",ev=>{const b=ev.target.closest("[data-lib]");if(b)ev.dataTransfer.setData("text/plain",b.dataset.lib)});
+document.getElementById("lib").addEventListener("click",ev=>{const b=ev.target.closest("[data-lib]");if(!b)return;const it=LIBMAP[b.dataset.lib];const [x,y]=freeSpot();addNode(it.id,it.name,it.cat,x,y)});
+document.getElementById("panel").addEventListener("click",ev=>{
+  const p=ev.target.closest("[data-pick]");if(p){sel={type:"node",id:p.dataset.pick};render();return}
+  const e=ev.target.closest("[data-edge-pick]");if(e){sel={type:"edge",id:e.dataset.edgePick};render()}
+});
+document.getElementById("search").addEventListener("input",ev=>{filter=ev.target.value;renderLib()});
+document.getElementById("addBtn").onclick=()=>{const inp=document.getElementById("newName"),name=inp.value.trim();if(!name)return;const [x,y]=freeSpot();addNode(uid("r"),name,"outro",x,y);inp.value=""};
+document.getElementById("newName").addEventListener("keydown",ev=>{if(ev.key==="Enter")document.getElementById("addBtn").click()});
+document.getElementById("modeBtn").onclick=()=>{mode=mode==="link"?"select":"link";pending=mode==="link"&&sel&&sel.type==="node"?sel.id:null;render()};
+document.getElementById("cascBtn").onclick=()=>{cascade=!cascade;render()};
+document.getElementById("resetBtn").onclick=()=>{S=clone(EXAMPLE);applyData();sel=null;pending=null;render()};
+document.getElementById("clearBtn").onclick=()=>{S={nodes:[],edges:[]};sel=null;pending=null;render()};
+document.addEventListener("keydown",ev=>{
+  if(ev.target.matches("input,textarea,select"))return;
+  if(ev.key==="Escape"){pending=null;mode="select";sel=null;render()}
+  else if(ev.key==="l"||ev.key==="L"){document.getElementById("modeBtn").click()}
+  else if((ev.key==="Delete"||ev.key==="Backspace")&&sel){if(sel.type==="node")removeNode(sel.id);else{S.edges=S.edges.filter(e=>e.id!==sel.id);sel=null;render()}}
+});
+applyData();
+sel={type:"node",id:"juros"};
+render();
+</script>
+</body>
+</html>
