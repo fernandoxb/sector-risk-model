@@ -31,7 +31,13 @@ MAX_ABS_RET = 0.25      # retornos diários acima disto vão para revisão
 # VaR a 1 dia previsto só com dados até t-1, em janela móvel de CVAR_YEARS anos (em dias úteis).
 BT_LEVELS = (0.99, 0.975)            # 99% = VaR regulamentar (Basileia); 97,5% = nível do ES no FRTB
 BT_WINDOW = CVAR_YEARS * TRADING_DAYS
-BT_METHODS = ("historico", "garch")  # VaR histórico e GJR-GARCH(1,1)-t
+# histórico, GJR-GARCH(1,1)-t e Filtered Historical Simulation (mesmo GARCH, quantil empírico dos resíduos)
+BT_METHODS = ("historico", "garch", "fhs")
+BT_ES_GRID = 400                     # pontos da quadratura do ES da t-Student (por dia)
+BT_ES_NSIM = 1000                    # simulações sob H0 para o p-valor do teste Z2 de Acerbi–Székely
+BT_SEED = 42                         # semente das simulações (resultados reprodutíveis)
+# FRTB, backtest por mesa: reprovada se, nos últimos 250 dias, houver mais exceções do que isto
+BT_FRTB_MAX = {0.99: 12, 0.975: 30}
 BT_REFIT_FREQ = "M"                  # re-estimar o GARCH no 1.º dia útil de cada mês (período pandas)
 BT_SIGNIF = 0.05                     # nível de significância dos testes de Kupiec e Christoffersen
 # Semáforo de Basileia: exceções nos últimos 250 dias. As zonas vêm da binomial acumulada

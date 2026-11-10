@@ -9,7 +9,11 @@ import pandas as pd
 import pytest
 from arch import arch_model
 
+from scipy.stats import norm
+from scipy.stats import t as student_t
+
 from src.models import backtest as bt
+from src.models.cockpit import cvar
 from src.models.risk_metrics import hist_var
 
 WINDOW = 300   # janela curta para os testes serem rápidos
@@ -121,47 +125,127 @@ def test_var_historico_igual_ao_do_modelador(rets):
     assert v.iloc[:WINDOW].isna().all()
 
 
-# ----------------------------------------------------------------------------- GARCH
-def test_garch_igual_a_recursao_a_mao(rets):
-    """VaR GARCH do backtest = recursão GJR escrita à mão com os parâmetros estimados até t-1."""
-    lv = 0.99
-    fc = bt.garch_var_forecast(rets, (lv,), WINDOW, "M")
+# ----------------------------------------------------------------------------- ES histórico
+def test_es_historico_usa_o_cvar_do_cockpit(rets):
+    """ES previsto para o dia t = cockpit.cvar (fonte única) sobre t-window..t-1."""
+    fc = bt.hist_forecast(rets, (0.975,), WINDOW)
+    for t in [WINDOW, WINDOW + 40, len(rets) - 1]:
+        assert fc["es_historico_0.975"].iloc[t] == pytest.approx(cvar(rets.iloc[t - WINDOW:t], 0.975))
+        assert fc["var_historico_0.975"].iloc[t] == pytest.approx(hist_var(rets.iloc[t - WINDOW:t], 0.975))
+
+
+# ----------------------------------------------------------------------------- GARCH e FHS
+@pytest.fixture(scope="module")
+def filtro(rets):
+    return bt.garch_filter(rets, WINDOW, "M")
+
+
+def _estimacao(rets, i):
     x = np.log1p(rets) * 100
-    i = bt.refit_positions(rets.index, WINDOW, "M")[0]   # 1.ª estimação: mesmo ponto de partida do otimizador
     res = arch_model(x, mean="Constant", vol="GARCH", p=1, o=1, q=1, dist="t") \
         .fit(first_obs=i - WINDOW, last_obs=i, disp="off")
-    mu, w, a, g, b, nu = res.params[["mu", "omega", "alpha[1]", "gamma[1]", "beta[1]", "nu"]]
-    # variância condicional do último dia da amostra de estimação, depois recursão para a frente
+    return x, res
+
+
+def test_garch_igual_a_recursao_a_mao(rets, filtro):
+    """VaR GARCH do backtest = recursão GJR escrita à mão com os parâmetros estimados até t-1."""
+    lv = 0.99
+    g, pools = filtro
+    risk = bt.garch_risk(g, pools, (lv,))
+    i = bt.refit_positions(rets.index, WINDOW, "M")[0]   # 1.ª estimação: mesmo ponto de partida do otimizador
+    x, res = _estimacao(rets, i)
+    mu, w, a, gm, b, nu = res.params[["mu", "omega", "alpha[1]", "gamma[1]", "beta[1]", "nu"]]
     cv = res.conditional_volatility.dropna()
     assert cv.index[-1] == x.index[i - 1]                 # estimação termina em t-1
-    s2 = cv.iloc[-1] ** 2
-    e = x.iloc[i - 1] - mu
-    s2 = w + (a + g * (e < 0)) * e ** 2 + b * s2          # previsão para o dia i
     q = float(res.model.distribution.ppf(1 - lv, np.array([nu])))
-    assert fc.iloc[i, 0] == pytest.approx(-math.expm1((mu + math.sqrt(s2) * q) / 100), rel=1e-6)
-    e = x.iloc[i] - mu
-    s2 = w + (a + g * (e < 0)) * e ** 2 + b * s2          # previsão para o dia i+1
-    assert fc.iloc[i + 1, 0] == pytest.approx(-math.expm1((mu + math.sqrt(s2) * q) / 100), rel=1e-6)
+    s2 = cv.iloc[-1] ** 2
+    for d in (i, i + 1):                                  # previsões para os dias i e i+1
+        e = x.iloc[d - 1] - mu
+        s2 = w + (a + gm * (e < 0)) * e ** 2 + b * s2
+        assert g["sigma"].iloc[d] == pytest.approx(math.sqrt(s2), rel=1e-6)
+        assert risk["var_garch_0.99"].iloc[d] == pytest.approx(-math.expm1((mu + math.sqrt(s2) * q) / 100),
+                                                               rel=1e-6)
+
+
+@pytest.mark.parametrize("nu,lv", [(5.0, 0.975), (8.0, 0.99), (30.0, 0.975)])
+def test_es_da_t_contra_formula_fechada(nu, lv):
+    """Média da grelha da cauda = ES da t padronizada pela fórmula fechada:
+    E[T | T <= q] = -f(q)/p · (ν + q²)/(ν - 1), reescalada por sqrt((ν-2)/ν)."""
+    p = 1 - lv
+    q = student_t.ppf(p, nu)
+    fechada = -student_t.pdf(q, nu) / p * (nu + q ** 2) / (nu - 1) * math.sqrt((nu - 2) / nu)
+    assert bt.t_tail_grid(lv, nu).mean() == pytest.approx(fechada, rel=2e-3)
+
+
+def test_fhs_usa_residuos_da_janela_de_estimacao(rets, filtro):
+    g, pools = filtro
+    i = bt.refit_positions(rets.index, WINDOW, "M")[0]
+    x, res = _estimacao(rets, i)
+    z_mao = ((x - res.params["mu"]) / res.conditional_volatility).iloc[i - WINDOW:i].to_numpy()
+    np.testing.assert_allclose(pools[i], z_mao, rtol=1e-9)
+    risk = bt.garch_risk(g, pools, (0.975,))
+    qe = np.quantile(z_mao, 0.025)
+    assert g["refit"].iloc[i] == i                         # dia i usa a estimação feita em i
+    mu, sg = g["mu"].iloc[i], g["sigma"].iloc[i]
+    assert risk["var_fhs_0.975"].iloc[i] == pytest.approx(-math.expm1((mu + sg * qe) / 100))
+    cauda = z_mao[z_mao <= qe]
+    assert risk["es_fhs_0.975"].iloc[i] == pytest.approx(np.mean(-np.expm1((mu + sg * cauda) / 100)))
+
+
+# ----------------------------------------------------------------------------- Z2 (Acerbi–Székely)
+def test_z2_a_mao():
+    loss = np.array([0.01, 0.05, -0.02, 0.04, 0.00])
+    var, es = np.full(5, 0.03), np.full(5, 0.045)
+    # exceções nos dias 2 e 4: Z2 = 1 - (0,05/0,045 + 0,04/0,045) / (5 · 0,2)
+    assert bt.z2(loss, var, es, 0.2) == pytest.approx(1 - (0.05 / 0.045 + 0.04 / 0.045) / 1.0)
+
+
+def test_z2_calibrado_sob_h0_e_negativo_se_es_subestimado():
+    rng = np.random.default_rng(0)
+    lv, sd = 0.975, 0.01
+    p = 1 - lv
+    var = np.full(1000, -norm.ppf(p) * sd)
+    es = np.full(1000, norm.pdf(norm.ppf(p)) / p * sd)        # ES normal fechado
+    certo = bt.z2(rng.normal(0, sd, (2000, 1000)), var, es, p)
+    assert abs(certo.mean()) < 0.02
+    errado = bt.z2(rng.normal(0, 1.5 * sd, (1, 1000)), var, es, p)[0]
+    assert errado < -1 and bt.z2_pvalue(errado, certo) < 0.01
+
+
+def test_simulacao_historica_so_usa_a_janela(rets):
+    fc, aux, pools = bt.sector_forecasts(rets, (0.975,), WINDOW, "M")
+    sims = bt.simulate_losses("historico", rets, aux, pools, WINDOW, 200, np.random.default_rng(1))
+    j = 10
+    pos = int(aux["pos"].iloc[j])
+    janela = set(-rets.iloc[pos - WINDOW:pos].to_numpy())
+    assert set(sims[:, j]) <= janela
+
+
+# ----------------------------------------------------------------------------- FRTB
+@pytest.mark.parametrize("n,lv,res", [(12, 0.99, "aprovada"), (13, 0.99, "reprovada"),
+                                      (30, 0.975, "aprovada"), (31, 0.975, "reprovada")])
+def test_frtb_por_mesa(n, lv, res):
+    assert bt.frtb_desk(n, lv) == res
 
 
 # ----------------------------------------------------------------------------- sem look-ahead
-@pytest.mark.parametrize("metodo", ["historico", "garch"])
+@pytest.mark.parametrize("metodo", ["historico", "garch", "fhs"])
 def test_sem_look_ahead(rets, metodo):
-    """Mudar o retorno do dia t (e de todos os seguintes) não pode alterar o VaR de nenhum dia <= t."""
-    fc0 = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
+    """Mudar o retorno do dia t (e de todos os seguintes) não pode alterar o VaR nem o ES de nenhum dia <= t."""
+    fc0, _, _ = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
     pos = bt.refit_positions(rets.index, WINDOW, "M")
+    cols = [c for c in fc0.columns if c.startswith((f"var_{metodo}", f"es_{metodo}"))]
     for t in [pos[2], pos[2] + 5]:       # um dia de re-estimação e um dia a meio do mês
         choque = rets.copy()
         choque.iloc[t:] = choque.iloc[t:] * 3 - 0.05
-        fc1 = bt.sector_forecasts(choque, (0.99, 0.975), WINDOW, "M")
+        fc1, _, _ = bt.sector_forecasts(choque, (0.99, 0.975), WINDOW, "M")
         dia = rets.index[t]
-        cols = [c for c in fc0.columns if c.startswith(f"var_{metodo}")]
         pd.testing.assert_frame_equal(fc0.loc[:dia, cols], fc1.loc[:dia, cols])
         assert not np.allclose(fc0.loc[dia:, cols].iloc[1:5], fc1.loc[dia:, cols].iloc[1:5])
 
 
 def test_tabela_tem_todas_as_combinacoes(rets):
-    fc = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
-    tab = bt.backtest_table(fc, (0.99, 0.975))
-    assert len(tab) == 4 and set(tab["semaforo"]) <= {"verde", "amarelo", "vermelho"}
-    assert (tab["dias"] == len(fc)).all()
+    fc, aux, pools = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
+    tab = bt.backtest_table(fc, aux, pools, rets, (0.99, 0.975), window=WINDOW, n_sim=200)
+    assert len(tab) == 6 and set(tab["semaforo"]) <= {"verde", "amarelo", "vermelho"}
+    assert (tab["dias"] == len(fc)).all() and tab["p_z2"].between(0, 1).all()

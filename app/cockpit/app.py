@@ -134,7 +134,7 @@ fig.update_layout(height=520, margin=dict(b=0, l=0, r=0, t=10), paper_bgcolor=BG
                   hovermode="closest",
                   legend=dict(orientation="h", y=-0.02, yanchor="top", font=dict(color="#e5e7eb")),
                   xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x"))
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width="stretch")
 st.caption("Tamanho do nó = CVaR (ajustado ao regime de juros). Distância d = √(2(1−r)): "
            "setores que caem juntos ficam próximos. Passa o rato sobre as ligações para ver r.")
 
@@ -152,7 +152,7 @@ tabela = pd.DataFrame({
 })
 with st.expander("📋 Tabela de risco setorial", expanded=False):
     st.dataframe(tabela.sort_values("CVaR ajustado", key=lambda s: s.str.rstrip("%").astype(float),
-                                    ascending=False), hide_index=True, use_container_width=True)
+                                    ascending=False), hide_index=True, width="stretch")
     st.caption("Beta juros: variação diária média do setor (%) por +1 p.p. no Treasury 10Y. "
                f"Setores de crescimento penalizados: {', '.join(GROWTH_SECTORS)}.")
 
@@ -177,7 +177,7 @@ try:
     })
     col_t, col_h = st.columns([3, 2])
     with col_t:
-        st.dataframe(drill, hide_index=True, use_container_width=True)
+        st.dataframe(drill, hide_index=True, width="stretch")
         st.caption(f"CVaR {alpha:.0%} do ETF {sel} no mesmo período: {pai:.2%}.")
     with col_h:
         cm = r_ac[acoes].corr()
@@ -185,14 +185,14 @@ try:
                        aspect="auto")
         hm.update_layout(height=320, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor=BG,
                          font=dict(color="#e5e7eb"), title=dict(text="Correlação entre ações", x=0))
-        st.plotly_chart(hm, use_container_width=True)
+        st.plotly_chart(hm, width="stretch")
 except Exception as e:  # noqa: BLE001
     st.error(f"Erro ao processar as ações de {sel}: {e}")
 
 # ============================================================================ backtesting do VaR
 st.markdown("---")
-st.subheader("🧪 Backtesting do VaR")
-METODOS = {"historico": "Histórico", "garch": "GJR-GARCH(1,1)-t"}
+st.subheader("🧪 Backtesting do VaR e do ES")
+METODOS = {"historico": "Histórico", "garch": "GJR-GARCH(1,1)-t", "fhs": "GARCH-FHS"}
 SEMAFORO = {"verde": "🟢 verde", "amarelo": "🟡 amarelo", "vermelho": "🔴 vermelho"}
 bt_csv, bt_ser = FEATURES / "var_backtest.csv", FEATURES / "var_backtest_series.parquet"
 
@@ -213,26 +213,31 @@ else:
     bt_lv = b3.radio("Nível do VaR", list(BT_LEVELS), format_func=lambda v: f"{v:.1%}".replace(".", ","),
                      horizontal=True)
     rotulo = f"VaR {bt_lv:.1%} · 1 dia · {CVAR_YEARS} anos".replace(".", ",")
+    rotulo_es = f"ES {bt_lv:.1%} · 1 dia · {CVAR_YEARS} anos".replace(".", ",")
 
     s = bt_s[bt_s["setor"] == bt_sel].set_index("data")
-    var_col = f"var_{bt_met}_{bt_lv}"
+    var_col, es_col = f"var_{bt_met}_{bt_lv}", f"es_{bt_met}_{bt_lv}"
     exc = -s["ret"] > s[var_col]
     linha = bt_res[(bt_res["setor"] == bt_sel) & (bt_res["metodo"] == bt_met) & (bt_res["nivel"] == bt_lv)].iloc[0]
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Exceções", f"{int(linha['excecoes'])}", f"esperadas {linha['esperadas']:.0f}", delta_color="off")
     m2.metric("Taxa observada", f"{linha['taxa_obs']:.2%}", f"esperada {linha['taxa_esp']:.1%}",
               delta_color="off")
     m3.metric("Kupiec (p-valor)", f"{linha['p_kupiec']:.3f}",
               "rejeita" if linha["p_kupiec"] < BT_SIGNIF else "não rejeita", delta_color="off")
-    m4.metric(f"Semáforo ({BT_TL_DAYS} dias)", SEMAFORO[linha["semaforo"]],
-              f"{int(linha[f'excecoes_{BT_TL_DAYS}'])} exceções", delta_color="off")
+    m4.metric("ES: Z2 (p-valor)", f"{linha['z2']:+.2f}", f"p = {linha['p_z2']:.3f}"
+              + (" · rejeita" if linha["p_z2"] < BT_SIGNIF else ""), delta_color="off")
+    m5.metric(f"Semáforo ({BT_TL_DAYS} dias)", SEMAFORO[linha["semaforo"]],
+              f"{int(linha[f'excecoes_{BT_TL_DAYS}'])} exceções · FRTB {linha['frtb_mesa']}", delta_color="off")
 
     fig_bt = go.Figure()
     fig_bt.add_trace(go.Scatter(x=s.index, y=s["ret"], mode="lines", name="Retorno diário",
                                 line=dict(width=1, color="#64748b")))
     fig_bt.add_trace(go.Scatter(x=s.index, y=-s[var_col], mode="lines", name=f"−{rotulo}",
                                 line=dict(width=1.5, color="#f97316")))
+    fig_bt.add_trace(go.Scatter(x=s.index, y=-s[es_col], mode="lines", name=f"−{rotulo_es}",
+                                line=dict(width=1, color="#a855f7", dash="dot")))
     fig_bt.add_trace(go.Scatter(x=s.index[exc], y=s["ret"][exc], mode="markers", name="Exceção",
                                 marker=dict(size=6, color="#ef4444", symbol="x")))
     fig_bt.update_layout(height=420, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor=BG, plot_bgcolor=BG,
@@ -240,21 +245,23 @@ else:
                          legend=dict(orientation="h", y=1.02, yanchor="bottom"),
                          yaxis=dict(tickformat=".0%", gridcolor="#1f2937"),
                          xaxis=dict(gridcolor="#1f2937", rangeslider=dict(visible=True, thickness=0.06)))
-    st.plotly_chart(fig_bt, use_container_width=True)
+    st.plotly_chart(fig_bt, width="stretch")
     st.caption(f"{METODOS[bt_met]} · {rotulo}. O VaR de cada dia é previsto só com dados até à véspera "
                f"(janela móvel de {BT_WINDOW} dias úteis; GARCH re-estimado mensalmente). "
-               "Exceção = perda real maior do que o VaR previsto.")
+               "Exceção = perda real maior do que o VaR previsto. O ES é a perda média prevista "
+               "para os dias de exceção.")
 
     tab_bt = bt_res.assign(
         Método=bt_res["metodo"].map(METODOS),
         Nível=bt_res["nivel"].map(lambda v: f"{v:.1%}".replace(".", ",")),
         Taxa=bt_res["taxa_obs"].map("{:.2%}".format) + " vs " + bt_res["taxa_esp"].map("{:.1%}".format),
         Semáforo=bt_res["semaforo"].map(SEMAFORO),
-    ).rename(columns={"setor": "Setor", "dias": "Dias", "excecoes": "Exceções",
+        FRTB=bt_res["frtb_mesa"].map({"aprovada": "✅ aprovada", "reprovada": "❌ reprovada"}),
+    ).rename(columns={"z2": "Z2 (ES)", "p_z2": "p Z2", "setor": "Setor", "dias": "Dias", "excecoes": "Exceções",
                       "p_kupiec": "p Kupiec", "p_christoffersen": "p Christoffersen",
                       "p_cc": "p condicional", f"excecoes_{BT_TL_DAYS}": f"Exceções {BT_TL_DAYS}d"})
     cols_bt = ["Setor", "Método", "Nível", "Dias", "Exceções", "Taxa", "p Kupiec", "p Christoffersen",
-               "p condicional", f"Exceções {BT_TL_DAYS}d", "Semáforo"]
+               "p condicional", "Z2 (ES)", "p Z2", f"Exceções {BT_TL_DAYS}d", "Semáforo", "FRTB"]
     so_setor = st.toggle("Mostrar só o setor selecionado", value=False)
     tab_bt = tab_bt[tab_bt["Setor"] == bt_sel] if so_setor else tab_bt
 
@@ -262,13 +269,16 @@ else:
         return "color: #ef4444; font-weight: 600" if v < BT_SIGNIF else ""
 
     st.dataframe(tab_bt[cols_bt].style
-                 .format({"p Kupiec": "{:.3f}", "p Christoffersen": "{:.3f}", "p condicional": "{:.3f}"})
-                 .map(_rejeita, subset=["p Kupiec", "p Christoffersen", "p condicional"]),
-                 hide_index=True, use_container_width=True)
+                 .format({"p Kupiec": "{:.3f}", "p Christoffersen": "{:.3f}", "p condicional": "{:.3f}",
+                          "Z2 (ES)": "{:+.2f}", "p Z2": "{:.3f}"})
+                 .map(_rejeita, subset=["p Kupiec", "p Christoffersen", "p condicional", "p Z2"]),
+                 hide_index=True, width="stretch")
     st.caption(f"A vermelho: p-valor < {BT_SIGNIF:.0%} (rejeita H0). Kupiec testa a taxa de exceções; "
-               "Christoffersen testa se as exceções aparecem em grupos; o condicional testa as duas coisas. "
+               "Christoffersen testa se as exceções aparecem em grupos; o condicional testa as duas coisas; "
+               "Z2 (Acerbi–Székely) testa o ES (negativo = ES subestimado; p-valor por simulação). "
                f"Semáforo de Basileia nos últimos {BT_TL_DAYS} dias (a 99%: verde 0–4, amarelo 5–9, "
-               "vermelho 10+; a 97,5% usa as mesmas probabilidades binomiais). Metodologia: "
+               "vermelho 10+; a 97,5% usa as mesmas probabilidades binomiais). FRTB por mesa: reprovada com mais "
+               "de 12 exceções a 99% ou 30 a 97,5%. Metodologia: "
                "docs/nota-metodologica.md.")
 
 # ============================================================================ Obsidian
