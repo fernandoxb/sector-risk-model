@@ -16,6 +16,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 - Carteira / visão conjunta: retornos simples (agregação linear nos pesos), também para a volatilidade.
 - CVaR padrão: `CVAR_LEVEL = 0.975` (Expected Shortfall do FRTB, Basileia III), janela `CVAR_YEARS = 3`.
 - Pânico (downside beta): `PANIC_Q = 0.20` (20% piores dias do SPY).
+- Modelo oficial de VaR/ES (forward-looking): `OFFICIAL_VAR_METHOD = "fhs"`, escolhido pelo backtest;
+  previsão de amanhã em `data/features/official_risk.csv`. O CVaR histórico continua a ser o do mapa e do cockpit.
 - Rótulos na UI dizem sempre nível e janela (ex.: "CVaR 97,5% · 1 dia · 3 anos").
 
 ## Pipeline e estrutura

@@ -249,3 +249,35 @@ def test_tabela_tem_todas_as_combinacoes(rets):
     tab = bt.backtest_table(fc, aux, pools, rets, (0.99, 0.975), window=WINDOW, n_sim=200)
     assert len(tab) == 6 and set(tab["semaforo"]) <= {"verde", "amarelo", "vermelho"}
     assert (tab["dias"] == len(fc)).all() and tab["p_z2"].between(0, 1).all()
+
+
+# ----------------------------------------------------------------------------- previsão oficial de amanhã
+def test_previsao_de_amanha_igual_ao_backtest(rets):
+    """A previsão para o próximo dia útil, feita com dados até t-1, coincide com o que o backtest
+    produz para o dia t (sem look-ahead): mesmo código, mesma informação."""
+    completo, _, _ = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
+    pos = bt.refit_positions(rets.index, WINDOW, "M")
+    for k in [pos[2], pos[2] + 7, len(rets) - 1]:          # dia de re-estimação, meio do mês, último dia
+        prev = bt.next_day_forecast(rets.iloc[:k], "fhs", (0.99, 0.975), WINDOW, "M")
+        dia = rets.index[k]
+        assert prev["data_previsao"] == str(dia.date())
+        assert prev["dados_ate"] == str(rets.index[k - 1].date())
+        assert prev["var99"] == pytest.approx(completo.loc[dia, "var_fhs_0.99"], rel=1e-12)
+        assert prev["var975"] == pytest.approx(completo.loc[dia, "var_fhs_0.975"], rel=1e-12)
+        assert prev["es975"] == pytest.approx(completo.loc[dia, "es_fhs_0.975"], rel=1e-12)
+
+
+def test_marcador_de_amanha_nao_altera_o_backtest(rets):
+    """O dia extra (retorno 0) não muda nenhuma previsão anterior."""
+    a, aux_a, _ = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
+    b, aux_b, _ = bt.sector_forecasts(bt.extend_next_day(rets), (0.99, 0.975), WINDOW, "M")
+    assert b.index[-1] == rets.index[-1] + pd.offsets.BDay(1)
+    pd.testing.assert_frame_equal(a, b.iloc[:-1], check_freq=False)   # só o atributo freq do índice difere
+    pd.testing.assert_frame_equal(aux_a, aux_b.iloc[:-1], check_freq=False)
+
+
+def test_previsao_usa_o_metodo_oficial(rets):
+    from config.settings import OFFICIAL_VAR_METHOD
+    prev = bt.next_day_forecast(rets, levels=(0.99, 0.975), window=WINDOW, refit_freq="M")
+    assert prev["metodo"] == OFFICIAL_VAR_METHOD
+    assert 0 < prev["var975"] < prev["var99"] and prev["es975"] > prev["var975"]

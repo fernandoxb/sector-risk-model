@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.0
+versao: 3.1
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -139,6 +139,20 @@ No FRTB (BCBS d457, §32.5), uma mesa de negociação perde a aprovação do mod
 * **GARCH-t:** reage à volatilidade e passa quase sempre a independência, mas tem exceções a mais (1,4–1,7% a 99%) e o Z2 rejeita o ES em todos os setores. A t simétrica com o ν estimado tem a cauda esquerda demasiado leve.
 * **GARCH-FHS:** junta o melhor dos dois. A volatilidade do GARCH resolve o agrupamento das exceções e a cauda empírica corrige a cobertura. O Kupiec e o Z2 só a rejeitam no XLE, o setor com a cauda mais instável (choques do petróleo). O teste condicional rejeita-a no XLE e, a 99%, também no XLI e no XLB (p = 0,048 e 0,039), por exceções agrupadas.
 * Nenhum setor reprova o backtest por mesa do FRTB nos últimos 250 dias, com qualquer dos métodos.
+
+### K. Modelo oficial e previsão para o próximo dia útil (Sprint 4a)
+O backtest escolhe o modelo oficial: `OFFICIAL_VAR_METHOD = "fhs"`. A 97,5%, o FHS passa o Kupiec em 11/11 setores, o Christoffersen em 10/11 e o Z2 em 10/11. O histórico só passa a independência em 1/11 e o GARCH-t passa o Kupiec em 1/11 e o Z2 em 0/11. A tabela completa está no comentário de `config/settings.py`.
+
+Todos os dias, o pipeline grava em `data/features/official_risk.csv` o **VaR 99%, o VaR 97,5% e o ES 97,5% para o próximo dia útil** (`OFFICIAL_MEASURES`), com todos os dados disponíveis até hoje.
+
+**Sem lógica duplicada:** a série de cada setor ganha um dia extra no fim, o dia útil seguinte (seg–sex, sem calendário de feriados), com retorno 0. Corre-se o mesmo `sector_forecasts` do backtest: a última linha é a previsão de amanhã e as restantes são o backtest. O valor 0 é só um marcador, porque a previsão de um dia usa apenas dados até à véspera. Se esse dia for o primeiro de um mês, o GARCH é re-estimado com os dados até hoje, como no backtest.
+
+**Validação:**
+* a previsão feita com dados até $t-1$ coincide com a linha $t$ do backtest completo (erro relativo $< 10^{-12}$), num dia de re-estimação, a meio do mês e no último dia;
+* acrescentar o marcador não muda nenhuma linha anterior;
+* no pipeline real, `var_backtest.csv` sai idêntico, byte a byte, ao de antes da alteração.
+
+**Leitura (previsão para 2026-11-10):** o ES 97,5% oficial do XLK é 9,5%, o dobro do CVaR histórico de 3 anos (4,65%). O FHS escala a cauda pela volatilidade atual do GARCH, e o XLK acabou de ter dias de −8% e +3,7%. Nos setores calmos (XLU, XLC, XLRE), o ES oficial fica próximo ou abaixo do histórico. Este é o objetivo de um modelo condicional: o histórico pesa da mesma forma os 3 anos, enquanto o FHS reage ao regime de hoje.
 
 ---
 

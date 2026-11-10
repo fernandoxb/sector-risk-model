@@ -13,7 +13,8 @@ Funções puras (sem Streamlit, sem I/O) — o `main()` no fim é o único ponto
   z2 / z2_pvalue       teste Z2 do ES de Acerbi–Székely (2014), p-valor por simulação sob H0
   simulate_losses      perdas simuladas sob H0 (a distribuição prevista de cada dia)
   backtest_table       tabela de resultados por setor, método e nível
-  run                  previsões + tabela para todos os setores
+  next_day_forecast    VaR/ES do método oficial para o próximo dia útil (mesmo código do backtest)
+  run                  previsões + tabela + previsão oficial de amanhã para todos os setores
 
 Convenções (CLAUDE.md): retornos simples, VaR e ES em perda positiva. O GARCH é estimado
 em retornos logarítmicos (em %); cada cenário x passa a retorno simples por r = e^x - 1.
@@ -36,7 +37,8 @@ from scipy.stats import binom, chi2
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (BT_ES_GRID, BT_ES_NSIM, BT_FRTB_MAX, BT_LEVELS,  # noqa: E402
                              BT_METHODS, BT_REFIT_FREQ, BT_SEED, BT_SIGNIF, BT_TL_DAYS,
-                             BT_TL_GREEN, BT_TL_RED, BT_WINDOW, CLEAN, FEATURES, SECTORS)
+                             BT_TL_GREEN, BT_TL_RED, BT_WINDOW, CLEAN, FEATURES,
+                             OFFICIAL_MEASURES, OFFICIAL_VAR_METHOD, SECTORS)
 from src.models.cockpit import cvar  # noqa: E402
 
 T_DIST = StudentsT()   # t padronizada (variância 1), a mesma do arch_model(dist="t")
@@ -313,17 +315,52 @@ def backtest_table(fc: pd.DataFrame, aux: pd.DataFrame, pools: dict, r: pd.Serie
     return pd.DataFrame(rows)
 
 
-def run(simple: pd.DataFrame, tickers: list[str], seed: int = BT_SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Devolve (tabela de resultados, séries diárias em formato longo) para os `tickers`."""
-    tables, series = [], []
+# ----------------------------------------------------------------------------- previsão oficial
+def extend_next_day(r: pd.Series) -> pd.Series:
+    """Acrescenta o próximo dia útil (seg–sex, sem calendário de feriados) com retorno 0.
+
+    O valor é um marcador: a previsão para esse dia só usa dados até à véspera (sem look-ahead,
+    ver tests/test_backtest.py), por isso nunca entra no cálculo.
+    """
+    r = r.dropna()
+    nxt = r.index[-1] + pd.offsets.BDay(1)
+    return pd.concat([r, pd.Series([0.0], index=pd.DatetimeIndex([nxt]))]).rename(r.name)
+
+
+def official_row(fc: pd.DataFrame, method: str = OFFICIAL_VAR_METHOD,
+                 measures: dict[str, tuple[str, float]] = OFFICIAL_MEASURES) -> dict:
+    """Medidas oficiais (ex.: var99, var975, es975) da última linha de `sector_forecasts`."""
+    row = fc.iloc[-1]
+    return {"data_previsao": str(fc.index[-1].date()), "metodo": method,
+            **{k: float(row[f"{m}_{method}_{lv}"]) for k, (m, lv) in measures.items()}}
+
+
+def next_day_forecast(r: pd.Series, method: str = OFFICIAL_VAR_METHOD, levels: tuple[float, ...] = BT_LEVELS,
+                      window: int = BT_WINDOW, refit_freq: str = BT_REFIT_FREQ) -> dict:
+    """VaR e ES do método oficial para o próximo dia útil, com todos os dados de `r`."""
+    fc, _, _ = sector_forecasts(extend_next_day(r), levels, window, refit_freq)
+    return {"dados_ate": str(r.dropna().index[-1].date())} | official_row(fc, method)
+
+
+def run(simple: pd.DataFrame, tickers: list[str],
+        seed: int = BT_SEED) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Devolve (tabela de resultados, séries diárias em formato longo, previsão oficial de amanhã).
+
+    Cada setor corre `sector_forecasts` uma só vez sobre a série estendida: a última linha é a
+    previsão de amanhã e as restantes são exatamente o backtest (o marcador não as afeta).
+    """
+    tables, series, official = [], [], []
     for k, t in enumerate(tickers):
-        fc, aux, pools = sector_forecasts(simple[t])
-        tables.append(backtest_table(fc, aux, pools, simple[t], seed=seed + k).assign(setor=t))
+        r = simple[t].dropna()
+        fc_ext, aux, pools = sector_forecasts(extend_next_day(r))
+        official.append({"setor": t, "dados_ate": str(r.index[-1].date())} | official_row(fc_ext))
+        fc, aux = fc_ext.iloc[:-1], aux.iloc[:-1]
+        tables.append(backtest_table(fc, aux, pools, r, seed=seed + k).assign(setor=t))
         series.append(fc.assign(setor=t))
     res = pd.concat(tables, ignore_index=True)
     res = res[["setor", *[c for c in res.columns if c != "setor"]]]
     ser = pd.concat(series).rename_axis("data").reset_index()
-    return res, ser
+    return res, ser, pd.DataFrame(official)
 
 
 # ----------------------------------------------------------------------------- I/O
@@ -331,16 +368,20 @@ def main() -> Path:
     prices = pd.read_parquet(CLEAN / "prices.parquet")
     simple = prices.pct_change()
     t0 = time.time()
-    res, ser = run(simple, list(SECTORS))
+    res, ser, official = run(simple, list(SECTORS))
     FEATURES.mkdir(parents=True, exist_ok=True)
     out = FEATURES / "var_backtest.csv"
     res.to_csv(out, index=False, float_format="%.6f")
     ser.to_parquet(FEATURES / "var_backtest_series.parquet", index=False)
+    official.to_csv(FEATURES / "official_risk.csv", index=False, float_format="%.6f")
     print(f"[backtest] {len(res)} linhas em {time.time() - t0:.0f}s → {out.name} "
           f"(janela {BT_WINDOW} dias, GARCH re-estimado por período '{BT_REFIT_FREQ}', α = {BT_SIGNIF})")
     cols = ["setor", "metodo", "nivel", "excecoes", "esperadas", "p_kupiec", "p_christoffersen",
             "p_cc", "z2", "p_z2", f"excecoes_{BT_TL_DAYS}", "semaforo", "frtb_mesa"]
     print(res[cols].round(3).to_string(index=False))
+    print(f"[backtest] previsão oficial ({OFFICIAL_VAR_METHOD}) para {official['data_previsao'].iloc[0]} "
+          f"→ official_risk.csv")
+    print(official.round(4).to_string(index=False))
     return out
 
 

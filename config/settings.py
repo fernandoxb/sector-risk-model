@@ -39,6 +39,17 @@ BT_SEED = 42                         # semente das simulações (resultados repr
 # FRTB, backtest por mesa: reprovada se, nos últimos 250 dias, houver mais exceções do que isto
 BT_FRTB_MAX = {0.99: 12, 0.975: 30}
 
+# --- Modelo oficial de VaR/ES (previsão para o próximo dia útil) -------------
+# Escolhido pelo backtest de 2008–2026 (data/features/var_backtest.csv, p >= 5%, setores que passam em 11):
+#              97,5%: Kupiec  Christoffersen  condicional  Z2  |  99%: Kupiec  Christoffersen  condicional  Z2
+#   fhs                 11         10             10       10  |         10         8              8       10
+#   garch (t)            1         10              2        0  |          1        11              1        0
+#   historico            7          1              1        3  |          5         1              1        2
+# O FHS é o único que passa a cobertura, a independência e o teste do ES ao mesmo tempo.
+OFFICIAL_VAR_METHOD = "fhs"
+# Colunas de data/features/official_risk.csv: nome → (medida, nível)
+OFFICIAL_MEASURES = {"var99": ("var", 0.99), "var975": ("var", 0.975), "es975": ("es", 0.975)}
+
 # --- Visão conjunta (src/models/portfolio.py) --------------------------------
 # Carteira de referência: None = pesos iguais nos 11 setores; ou um dict {ticker: peso} que soma 1.
 PORTFOLIO_WEIGHTS: dict[str, float] | None = None
