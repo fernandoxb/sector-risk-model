@@ -1,0 +1,12 @@
+# Dependências mínimas para correr os testes (CI). Versões iguais às do .venv local.
+numpy==2.4.6
+pandas==3.1.1
+scipy==1.17.1
+arch==8.0.0
+statsmodels==0.15.0
+scikit-learn==1.9.1
+networkx==3.6.1
+yfinance==1.8.0
+pyarrow==26.0.1
+certifi==2026.10.23
+pytest==9.2.0
