@@ -38,6 +38,20 @@ BT_ES_NSIM = 1000                    # simulações sob H0 para o p-valor do tes
 BT_SEED = 42                         # semente das simulações (resultados reprodutíveis)
 # FRTB, backtest por mesa: reprovada se, nos últimos 250 dias, houver mais exceções do que isto
 BT_FRTB_MAX = {0.99: 12, 0.975: 30}
+
+# --- Visão conjunta (src/models/portfolio.py) --------------------------------
+# Carteira de referência: None = pesos iguais nos 11 setores; ou um dict {ticker: peso} que soma 1.
+PORTFOLIO_WEIGHTS: dict[str, float] | None = None
+# Ledoit-Wolf vs covariância amostral: janelas de estimação (dias úteis) e re-balanceamento
+# da carteira de variância mínima no teste fora da amostra.
+LW_WINDOWS = (WIN_SHORT, WIN_VAR)
+LW_REBAL_FREQ = "M"
+# Stress tests históricos: pico → vale do S&P 500 (SPY ajustado), datas inclusivas.
+STRESS_SCENARIOS = {
+    "2008 · Crise financeira": ("2007-10-09", "2009-03-09"),
+    "2020 · COVID-19": ("2020-02-19", "2020-03-23"),
+    "2022 · Subida de juros": ("2022-01-03", "2022-10-12"),
+}
 BT_REFIT_FREQ = "M"                  # re-estimar o GARCH no 1.º dia útil de cada mês (período pandas)
 BT_SIGNIF = 0.05                     # nível de significância dos testes de Kupiec e Christoffersen
 # Semáforo de Basileia: exceções nos últimos 250 dias. As zonas vêm da binomial acumulada

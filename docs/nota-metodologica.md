@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 2.3
+versao: 3.0
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -139,3 +139,50 @@ No FRTB (BCBS d457, §32.5), uma mesa de negociação perde a aprovação do mod
 * **GARCH-t:** reage à volatilidade e passa quase sempre a independência, mas tem exceções a mais (1,4–1,7% a 99%) e o Z2 rejeita o ES em todos os setores. A t simétrica com o ν estimado tem a cauda esquerda demasiado leve.
 * **GARCH-FHS:** junta o melhor dos dois. A volatilidade do GARCH resolve o agrupamento das exceções e a cauda empírica corrige a cobertura. O Kupiec e o Z2 só a rejeitam no XLE, o setor com a cauda mais instável (choques do petróleo). O teste condicional rejeita-a no XLE e, a 99%, também no XLI e no XLB (p = 0,048 e 0,039), por exceções agrupadas.
 * Nenhum setor reprova o backtest por mesa do FRTB nos últimos 250 dias, com qualquer dos métodos.
+
+---
+
+## 🧩 7. Visão conjunta da carteira (Sprint 3)
+
+Código: `src/models/portfolio.py` · parâmetros: `config/settings.py` (`PORTFOLIO_WEIGHTS`, `LW_*`, `STRESS_SCENARIOS`) · testes: `tests/test_portfolio.py`.
+Saídas: `data/features/risk_contribution.csv`, `stress_tests.csv` e `covariance_shrinkage.csv`.
+
+**Carteira de referência:** pesos iguais nos 11 setores ($w_i = 1/11$), salvo indicação em contrário em `PORTFOLIO_WEIGHTS`. A carteira agrega-se em **retornos simples**, porque só aí $r_p = \sum_i w_i r_i$ é exato. Por isso, nesta secção, também a volatilidade usa retornos simples, o que é uma exceção à convenção dos setores individuais. A janela é a do resto do projeto: `CVAR_YEARS` = 3 anos.
+
+### A. Covariância de Ledoit-Wolf (2004)
+Encolhe a covariância amostral $S$ (de máxima verosimilhança, dividida por $T$) para a identidade escalada:
+$$\hat\Sigma = \delta\, m\, I + (1 - \delta)\, S, \qquad m = \tfrac{1}{N}\operatorname{tr}(S)$$
+Com a norma $\lVert A \rVert^2 = \operatorname{tr}(AA^\top)/N$ e os retornos centrados $x_t$:
+$$d^2 = \lVert S - mI \rVert^2,\quad \bar b^2 = \frac{1}{T^2}\sum_t \lVert x_t x_t^\top - S \rVert^2,\quad b^2 = \min(\bar b^2, d^2),\quad \delta = b^2/d^2$$
+Para calcular $\bar b^2$ usa-se $\sum_t \lVert x_t x_t^\top - S\rVert_F^2 = \sum_t (x_t^\top x_t)^2 - T\lVert S\rVert_F^2$.
+
+**Avaliação fora da amostra:** a carteira de variância mínima sem restrições, $w = \Sigma^{-1}\mathbf 1 / \mathbf 1^\top \Sigma^{-1}\mathbf 1$, é re-estimada no 1.º dia útil de cada mês só com os $W$ dias anteriores, uma vez com $S$ e outra com $\hat\Sigma$. Compara-se a volatilidade realizada no mês seguinte. A amostra comum aos 11 setores começa em 2018-06, com a entrada do XLC.
+
+### B. Contribuição para o risco (decomposição de Euler)
+Uma medida homogénea de grau 1 nos pesos decompõe-se em $\rho(w) = \sum_i w_i\, \partial\rho/\partial w_i$:
+* **Volatilidade** (com $\hat\Sigma$ de Ledoit-Wolf): $RC_i = w_i\,(\hat\Sigma w)_i / \sigma_p$, com $\sigma_p = \sqrt{w^\top \hat\Sigma w}$.
+* **CVaR histórico:** sendo $\mathcal T$ o conjunto dos dias em que $r_p \le Q_{1-\alpha}(r_p)$, ou seja, os mesmos dias que `cockpit.cvar` usa, $RC_i = -w_i\, \overline{r_{i}}\big|_{\mathcal T}$. Como $\overline{r_p}|_{\mathcal T} = \sum_i w_i \overline{r_i}|_{\mathcal T}$, a soma das contribuições é exatamente o CVaR da carteira.
+* **Rácio de diversificação:** $\sum_i w_i \rho_i / \rho_p$, a soma dos riscos isolados a dividir pelo risco da carteira. Um rácio de 1 quer dizer que não há diversificação.
+
+### C. Stress tests históricos
+Três episódios, cada um do pico ao vale do SPY ajustado: **2008** (2007-10-09 → 2009-03-09), **COVID-19** (2020-02-19 → 2020-03-23) e **subida de juros** (2022-01-03 → 2022-10-12). Para cada setor, para a carteira e para o SPY calcula-se:
+* a perda acumulada $1 - \prod_t (1 + r_t)$;
+* o pior dia;
+* o drawdown máximo dentro do episódio.
+
+A carteira é **buy-and-hold** com os pesos no início do episódio, pelo que a perda $L_p = \sum_i w_i L_i$ é aditiva e a contribuição de cada setor é $w_i L_i$. O pior dia da carteira é também comparado com o CVaR atual, em múltiplos.
+
+**Proxy para setores sem história no episódio** (XLRE e XLC em 2008): $r_{i,t} = \beta_i\, r_{SPY,t}$, com o β atual de `sector_metrics.csv` (3 anos). O proxy só capta a parte sistemática e ignora o risco específico, por isso é assinalado com `proxy` e com * no cockpit.
+
+### D. Validação
+* A Ledoit-Wolf, tanto $\delta$ como $\hat\Sigma$, é comparada com `sklearn.covariance.LedoitWolf` (erro relativo < $10^{-10}$), com $T$ = 30, 63 e 400.
+* A variância mínima é comparada com a solução fechada para $\Sigma$ diagonal ($w_i \propto 1/\sigma_i^2$) e com perturbações aleatórias que mantêm $\sum w = 1$, nenhuma das quais pode baixar a variância.
+* As contribuições de Euler somam a volatilidade e o CVaR da carteira, e a de volatilidade é comparada com a derivada numérica (diferenças finitas centradas).
+* O stress test é comparado com um exemplo de 2 ativos calculado à mão, com proxy, buy-and-hold e pior dia da carteira.
+* **Sem look-ahead** no teste fora da amostra: alterar os retornos a partir de $t$ não muda nada antes de $t$.
+
+### E. Leitura dos resultados (dados até 2026-11-09)
+* **Diversificação:** com pesos iguais, a volatilidade é 12,1% e o CVaR 97,5% é 2,21% a 1 dia. O rácio é 1,49× na volatilidade e só 1,39× no CVaR: nos piores dias os setores caem juntos e a diversificação encolhe.
+* **Quem pesa na cauda:** o XLK, o XLY e o XLE contribuem para o CVaR mais do que o seu peso de 9,1% (12,9%, 12,4% e 11,0%). O XLP, o XLU e o XLV contribuem bastante menos (4,7–6,8%). O XLE pesa mais no CVaR (11,0%) do que na volatilidade (7,6%), porque as suas quedas coincidem com os piores dias da carteira.
+* **Stress:** em 2008 a carteira perde 49,5% (SPY: 55,2%) e o maior contribuinte é o XLF. Na COVID perde **mais** do que o SPY (36,0% vs 33,7%), porque os pesos iguais dão à energia mais peso do que o índice. Em 2022 perde menos (17,2% vs 24,5%), porque o XLE subiu 44,5%. O pior dia da COVID equivale a 5,4× o CVaR atual, o que mostra que o CVaR de 3 anos não é um cenário de stress.
+* **Ledoit-Wolf:** com $T/N$ = 69 (3 anos) o encolhimento é pequeno ($\delta$ ≈ 0,04) e reduz a volatilidade fora da amostra em 2,2%. Com 63 dias ($T/N$ ≈ 6), $\delta$ ≈ 0,27 e o número de condição desce de 33 para 9, mas o ganho fora da amostra é marginal (0,2%). Com apenas 11 ativos a covariância amostral já está bem condicionada, e o benefício da Ledoit-Wolf vai crescer quando se descer ao nível das ações.

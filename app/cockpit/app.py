@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW,  # noqa: E402
                              CVAR_LEVEL, CVAR_YEARS, FEATURES, GROWTH_SECTORS, MARKET,
-                             OBSIDIAN_FOLDER, OBSIDIAN_VAULT, PANIC_Q, RATE_LOOKBACK,
+                             OBSIDIAN_FOLDER, OBSIDIAN_VAULT, PANIC_Q, PORTFOLIO_WEIGHTS, RATE_LOOKBACK,
                              RATE_SERIES, SECTOR_PROFILE, SECTORS)
 from src.models import cockpit as ck  # noqa: E402
 
@@ -280,6 +280,98 @@ else:
                "vermelho 10+; a 97,5% usa as mesmas probabilidades binomiais). FRTB por mesa: reprovada com mais "
                "de 12 exceções a 99% ou 30 a 97,5%. Metodologia: "
                "docs/nota-metodologica.md.")
+
+# ============================================================================ visão conjunta
+st.markdown("---")
+st.subheader("🧩 Visão conjunta: carteira dos 11 setores")
+rc_csv, stt_csv, lw_csv = (FEATURES / "risk_contribution.csv", FEATURES / "stress_tests.csv",
+                           FEATURES / "covariance_shrinkage.csv")
+
+
+@st.cache_data(show_spinner=False)
+def conjunta_dados(mtime: float) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    return pd.read_csv(rc_csv, index_col=0), pd.read_csv(stt_csv), pd.read_csv(lw_csv)
+
+
+if not all(f.exists() for f in (rc_csv, stt_csv, lw_csv)):
+    st.info("Ainda não há resultados da visão conjunta. Corre `python run_pipeline.py --offline`.")
+else:
+    rc, stt, lw = conjunta_dados(rc_csv.stat().st_mtime)
+    cart, rc_s = rc.loc["Carteira"], rc.drop(index="Carteira")
+    rot_cvar = f"CVaR {CVAR_LEVEL:.1%} · 1 dia · {CVAR_YEARS} anos".replace(".", ",")
+    pesos_txt = "pesos iguais" if PORTFOLIO_WEIGHTS is None else "pesos de PORTFOLIO_WEIGHTS"
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric(f"Volatilidade · {CVAR_YEARS} anos", f"{cart['contrib_vol']:.2%}",
+              f"diversificação {(rc_s['peso'] * rc_s['vol_individual']).sum() / cart['contrib_vol']:.2f}×",
+              delta_color="off")
+    k2.metric(rot_cvar, f"{cart['contrib_cvar']:.2%}",
+              f"diversificação {(rc_s['peso'] * rc_s['cvar_individual']).sum() / cart['contrib_cvar']:.2f}×",
+              delta_color="off")
+    top_rc = rc_s["pct_cvar"].idxmax()
+    k3.metric("Maior contribuição para o CVaR", top_rc, f"{rc_s.loc[top_rc, 'pct_cvar']:.1%} do total",
+              delta_color="off")
+    pior = stt[stt["serie"] == "Carteira"].sort_values("perda").iloc[-1]
+    k4.metric("Pior stress histórico", f"−{pior['perda']:.1%}", pior["cenario"], delta_color="off")
+
+    col_rc, col_st = st.columns(2)
+    with col_rc:
+        fig_rc = go.Figure()
+        fig_rc.add_trace(go.Bar(x=rc_s.index, y=rc_s["pct_vol"], name="% da volatilidade",
+                                marker_color="#64748b"))
+        fig_rc.add_trace(go.Bar(x=rc_s.index, y=rc_s["pct_cvar"], name=f"% do {rot_cvar}",
+                                marker_color="#f97316"))
+        fig_rc.add_trace(go.Scatter(x=rc_s.index, y=rc_s["peso"], mode="lines", name="Peso",
+                                    line=dict(color="#e5e7eb", dash="dot", width=1)))
+        fig_rc.update_layout(barmode="group", height=380, margin=dict(l=0, r=0, t=30, b=0),
+                             paper_bgcolor=BG, plot_bgcolor=BG, font=dict(color="#e5e7eb"),
+                             title=dict(text="Contribuição para o risco (Euler)", x=0),
+                             legend=dict(orientation="h", y=-0.12), yaxis=dict(tickformat=".0%", gridcolor="#1f2937"))
+        st.plotly_chart(fig_rc, width="stretch")
+    with col_st:
+        ordem = setores + ["Carteira", MARKET]
+        piv = stt.pivot(index="serie", columns="cenario", values="perda").reindex(ordem)
+        prx = stt.pivot(index="serie", columns="cenario", values="proxy").reindex(ordem).fillna(False)
+        txt = piv.map(lambda v: f"{-v:.0%}") + prx.map(lambda p: "*" if p else "")
+        hm_st = px.imshow(-piv, color_continuous_scale="RdYlGn", color_continuous_midpoint=0, aspect="auto",
+                          labels=dict(color="Retorno"))
+        hm_st.update_traces(text=txt.values, texttemplate="%{text}")
+        hm_st.update_layout(height=380, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor=BG,
+                            font=dict(color="#e5e7eb"), coloraxis_showscale=False,
+                            title=dict(text="Stress tests históricos (pico → vale do SPY)", x=0))
+        st.plotly_chart(hm_st, width="stretch")
+    st.caption(f"Carteira de referência com {pesos_txt}, re-balanceada só no início de cada episódio "
+               f"(buy-and-hold). Contribuições de Euler: somam a volatilidade (covariância Ledoit-Wolf) e o "
+               f"{rot_cvar} da carteira. * = setor ainda sem cotação no episódio: proxy β × SPY com o β atual.")
+
+    cart_st = stt[stt["serie"] == "Carteira"].set_index("cenario")
+    contrib = stt[~stt["serie"].isin(["Carteira", MARKET])]
+    maior = contrib.loc[contrib.groupby("cenario")["contrib"].idxmax()].set_index("cenario")
+    spy_st = stt[stt["serie"] == MARKET].set_index("cenario")
+    st.dataframe(pd.DataFrame({
+        "Período": cart_st["inicio"] + " → " + cart_st["fim"],
+        "Perda da carteira": cart_st["perda"].map("{:.1%}".format),
+        f"Perda do {MARKET}": spy_st["perda"].map("{:.1%}".format),
+        "Drawdown máximo": cart_st["max_dd"].map("{:.1%}".format),
+        "Pior dia": cart_st["pior_dia"].map("{:.2%}".format),
+        "Pior dia / CVaR atual": cart_st["pior_dia_em_cvar"].map("{:.1f}×".format),
+        "Maior contribuinte": maior["serie"] + " (" + maior["contrib"].map("{:.1%}".format) + ")",
+    }).rename_axis("Cenário").reset_index(), hide_index=True, width="stretch")
+
+    with st.expander("📐 Covariância: Ledoit-Wolf vs amostral"):
+        st.dataframe(pd.DataFrame({
+            "Janela (dias)": lw["janela"],
+            "T / N": lw["t_sobre_n"].map("{:.1f}".format),
+            "Encolhimento δ": lw["delta"].map("{:.3f}".format),
+            "Nº condição amostral": lw["cond_amostral"].map("{:.1f}".format),
+            "Nº condição Ledoit-Wolf": lw["cond_ledoit_wolf"].map("{:.1f}".format),
+            "Vol. fora da amostra (amostral)": lw["vol_oos_amostral"].map("{:.2%}".format),
+            "Vol. fora da amostra (LW)": lw["vol_oos_ledoit_wolf"].map("{:.2%}".format),
+            "Redução": lw["reducao_vol"].map("{:.1%}".format),
+            "Desde": lw["oos_inicio"],
+        }), hide_index=True, width="stretch")
+        st.caption("Carteira de variância mínima sem restrições, re-estimada mensalmente só com dados passados. "
+                   "Quanto menor T/N, mais o encolhimento ajuda.")
 
 # ============================================================================ Obsidian
 st.markdown("---")

@@ -13,6 +13,7 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 ## Convenções de risco
 - Risco de cauda (VaR, CVaR, beta, downside beta): **retornos simples**, **perdas em número positivo**.
 - Volatilidade e GARCH: retornos logarítmicos.
+- Carteira / visão conjunta: retornos simples (agregação linear nos pesos), também para a volatilidade.
 - CVaR padrão: `CVAR_LEVEL = 0.975` (Expected Shortfall do FRTB, Basileia III), janela `CVAR_YEARS = 3`.
 - Pânico (downside beta): `PANIC_Q = 0.20` (20% piores dias do SPY).
 - Rótulos na UI dizem sempre nível e janela (ex.: "CVaR 97,5% · 1 dia · 3 anos").
@@ -21,7 +22,7 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 - `python run_pipeline.py` (ou `--offline` para não descarregar): coleta → validação → métricas → mapa.
   - `src/collect/` Coletor (yfinance, um pedido, `threads=False`) → `data/raw/`
   - `src/clean/` Inspetor (pandera) → `data/clean/` + `quality_report.md`
-  - `src/models/` Modelador (`risk_metrics.py`, `cockpit.py`) → `data/features/`
+  - `src/models/` Modelador (`risk_metrics.py`, `cockpit.py`, `backtest.py`, `portfolio.py`) → `data/features/`
   - `src/report/` Repórter → embebe `data/features/risk_map_data.json` no mapa (`/*DATA*/…/*END*/`)
 - `app/risk-map/index.html` — mapa interativo (HTML autónomo, sem dependências externas de dados).
 - `app/cockpit/app.py` — Streamlit: `.venv/bin/streamlit run app/cockpit/app.py`.
@@ -41,7 +42,7 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 
 ## Roteiro
 1. ✅ Sprint 1 — pipeline, mapa de riscos com dados reais, cockpit.
-2. Sprint 2 — backtesting do VaR (Kupiec, Christoffersen), comparar VaR histórico vs GARCH-t.
-3. Sprint 3 — visão conjunta: Ledoit-Wolf, contribuição para o risco, stress tests (2008, 2020, 2022).
+2. ✅ Sprint 2 — backtesting do VaR (Kupiec, Christoffersen) e do ES (Z2), histórico vs GARCH-t vs FHS.
+3. ✅ Sprint 3 — visão conjunta: Ledoit-Wolf, contribuição para o risco, stress tests (2008, 2020, 2022).
 4. Sprint 4 — bots com Prefect (agendamento) + relatório semanal no Obsidian.
 5. Sprint 5 — montra: README com resultados e capturas, nota metodológica em PDF.
