@@ -50,6 +50,19 @@ OFFICIAL_VAR_METHOD = "fhs"
 # Colunas de data/features/official_risk.csv: nome → (medida, nível)
 OFFICIAL_MEASURES = {"var99": ("var", 0.99), "var975": ("var", 0.975), "es975": ("es", 0.975)}
 
+# --- Scorecard de risco por setor, 0–100 (src/models/scorecard.py) ----------
+# Cada componente vai para [0, 1] pelo percentil entre os 11 setores (regime já está em [0, 1]).
+# A cauda prevista pesa mais por ser a única medida forward-looking validada pelo backtest.
+SCORE_WEIGHTS = {"cauda": 0.30, "sistemico": 0.20, "stress": 0.20, "regime": 0.15, "momento": 0.15}
+SCORE_IMPACT = ("cauda", "sistemico", "stress")      # → impacto 1–5 no mapa (P × I)
+SCORE_PROBABILITY = ("regime", "momento")            # → probabilidade 1–5 no mapa
+STRESS_PROXY_WEIGHT = 0.5      # cenários com proxy β × SPY pesam metade na perda média de stress
+MOMENTUM_DAYS = 60             # janela de exceções ao VaR 97,5% oficial
+# Risco de modelo: semáforo de Basileia (definido a 99%) do método oficial → multiplicador do score.
+MODEL_RISK_LEVEL = 0.99
+MODEL_RISK_MULT = {"verde": 1.00, "amarelo": 1.10, "vermelho": 1.25}
+SCORE_SENSITIVITY = 0.5        # análise de sensibilidade: cada peso varia ±50% (e re-normaliza)
+
 # --- Visão conjunta (src/models/portfolio.py) --------------------------------
 # Carteira de referência: None = pesos iguais nos 11 setores; ou um dict {ticker: peso} que soma 1.
 PORTFOLIO_WEIGHTS: dict[str, float] | None = None

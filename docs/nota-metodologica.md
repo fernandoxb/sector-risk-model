@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.1
+versao: 3.2
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -200,3 +200,42 @@ A carteira é **buy-and-hold** com os pesos no início do episódio, pelo que a 
 * **Quem pesa na cauda:** o XLK, o XLY e o XLE contribuem para o CVaR mais do que o seu peso de 9,1% (12,9%, 12,4% e 11,0%). O XLP, o XLU e o XLV contribuem bastante menos (4,7–6,8%). O XLE pesa mais no CVaR (11,0%) do que na volatilidade (7,6%), porque as suas quedas coincidem com os piores dias da carteira.
 * **Stress:** em 2008 a carteira perde 49,5% (SPY: 55,2%) e o maior contribuinte é o XLF. Na COVID perde **mais** do que o SPY (36,0% vs 33,7%), porque os pesos iguais dão à energia mais peso do que o índice. Em 2022 perde menos (17,2% vs 24,5%), porque o XLE subiu 44,5%. O pior dia da COVID equivale a 5,4× o CVaR atual, o que mostra que o CVaR de 3 anos não é um cenário de stress.
 * **Ledoit-Wolf:** com $T/N$ = 69 (3 anos) o encolhimento é pequeno ($\delta$ ≈ 0,04) e reduz a volatilidade fora da amostra em 2,2%. Com 63 dias ($T/N$ ≈ 6), $\delta$ ≈ 0,27 e o número de condição desce de 33 para 9, mas o ganho fora da amostra é marginal (0,2%). Com apenas 11 ativos a covariância amostral já está bem condicionada, e o benefício da Ledoit-Wolf vai crescer quando se descer ao nível das ações.
+
+---
+
+## 🎯 8. Scorecard de risco por setor, 0–100 (Sprint 4b)
+
+Código: `src/models/scorecard.py` · parâmetros: `config/settings.py` (`SCORE_*`, `STRESS_PROXY_WEIGHT`, `MOMENTUM_DAYS`, `MODEL_RISK_*`) · testes: `tests/test_scorecard.py`.
+Saídas: `data/features/scorecard.csv`, `scorecard_sensitivity.csv` e a chave `scorecard` em `risk_map_data.json`.
+
+### A. Componentes (maior = mais risco)
+| Componente | Valor em bruto | Fonte | Peso |
+|---|---|---|---|
+| cauda | ES 97,5% oficial (FHS) para o próximo dia útil | `official_risk.csv` | 0,30 |
+| sistemico | % do CVaR da carteira ÷ peso (>1 = contribui mais do que pesa) | `risk_contribution.csv` | 0,20 |
+| stress | perda média nos 3 cenários históricos | `stress_tests.csv` | 0,20 |
+| regime | percentil da vol 63d face à história do próprio setor | `sector_metrics.csv` | 0,15 |
+| momento | exceções ao VaR 97,5% oficial nos últimos 60 dias | `var_backtest_series.parquet` | 0,15 |
+
+**Normalização:** cada componente vai para $[0,1]$ pelo percentil entre os 11 setores, $c = (\text{posição} - 1)/(n-1)$, com empates na posição média. Assim, o setor com o valor mais baixo vale 0 e o mais alto vale 1. O *regime* já é um percentil em $[0,1]$ e não é re-normalizado.
+
+**Stress com proxy:** nos cenários em que o setor usa o proxy β × SPY (XLRE e XLC em 2008), a perda pesa `STRESS_PROXY_WEIGHT` = 0,5:
+$$\text{stress}_i = \frac{\sum_s \omega_s L_{i,s}}{\sum_s \omega_s},\qquad \omega_s = 0{,}5 \text{ se proxy, } 1 \text{ caso contrário}$$
+
+### B. Score, risco de modelo e P × I
+$$\text{score}_i = 100 \sum_k w_k\, c_{i,k},\qquad \sum_k w_k = 1$$
+**Risco de modelo:** o score é multiplicado pelo semáforo de Basileia do método oficial a 99%, o nível em que as zonas estão definidas: verde ×1,00, amarelo ×1,10, vermelho ×1,25. O resultado é o `score_final`, limitado a 100, e a flag `risco_modelo` fica ativa quando o semáforo não é verde. É um ajuste separado: o score mede o risco do setor; o multiplicador mede a confiança que podemos ter na medição.
+
+**Mapa:** o **impacto** é o quintil (1–5, a mesma regra `quintile_score` do Sprint 1) da média ponderada de cauda, sistémico e stress. A **probabilidade** é o quintil da média ponderada de regime e momento, com os pesos de cada grupo re-normalizados.
+
+### C. Validação
+* A normalização é testada nos extremos (o menor dá 0, o maior dá 1), nos empates e com o regime intacto.
+* Os pesos têm de somar 1, e os grupos de impacto e de probabilidade são uma partição dos componentes. O score é também comparado com um cálculo à mão.
+* **Monotonia:** piorar qualquer componente de qualquer setor nunca baixa o score desse setor, nem o impacto ou a probabilidade do grupo afetado. Um semáforo pior também nunca baixa o `score_final`.
+* O proxy pesa metade, verificado à mão. O momento só conta a janela pedida.
+
+### D. Sensibilidade e leitura (2026-11-10)
+* **Topo:** o XLK é o 1.º com folga (score 91). Tem o maior ES previsto (9,5%), a maior contribuição para o CVaR por unidade de peso (1,42×) e a volatilidade no percentil 88%. Continua em 1.º em todas as variações de ±50% em qualquer peso.
+* **Logo abaixo:** XLE, XLY, XLI e XLF ficam num grupo apertado (score final entre 67 e 72). Por isso o 2.º e o 3.º lugares mudam com os pesos: em 5 das 10 variações o top 3 muda de composição.
+* **XLE:** é o único setor com o semáforo amarelo do modelo oficial. Sobe de 4.º para 2.º só por causa do ajuste de risco de modelo.
+* **Limitação do stress:** a *perda média* deixa os ganhos compensar as perdas. O XLE subiu 44,5% em 2022, por isso o seu componente de stress é o mais baixo (0), apesar de ter perdido 48% e 56% nos outros dois cenários. Uma alternativa a considerar é usar só as perdas, ou o pior cenário.
