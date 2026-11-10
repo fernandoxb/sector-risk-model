@@ -63,6 +63,28 @@ MODEL_RISK_LEVEL = 0.99
 MODEL_RISK_MULT = {"verde": 1.00, "amarelo": 1.10, "vermelho": 1.25}
 SCORE_SENSITIVITY = 0.5        # análise de sensibilidade: cada peso varia ±50% (e re-normaliza)
 
+# --- Ligações medidas fator macro → setor (src/models/factor_links.py) ------
+# id do nó no mapa → série, fonte, transformação semanal e direção adversa (+1 = subir é adverso).
+#   transf "diff": variação em p.p. (séries do FRED em %); "logdiff": variação log do nível.
+MACRO_FACTORS = {
+    "juros":    {"serie": "DGS10",        "fonte": "fred",  "transf": "diff",    "adverso": +1,
+                 "nome": "Treasury 10Y"},
+    "inflacao": {"serie": "T10YIE",       "fonte": "fred",  "transf": "diff",    "adverso": +1,
+                 "nome": "Breakeven de inflação 10Y"},
+    "spreads":  {"serie": "BAMLH0A0HYM2", "fonte": "fred",  "transf": "diff",    "adverso": +1,
+                 "nome": "Spread high yield (ICE BofA)"},
+    "vix":      {"serie": "^VIX",         "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
+                 "nome": "VIX"},
+    "petroleo": {"serie": "CL=F",         "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
+                 "nome": "Petróleo WTI (futuro)"},
+    "dolar":    {"serie": "DX-Y.NYB",     "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
+                 "nome": "Índice do dólar (DXY)"},
+}
+FACTOR_START = "2015-01-01"   # histórico descarregado dos fatores (a regressão usa só CVAR_YEARS)
+LINK_FREQ = "W-FRI"           # retornos semanais, sexta a sexta
+LINK_T_MIN = 2.0              # |t| HAC mínimo para aceitar uma ligação
+LINK_HAC_LAGS = None          # None = regra de Newey–West: floor(4 · (T/100)^(2/9))
+
 # --- Visão conjunta (src/models/portfolio.py) --------------------------------
 # Carteira de referência: None = pesos iguais nos 11 setores; ou um dict {ticker: peso} que soma 1.
 PORTFOLIO_WEIGHTS: dict[str, float] | None = None

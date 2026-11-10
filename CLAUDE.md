@@ -22,9 +22,10 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 
 ## Pipeline e estrutura
 - `python run_pipeline.py` (ou `--offline` para não descarregar): coleta → validação → métricas → mapa.
-  - `src/collect/` Coletor (yfinance, um pedido, `threads=False`) → `data/raw/`
+  - `src/collect/` Coletor (yfinance, um pedido, `threads=False`; fatores macro do FRED + Yahoo) → `data/raw/`
   - `src/clean/` Inspetor (pandera) → `data/clean/` + `quality_report.md`
-  - `src/models/` Modelador (`risk_metrics.py`, `cockpit.py`, `backtest.py`, `portfolio.py`) → `data/features/`
+  - `src/models/` Modelador (`risk_metrics.py`, `cockpit.py`, `backtest.py`, `portfolio.py`, `scorecard.py`,
+    `factor_links.py`) → `data/features/`
   - `src/report/` Repórter → embebe `data/features/risk_map_data.json` no mapa (`/*DATA*/…/*END*/`)
 - `app/risk-map/index.html` — mapa interativo (HTML autónomo, sem dependências externas de dados).
 - `app/cockpit/app.py` — Streamlit: `.venv/bin/streamlit run app/cockpit/app.py`.

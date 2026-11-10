@@ -1,21 +1,23 @@
-"""Corre o pipeline de ponta a ponta: coleta → limpeza → modelação → backtesting do VaR → visão conjunta → scorecard → mapa.
+"""Corre o pipeline de ponta a ponta: coleta → limpeza → modelação → backtesting do VaR → visão conjunta → scorecard → ligações fator → setor → mapa.
 
 Uso:  python run_pipeline.py            (tudo)
-      python run_pipeline.py --offline  (salta o download e usa data/raw existente)
+      python run_pipeline.py --offline  (salta o download e usa data/raw existente: preços e fatores)
 """
 import sys
 
 from src.clean import validate
-from src.collect import download_prices
-from src.models import backtest, portfolio, risk_metrics, scorecard
+from src.collect import download_factors, download_prices
+from src.models import backtest, factor_links, portfolio, risk_metrics, scorecard
 from src.report import build_map
 
 if __name__ == "__main__":
     if "--offline" not in sys.argv:
         download_prices.main()
+        download_factors.main()
     validate.main()
     risk_metrics.main()
     backtest.main()
     portfolio.main()
     scorecard.main()
+    factor_links.main()
     build_map.main()

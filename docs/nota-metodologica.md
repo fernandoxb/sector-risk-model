@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.2
+versao: 3.3
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -239,3 +239,60 @@ $$\text{score}_i = 100 \sum_k w_k\, c_{i,k},\qquad \sum_k w_k = 1$$
 * **Logo abaixo:** XLE, XLY, XLI e XLF ficam num grupo apertado (score final entre 67 e 72). Por isso o 2.º e o 3.º lugares mudam com os pesos: em 5 das 10 variações o top 3 muda de composição.
 * **XLE:** é o único setor com o semáforo amarelo do modelo oficial. Sobe de 4.º para 2.º só por causa do ajuste de risco de modelo.
 * **Limitação do stress:** a *perda média* deixa os ganhos compensar as perdas. O XLE subiu 44,5% em 2022, por isso o seu componente de stress é o mais baixo (0), apesar de ter perdido 48% e 56% nos outros dois cenários. Uma alternativa a considerar é usar só as perdas, ou o pior cenário.
+
+---
+
+## 🔗 9. Ligações medidas entre fatores macro e setores (Sprint 4c)
+
+Código: `src/models/factor_links.py` e `src/collect/download_factors.py` · parâmetros: `MACRO_FACTORS`, `LINK_*` · testes: `tests/test_factor_links.py`.
+Saídas: `data/features/factor_links.csv` (as 66 regressões) e a chave `links` em `risk_map_data.json`.
+
+### A. Fatores
+| Nó no mapa | Série | Fonte | Variação semanal | Direção adversa |
+|---|---|---|---|---|
+| juros | DGS10 (Treasury 10Y) | FRED | Δ em p.p. | subir |
+| inflacao | T10YIE (breakeven 10Y) | FRED | Δ em p.p. | subir |
+| spreads | BAMLH0A0HYM2 (spread high yield) | FRED | Δ em p.p. | subir |
+| vix | ^VIX | Yahoo | Δ log | subir |
+| petroleo | CL=F (WTI, futuro) | Yahoo | Δ log | subir |
+| dolar | DX-Y.NYB (DXY) | Yahoo | Δ log | subir |
+
+**Retornos semanais** (sexta a sexta, com o último valor de cada semana). Reduzem o ruído da assincronia entre fontes: o FRED publica com 1 dia de atraso e os futuros fecham a horas diferentes das ações. A semana em curso, ainda incompleta, fica de fora. A janela é de `CVAR_YEARS` = 3 anos (156–157 semanas). Os setores usam retornos log semanais.
+
+### B. Regressão e erros-padrão HAC
+Para cada setor $i$ e fator $k$: $r_{i,t} = a + b\,\Delta f_{k,t} + \varepsilon_t$ por OLS. Os retornos semanais podem ter autocorrelação e heterocedasticidade, por isso os erros-padrão são de **Newey–West (HAC)**:
+$$\widehat{V}(\hat b) = (X^\top X)^{-1}\, \hat S\, (X^\top X)^{-1},\qquad \hat S = \sum_t \hat u_t \hat u_t^\top + \sum_{l=1}^{L}\left(1 - \frac{l}{L+1}\right)\sum_t \left(\hat u_t \hat u_{t-l}^\top + \hat u_{t-l} \hat u_t^\top\right)$$
+com $\hat u_t = x_t \hat\varepsilon_t$, o núcleo de Bartlett e $L = \lfloor 4 (T/100)^{2/9} \rfloor$ = 4 lags para $T$ = 157.
+
+### C. Aceitação, sinal e intensidade
+* **Aceite** se $|t| \ge$ `LINK_T_MIN` = 2.
+* **Sinal** (a mesma convenção das ligações manuais do mapa): **+** se o movimento adverso do fator piora o setor ($\text{adverso} \cdot b < 0$); **−** se o melhora.
+* **Intensidade** 1/2/3 pelos tercis de $|b_{pad}|$ entre as ligações aceites, com $b_{pad} = b\, \sigma_{\Delta f}/\sigma_r$, que numa regressão simples é a correlação.
+* Guardam-se $b$, $t$, $R^2$ e $n$ em cada ligação.
+* **Contágio entre setores:** as 10 arestas da MST de `cockpit.mst`, sobre os retornos diários de 3 anos, com o tipo "contágio" (sem direção). A intensidade vem dos tercis da correlação.
+
+### D. Validação
+* Com dados sintéticos de beta conhecido (+0,20, −0,30 e 0), a regressão recupera o beta (±0,03) e a significância ($|t| > 2$ quando há relação, $|t| < 2$ quando não há). O sinal segue a direção adversa e inverte quando a direção adversa se inverte.
+* O erro-padrão HAC é comparado com a fórmula de Newey–West escrita à mão em numpy, com $L$ = 0, 2 e 4 (erro relativo < $10^{-10}$). Nota: o `statsmodels` usa o Newey–West clássico, sem a correção $n/(n-k)$.
+* Também são testados o corte da semana incompleta, as transformações (Δ e Δ log, com níveis ≤ 0 → sem valor), o último valor de cada semana e a MST com $N-1$ arestas.
+
+### E. Resultados (semanas 2023-11-10 → 2026-11-06)
+São aceites **33 das 66** ligações. Por fator:
+
+| Fator | Ligações aceites | Leitura |
+|---|---|---|
+| vix | 10 | O medo afeta todos os setores menos o XLE; mais o XLK ($R^2$ 0,53) e o XLY, menos o XLP e o XLU (defensivos). |
+| spreads | 9 | O crédito a alargar pesa mais no XLI, no XLF e no XLK ($t$ ≈ −11). O XLP e o XLU não são afetados. |
+| dolar | 5 | O dólar forte pesa no XLB, no XLP, no XLV, no XLC e no XLRE (multinacionais e matérias-primas). |
+| juros | 4 | A subida de juros pesa no XLRE ($t$ = −4,1), no XLU e no XLP (setores "obrigacionistas") e ajuda o XLE. |
+| inflacao | 3 | O breakeven a subir ajuda o XLE, o XLF e o XLI (reflação), por isso o sinal é −. |
+| petroleo | 2 | O petróleo a subir ajuda o XLE ($R^2$ 0,37) e pesa no XLY (consumo). |
+
+**Comparação com as ligações manuais do mapa:**
+* confirmadas: juros → XLRE (+), juros → XLU (+), petróleo → XLE (−), petróleo → XLY (+), spreads → XLF (+), VIX → XLK (+);
+* **não confirmadas** nestes 3 anos: juros → XLK (+), com $t$ = 0,56, e juros → XLF (−), com $t$ = 0,13.
+
+**Limitações:**
+* **Testes múltiplos:** com 66 testes a $|t| \ge 2$ (cerca de 5%), esperam-se ~3 ligações falsas mesmo sem relação nenhuma. As ligações com $|t|$ perto de 2 (dólar → XLRE, inflação → XLI) devem ser lidas com cautela.
+* As regressões são **univariadas**: o VIX e os spreads estão muito correlacionados entre si, e cada beta capta também o efeito dos outros fatores.
+* O CSV público do FRED só tem **os últimos 3 anos** do spread high yield (licença do ICE). Chega para `CVAR_YEARS` = 3, mas não para janelas mais longas.
