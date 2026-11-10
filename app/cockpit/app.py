@@ -17,7 +17,8 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from config.settings import (CVAR_LEVEL, CVAR_YEARS, GROWTH_SECTORS, MARKET,  # noqa: E402
+from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW,  # noqa: E402
+                             CVAR_LEVEL, CVAR_YEARS, FEATURES, GROWTH_SECTORS, MARKET,
                              OBSIDIAN_FOLDER, OBSIDIAN_VAULT, PANIC_Q, RATE_LOOKBACK,
                              RATE_SERIES, SECTOR_PROFILE, SECTORS)
 from src.models import cockpit as ck  # noqa: E402
@@ -187,6 +188,88 @@ try:
         st.plotly_chart(hm, use_container_width=True)
 except Exception as e:  # noqa: BLE001
     st.error(f"Erro ao processar as ações de {sel}: {e}")
+
+# ============================================================================ backtesting do VaR
+st.markdown("---")
+st.subheader("🧪 Backtesting do VaR")
+METODOS = {"historico": "Histórico", "garch": "GJR-GARCH(1,1)-t"}
+SEMAFORO = {"verde": "🟢 verde", "amarelo": "🟡 amarelo", "vermelho": "🔴 vermelho"}
+bt_csv, bt_ser = FEATURES / "var_backtest.csv", FEATURES / "var_backtest_series.parquet"
+
+
+@st.cache_data(show_spinner=False)
+def backtest_dados(mtime: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    return pd.read_csv(bt_csv), pd.read_parquet(bt_ser)
+
+
+if not (bt_csv.exists() and bt_ser.exists()):
+    st.info("Ainda não há resultados de backtesting. Corre `python run_pipeline.py --offline`.")
+else:
+    bt_res, bt_s = backtest_dados(bt_csv.stat().st_mtime)
+    b1, b2, b3 = st.columns(3)
+    bt_sel = b1.selectbox("Setor", setores, index=setores.index(sel),
+                          format_func=lambda t: f"{SECTORS[t]} ({t})", key="bt_setor")
+    bt_met = b2.radio("Método", list(METODOS), format_func=METODOS.get, horizontal=True)
+    bt_lv = b3.radio("Nível do VaR", list(BT_LEVELS), format_func=lambda v: f"{v:.1%}".replace(".", ","),
+                     horizontal=True)
+    rotulo = f"VaR {bt_lv:.1%} · 1 dia · {CVAR_YEARS} anos".replace(".", ",")
+
+    s = bt_s[bt_s["setor"] == bt_sel].set_index("data")
+    var_col = f"var_{bt_met}_{bt_lv}"
+    exc = -s["ret"] > s[var_col]
+    linha = bt_res[(bt_res["setor"] == bt_sel) & (bt_res["metodo"] == bt_met) & (bt_res["nivel"] == bt_lv)].iloc[0]
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Exceções", f"{int(linha['excecoes'])}", f"esperadas {linha['esperadas']:.0f}", delta_color="off")
+    m2.metric("Taxa observada", f"{linha['taxa_obs']:.2%}", f"esperada {linha['taxa_esp']:.1%}",
+              delta_color="off")
+    m3.metric("Kupiec (p-valor)", f"{linha['p_kupiec']:.3f}",
+              "rejeita" if linha["p_kupiec"] < BT_SIGNIF else "não rejeita", delta_color="off")
+    m4.metric(f"Semáforo ({BT_TL_DAYS} dias)", SEMAFORO[linha["semaforo"]],
+              f"{int(linha[f'excecoes_{BT_TL_DAYS}'])} exceções", delta_color="off")
+
+    fig_bt = go.Figure()
+    fig_bt.add_trace(go.Scatter(x=s.index, y=s["ret"], mode="lines", name="Retorno diário",
+                                line=dict(width=1, color="#64748b")))
+    fig_bt.add_trace(go.Scatter(x=s.index, y=-s[var_col], mode="lines", name=f"−{rotulo}",
+                                line=dict(width=1.5, color="#f97316")))
+    fig_bt.add_trace(go.Scatter(x=s.index[exc], y=s["ret"][exc], mode="markers", name="Exceção",
+                                marker=dict(size=6, color="#ef4444", symbol="x")))
+    fig_bt.update_layout(height=420, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor=BG, plot_bgcolor=BG,
+                         font=dict(color="#e5e7eb"), hovermode="x unified",
+                         legend=dict(orientation="h", y=1.02, yanchor="bottom"),
+                         yaxis=dict(tickformat=".0%", gridcolor="#1f2937"),
+                         xaxis=dict(gridcolor="#1f2937", rangeslider=dict(visible=True, thickness=0.06)))
+    st.plotly_chart(fig_bt, use_container_width=True)
+    st.caption(f"{METODOS[bt_met]} · {rotulo}. O VaR de cada dia é previsto só com dados até à véspera "
+               f"(janela móvel de {BT_WINDOW} dias úteis; GARCH re-estimado mensalmente). "
+               "Exceção = perda real maior do que o VaR previsto.")
+
+    tab_bt = bt_res.assign(
+        Método=bt_res["metodo"].map(METODOS),
+        Nível=bt_res["nivel"].map(lambda v: f"{v:.1%}".replace(".", ",")),
+        Taxa=bt_res["taxa_obs"].map("{:.2%}".format) + " vs " + bt_res["taxa_esp"].map("{:.1%}".format),
+        Semáforo=bt_res["semaforo"].map(SEMAFORO),
+    ).rename(columns={"setor": "Setor", "dias": "Dias", "excecoes": "Exceções",
+                      "p_kupiec": "p Kupiec", "p_christoffersen": "p Christoffersen",
+                      "p_cc": "p condicional", f"excecoes_{BT_TL_DAYS}": f"Exceções {BT_TL_DAYS}d"})
+    cols_bt = ["Setor", "Método", "Nível", "Dias", "Exceções", "Taxa", "p Kupiec", "p Christoffersen",
+               "p condicional", f"Exceções {BT_TL_DAYS}d", "Semáforo"]
+    so_setor = st.toggle("Mostrar só o setor selecionado", value=False)
+    tab_bt = tab_bt[tab_bt["Setor"] == bt_sel] if so_setor else tab_bt
+
+    def _rejeita(v: float) -> str:
+        return "color: #ef4444; font-weight: 600" if v < BT_SIGNIF else ""
+
+    st.dataframe(tab_bt[cols_bt].style
+                 .format({"p Kupiec": "{:.3f}", "p Christoffersen": "{:.3f}", "p condicional": "{:.3f}"})
+                 .map(_rejeita, subset=["p Kupiec", "p Christoffersen", "p condicional"]),
+                 hide_index=True, use_container_width=True)
+    st.caption(f"A vermelho: p-valor < {BT_SIGNIF:.0%} (rejeita H0). Kupiec testa a taxa de exceções; "
+               "Christoffersen testa se as exceções aparecem em grupos; o condicional testa as duas coisas. "
+               f"Semáforo de Basileia nos últimos {BT_TL_DAYS} dias (a 99%: verde 0–4, amarelo 5–9, "
+               "vermelho 10+; a 97,5% usa as mesmas probabilidades binomiais). Metodologia: "
+               "docs/nota-metodologica.md.")
 
 # ============================================================================ Obsidian
 st.markdown("---")

@@ -17,3 +17,4 @@ prefect
 jupyter
 networkx
 certifi
+pytest

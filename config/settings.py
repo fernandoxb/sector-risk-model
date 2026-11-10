@@ -27,6 +27,19 @@ CVAR_YEARS = 3          # janela histórica em anos de calendário
 PANIC_Q = 0.20          # dias de pânico = 20% piores dias do SPY (downside beta)
 MAX_ABS_RET = 0.25      # retornos diários acima disto vão para revisão
 
+# --- Backtesting do VaR (src/models/backtest.py) -----------------------------
+# VaR a 1 dia previsto só com dados até t-1, em janela móvel de CVAR_YEARS anos (em dias úteis).
+BT_LEVELS = (0.99, 0.975)            # 99% = VaR regulamentar (Basileia); 97,5% = nível do ES no FRTB
+BT_WINDOW = CVAR_YEARS * TRADING_DAYS
+BT_METHODS = ("historico", "garch")  # VaR histórico e GJR-GARCH(1,1)-t
+BT_REFIT_FREQ = "M"                  # re-estimar o GARCH no 1.º dia útil de cada mês (período pandas)
+BT_SIGNIF = 0.05                     # nível de significância dos testes de Kupiec e Christoffersen
+# Semáforo de Basileia: exceções nos últimos 250 dias. As zonas vêm da binomial acumulada
+# P(X <= x | n, 1 - nível): verde se < 95%, vermelho se >= 99,99% (a 99%: verde 0-4, amarelo 5-9, vermelho 10+).
+BT_TL_DAYS = 250
+BT_TL_GREEN = 0.95
+BT_TL_RED = 0.9999
+
 # --- Cockpit interativo (app/cockpit) ---------------------------------------
 # Classificação do setor para a cor do nó e as ações mais líquidas para o drill-down.
 SECTOR_PROFILE = {
