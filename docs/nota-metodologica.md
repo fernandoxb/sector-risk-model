@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.4
+versao: 3.5
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -303,3 +303,51 @@ São aceites **33 das 66** ligações. Por fator:
 * **Exposição de um nó macro:** o número de setores que o fator agrava (+) e que atenua (−), e a soma ponderada dos scores a jusante, $\sum_{\text{ligações }+} (w/3)\cdot \text{score\_final}_{setor}$. Só contam as ligações "+", porque são as que transmitem o choque adverso.
 * **Cadeia de impacto:** percorre as ligações manuais e as medidas fator → setor, a jusante do nó selecionado. Também destaca as origens diretas desse nó e os seus vizinhos de contágio. As arestas da MST não entram na cadeia: não têm direção e, como ligam todos os setores, acenderiam o mapa inteiro.
 * `index.html#sel=xlk` abre o mapa com um risco já selecionado.
+
+---
+
+## 🤖 10. Bots, alertas e relatório semanal (Sprint 5)
+
+O pipeline corre sozinho nos dias úteis às 22:30 (hora de Lisboa, depois do fecho dos EUA): `launchd` → `flows/pipeline.py` (Prefect).
+
+### A. Flow
+* **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório.
+* **Coletor:** 2 novas tentativas, 5 minutos entre elas, e cache por data. Dois runs no mesmo dia descarregam os dados uma só vez.
+* **Paragem em caso de falha:** as tasks correm em sequência. Se o contrato do Inspetor falhar, a exceção pára o flow e nada a jusante corre, por isso nunca se publica um mapa ou um alerta calculado com dados inválidos.
+* **Fatores macro no Inspetor:** passam a ter contrato pandera: uma coluna por fator, valores finitos, datas únicas e ordenadas. Os níveis <= 0 em séries com variação logarítmica são sinalizados sem ser apagados (o WTI de −37,63 a 2020-04-20 fica de fora pelo `logdiff`). A data do último valor de cada fator vai para `quality_report.md`, porque as séries do FRED chegam com 1 dia de atraso.
+
+### B. Bot Sentinela (`src/report/alerts.py`)
+Em cada run grava um estado compacto do dia em `data/state/estado_<data>.json`: score, semáforo, P × I, perda e VaR/ES oficiais, ligações aceites e regime de juros. Depois compara-o com o último estado de uma data anterior.
+
+| Alerta | Regra | Severidade |
+| --- | --- | --- |
+| Semáforo | muda o semáforo de Basileia (VaR 99% FHS, 250 dias) | piora para vermelho: alta; piora para amarelo: média; melhoria: baixa |
+| Exceção | perda do dia > VaR 97,5% FHS previsto com dados até t−1 | média; alta se também > ES 97,5% |
+| Nível P × I | muda o nível de P × I: baixo ≤ 4, moderado ≤ 9, elevado ≤ 16, crítico ≤ 25 | sobe para crítico: alta; outra subida: média; descida: baixa |
+| Ligação medida | uma ligação fator → setor passa a ser aceite (\|t\| ≥ 2) ou deixa de o ser | entra: média; sai: baixa |
+| Regime de juros | muda o regime do Treasury 10Y (variação em 63 dias úteis) | para subida: alta; outra mudança: média |
+
+* **Exceções:** precisam só do próprio dia, por isso também saem no primeiro run.
+* **Alertas.md:** o Sentinela escreve `Risco Setorial/Alertas.md`, com uma secção por data e a mais recente no topo. Cada alerta tem campos inline do Dataview (`[severidade:: alta]`). Repetir o run do mesmo dia reescreve a secção, sem duplicar.
+* **Notificação:** só os alertas de severidade alta geram uma notificação macOS (`osascript`).
+* **Limitação:** o nível P × I usa quintis entre os 11 setores, por isso um setor pode mudar de nível sem que o seu score se mexa, apenas porque outro mudou de posição. Ex.: XLI a 2026-11-10, P×I 16 → 20 com score 69,3 → 69,2.
+
+### C. Relatório semanal (`src/report/weekly.py`)
+* **Quando:** sai quando a data dos dados é uma sexta (ou com `--semanal`) e é gravado em `Risco Setorial/Semana AAAA-Www.md`.
+* **Conteúdo:**
+  * top 3 do scorecard, com a variação de score e de posição;
+  * exceções ao VaR 97,5% oficial na semana, face às esperadas (2,5% × dias × 11);
+  * ligações que entraram ou saíram;
+  * cenário de stress mais severo para a carteira e o setor mais atingido nesse cenário.
+* **Referência:** o último estado da semana anterior; na primeira semana com estados, o primeiro estado da própria semana.
+* **Painel:** o frontmatter (`tipo: relatorio-semanal`, `semana`, `top3`, `excecoes`, …) alimenta `00 Painel.md`, que agrega relatórios semanais, alertas recentes e logs diários do cockpit.
+
+### D. Validação
+`tests/test_alerts.py` (22 testes) usa estados sintéticos de ontem e de hoje e cobre:
+* cada tipo de alerta e as suas severidades, em ambos os sentidos;
+* que não há alertas quando nada muda e que as exceções saem mesmo sem estado anterior;
+* a idempotência de `Alertas.md` e o corte das secções antigas;
+* a notificação só para severidade alta;
+* a escolha do estado de referência;
+* a semana ISO, as exceções da semana e o cenário de stress mais severo.
+

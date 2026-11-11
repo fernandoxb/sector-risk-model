@@ -26,7 +26,9 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   - `src/clean/` Inspetor (pandera) → `data/clean/` + `quality_report.md`
   - `src/models/` Modelador (`risk_metrics.py`, `cockpit.py`, `backtest.py`, `portfolio.py`, `scorecard.py`,
     `factor_links.py`) → `data/features/`
-  - `src/report/` Repórter → embebe `data/features/risk_map_data.json` no mapa (`/*DATA*/…/*END*/`)
+  - `src/report/` Repórter → embebe `data/features/risk_map_data.json` no mapa (`/*DATA*/…/*END*/`);
+    Sentinela (`alerts.py`, estados em `data/state/`) e relatório semanal (`weekly.py`) → cofre Obsidian
+- `flows/pipeline.py` — flow Prefect (uma task por bot); agendado com launchd (`flows/install_launchd.sh`).
 - `app/risk-map/index.html` — mapa interativo (HTML autónomo, sem dependências externas de dados).
 - `app/cockpit/app.py` — Streamlit: `.venv/bin/streamlit run app/cockpit/app.py`.
 - Funções de cálculo são **puras** (sem Streamlit, sem I/O) para poderem ser testadas.
@@ -35,7 +37,7 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 ## Obsidian
 - Cofre: `OBSIDIAN_VAULT` (padrão `~/Documents/Obsidian Vault`), pasta `Risco Setorial/`.
 - Notas com frontmatter YAML para o Dataview; tickers como links `[[XLK]]`.
-- `00 Painel.md` agrega os logs — manter os campos do frontmatter estáveis.
+- `00 Painel.md` agrega logs diários, `Semana AAAA-Www.md` e `Alertas.md` — manter os campos do frontmatter estáveis.
 
 ## Qualidade
 - Validar cálculos novos contra uma implementação independente (ex.: numpy à mão vs biblioteca) antes de os usar.
@@ -47,5 +49,5 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 1. ✅ Sprint 1 — pipeline, mapa de riscos com dados reais, cockpit.
 2. ✅ Sprint 2 — backtesting do VaR (Kupiec, Christoffersen) e do ES (Z2), histórico vs GARCH-t vs FHS.
 3. ✅ Sprint 3 — visão conjunta: Ledoit-Wolf, contribuição para o risco, stress tests (2008, 2020, 2022).
-4. Sprint 4 — bots com Prefect (agendamento) + relatório semanal no Obsidian.
+4. ✅ Sprint 4 — bots com Prefect (agendamento launchd), alertas do Sentinela e relatório semanal no Obsidian.
 5. Sprint 5 — montra: README com resultados e capturas, nota metodológica em PDF.

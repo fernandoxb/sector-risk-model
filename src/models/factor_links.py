@@ -27,7 +27,7 @@ import statsmodels.api as sm
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (CLEAN, CVAR_YEARS, FEATURES, LINK_FREQ, LINK_HAC_LAGS,  # noqa: E402
-                             LINK_T_MIN, MACRO_FACTORS, RAW, SECTORS)
+                             LINK_T_MIN, MACRO_FACTORS, SECTORS)
 from src.models import cockpit as ck  # noqa: E402
 
 PLUS, MINUS = "+", "-"
@@ -125,7 +125,7 @@ def links_payload(m: pd.DataFrame, cont: pd.DataFrame) -> list[dict]:
 # ----------------------------------------------------------------------------- I/O
 def main() -> Path:
     prices = pd.read_parquet(CLEAN / "prices.parquet")[list(SECTORS)]
-    factors = pd.read_parquet(RAW / "factors.parquet")
+    factors = pd.read_parquet(CLEAN / "factors.parquet")
     end = weekly_cut(prices.index.max())
     start = prices.index.max() - pd.DateOffset(years=CVAR_YEARS)
     rets = sector_returns(weekly_levels(prices.loc[:end]))

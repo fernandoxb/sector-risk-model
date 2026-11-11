@@ -128,3 +128,17 @@ RATE_LOOKBACK = 63      # variação dos juros nos últimos ~3 meses define o re
 # Cofre Obsidian (Documents/Obsidian Vault). Pode ser alterado no painel ou via a variável OBSIDIAN_VAULT.
 OBSIDIAN_VAULT = Path(os.environ.get("OBSIDIAN_VAULT", ROOT.parents[1] / "Obsidian Vault"))
 OBSIDIAN_FOLDER = "Risco Setorial"
+
+# --- Bots e alertas (flows/pipeline.py, src/report/alerts.py, src/report/weekly.py) ------
+STATE = DATA / "state"               # um estado por data de dados (estado_AAAA-MM-DD.json) para comparar com o anterior
+LOGS = ROOT / "logs"                 # saída do launchd e do flow
+COLLECT_RETRIES = 2                  # novas tentativas da coleta (rede) antes de o flow falhar
+COLLECT_RETRY_DELAY = 300            # segundos entre tentativas
+# Níveis do score de risco P × I (1–25): limite superior de cada nível, do mais baixo para o mais alto.
+PI_LEVELS = ((4, "baixo"), (9, "moderado"), (16, "elevado"), (25, "crítico"))
+SEMAFORO_ORDEM = ("verde", "amarelo", "vermelho")
+ALERT_SEVERITIES = ("alta", "média", "baixa")
+ALERT_NOTIFY = ("alta",)             # só estas severidades geram notificação macOS
+ALERT_KEEP_DAYS = 60                 # secções de dias mantidas em Alertas.md (as mais antigas saem)
+WEEKLY_TOP = 3                       # setores no top do relatório semanal
+WEEKLY_WEEKDAY = 4                   # o relatório semanal sai quando a data dos dados é uma sexta (0 = segunda)
