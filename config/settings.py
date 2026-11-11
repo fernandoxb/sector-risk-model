@@ -175,3 +175,11 @@ SHOCK_LOGDIFF = (-50.0, 150.0, 50.0, 5.0)
 # Feriados dos EUA não são tratados: num feriado espera-se uma sessão que não existe e o alerta avisa.
 MARKET_TZ = "America/New_York"
 MARKET_CLOSE = "17:00"
+
+# --- Publicação semanal do snapshot (bot Publicador, src/report/publicar.py) --
+# Às sextas (data dos dados = WEEKLY_WEEKDAY), depois do run, faz commit e push só de app/cockpit/snapshot/,
+# para o cockpit no Streamlit Cloud acompanhar os dados. Nunca toca noutros ficheiros nem noutro ramo.
+SNAPSHOT_PUBLISH = True
+SNAPSHOT_PUBLISH_BRANCH = "main"
+SNAPSHOT_PUBLISH_REMOTE = "origin"
+

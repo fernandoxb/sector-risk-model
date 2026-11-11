@@ -1,6 +1,7 @@
 """Flow Prefect do pipeline diário: uma task por bot.
 
-Coletor → Inspetor → Modelador → Backtester → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório → Snapshot
+Coletor → Inspetor → Modelador → Backtester → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório →
+Snapshot → Publicador (às sextas: commit e push só de app/cockpit/snapshot/)
 - Coletor: retries=COLLECT_RETRIES (rede); se os preços vierem atrasados, repete o download até
   COLLECT_STALE_TRIES vezes. Cache pela última sessão de NY fechada, e só com os dados já completos.
 - As tasks são chamadas em sequência: se uma falhar (ex.: o contrato do Inspetor), a exceção pára o flow
@@ -10,6 +11,7 @@ Uso:  .venv/bin/python -m flows.pipeline                 (tudo, com download)
       .venv/bin/python -m flows.pipeline --offline       (usa data/raw existente)
       .venv/bin/python -m flows.pipeline --semanal       (força o relatório semanal)
       .venv/bin/python -m flows.pipeline --sem-notificacao
+      .venv/bin/python -m flows.pipeline --publicar        (publica o snapshot mesmo que não seja sexta)
 Agendamento: flows/com.fernando.sectorrisk.plist (launchd, dias úteis às 22:30), instalado com flows/install_launchd.sh.
 """
 import os
@@ -31,7 +33,7 @@ from src.clean import validate  # noqa: E402
 from src.collect import download_factors, download_prices  # noqa: E402
 from src.collect.sessao import dados_completos, ultima_sessao, ultimo_fecho  # noqa: E402
 from src.models import backtest, factor_links, portfolio, risk_metrics, scorecard  # noqa: E402
-from src.report import alerts, build_map, snapshot, weekly  # noqa: E402
+from src.report import alerts, build_map, publicar, snapshot, weekly  # noqa: E402
 
 
 def _ultimo_fecho_raw() -> date:
@@ -111,6 +113,18 @@ def snapshot_cockpit(offline: bool):
     snapshot.main(offline=offline)
 
 
+@task(name="Publicador")
+def publicador(forcar: bool, notificar: bool):
+    """Commit e push semanal do snapshot. Uma falha (ex.: sem rede) não estraga o run: fica no log e notifica."""
+    log = get_run_logger()
+    try:
+        publicar.main(forcar=forcar)
+    except Exception as e:  # noqa: BLE001
+        log.error(f"Snapshot não publicado: {e}")
+        if notificar:
+            alerts.send_notification(f"Snapshot do cockpit não publicado: {e}"[:200])
+
+
 @task(name="Sentinela")
 def sentinela(notificar: bool) -> list[dict]:
     return alerts.main(notify=notificar)
@@ -123,7 +137,7 @@ def relatorio(forcar: bool):
 
 
 @flow(name="risco-setorial", log_prints=True)
-def pipeline(offline: bool = False, semanal: bool = False, notificar: bool = True):
+def pipeline(offline: bool = False, semanal: bool = False, notificar: bool = True, publicar_snapshot: bool = False):
     log = get_run_logger()
     if offline:
         log.info("Modo offline: sem coleta, usa data/raw existente")
@@ -140,11 +154,14 @@ def pipeline(offline: bool = False, semanal: bool = False, notificar: bool = Tru
     reporter()
     al = sentinela(notificar)
     rel = relatorio(semanal)
-    snapshot_cockpit(offline)              # por último: leva os alertas e o histórico do score de hoje
+    snapshot_cockpit(offline)              # depois do Sentinela: leva os alertas e o histórico do score de hoje
+    if not offline:
+        publicador(publicar_snapshot, notificar)
     log.info(f"Fim: {len(al)} alertas" + (f"; relatório semanal em {rel}" if rel else ""))
     return al
 
 
 if __name__ == "__main__":
     a = sys.argv[1:]
-    pipeline(offline="--offline" in a, semanal="--semanal" in a, notificar="--sem-notificacao" not in a)
+    pipeline(offline="--offline" in a, semanal="--semanal" in a, notificar="--sem-notificacao" not in a,
+             publicar_snapshot="--publicar" in a)
