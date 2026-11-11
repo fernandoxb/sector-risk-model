@@ -30,7 +30,10 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
     Sentinela (`alerts.py`, estados em `data/state/`) e relatório semanal (`weekly.py`) → cofre Obsidian
 - `flows/pipeline.py` — flow Prefect (uma task por bot); agendado com launchd (`flows/install_launchd.sh`).
 - `app/risk-map/index.html` — mapa interativo (HTML autónomo, sem dependências externas de dados).
-- `app/cockpit/app.py` — Streamlit: `.venv/bin/streamlit run app/cockpit/app.py`.
+- `app/cockpit/app.py` — Streamlit: `.venv/bin/streamlit run app/cockpit/app.py`. Sem rede (ou com
+  `COCKPIT_SNAPSHOT=1`, no Streamlit Cloud) lê `app/cockpit/snapshot/`, gerado por `src/report/snapshot.py`;
+  dependências do Cloud em `app/cockpit/requirements.txt`.
+- `scripts/` — capturas de ecrã (`capturas.py`) e PDF da nota (`nota_pdf.py`), via Chrome headless.
 - Funções de cálculo são **puras** (sem Streamlit, sem I/O) para poderem ser testadas.
 - `data/`, `reference/`, `.venv/` não vão para o Git.
 
@@ -50,4 +53,4 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 2. ✅ Sprint 2 — backtesting do VaR (Kupiec, Christoffersen) e do ES (Z2), histórico vs GARCH-t vs FHS.
 3. ✅ Sprint 3 — visão conjunta: Ledoit-Wolf, contribuição para o risco, stress tests (2008, 2020, 2022).
 4. ✅ Sprint 4 — bots com Prefect (agendamento launchd), alertas do Sentinela e relatório semanal no Obsidian.
-5. Sprint 5 — montra: README com resultados e capturas, nota metodológica em PDF.
+5. ✅ Sprint 5 — montra: README com resultados e capturas, nota metodológica em PDF, cockpit no Streamlit Cloud (modo snapshot).

@@ -178,3 +178,4 @@ def test_estado_de_referencia_semanal(tmp_path):
     (tmp_path / "estado_2026-11-06.json").write_text('{"asof": "2026-11-06"}')
     assert wk.reference_state("2026-11-13", tmp_path)["asof"] == "2026-11-06"   # sexta anterior
     assert wk.reference_state("2026-11-10", tmp_path)["asof"] == "2026-11-06"
+

@@ -1,6 +1,6 @@
 """Flow Prefect do pipeline diário: uma task por bot.
 
-Coletor → Inspetor → Modelador → Backtester → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório
+Coletor → Inspetor → Modelador → Backtester → Carteira → Scorecard → Ligações → Repórter → Snapshot → Sentinela → Relatório
 - Coletor: retries=COLLECT_RETRIES (rede) e cache por data: dois runs no mesmo dia descarregam uma só vez.
 - As tasks são chamadas em sequência: se uma falhar (ex.: o contrato do Inspetor), a exceção pára o flow
   e nada a jusante corre.
@@ -26,7 +26,7 @@ from config.settings import COLLECT_RETRIES, COLLECT_RETRY_DELAY, RAW  # noqa: E
 from src.clean import validate  # noqa: E402
 from src.collect import download_factors, download_prices  # noqa: E402
 from src.models import backtest, factor_links, portfolio, risk_metrics, scorecard  # noqa: E402
-from src.report import alerts, build_map, weekly  # noqa: E402
+from src.report import alerts, build_map, snapshot, weekly  # noqa: E402
 
 
 def _cache_por_dia(ctx, params) -> str | None:
@@ -79,6 +79,12 @@ def reporter():
     build_map.main()
 
 
+@task(name="Snapshot")
+def snapshot_cockpit(offline: bool):
+    """Atualiza app/cockpit/snapshot (o commit e o push ficam à escolha do utilizador)."""
+    snapshot.main(offline=offline)
+
+
 @task(name="Sentinela")
 def sentinela(notificar: bool) -> list[dict]:
     return alerts.main(notify=notificar)
@@ -104,6 +110,7 @@ def pipeline(offline: bool = False, semanal: bool = False, notificar: bool = Tru
     score()
     ligacoes()
     reporter()
+    snapshot_cockpit(offline)
     al = sentinela(notificar)
     rel = relatorio(semanal)
     log.info(f"Fim: {len(al)} alertas" + (f"; relatório semanal em {rel}" if rel else ""))

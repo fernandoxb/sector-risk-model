@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.5
+versao: 3.6
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -21,6 +21,8 @@ O modelo não assume que os retornos seguem uma distribuição normal. Concentra
 
 ### A. Conditional Value at Risk (CVaR / Expected Shortfall)
 O VaR diz apenas a partir de que perda começam os piores (1−α) dias. O CVaR calcula a **perda média dentro desses dias**: com α = 0,95, é a média dos 5% piores retornos diários. É histórico e usa retornos simples na janela escolhida.
+$$\text{VaR}_\alpha = -Q_{1-\alpha}(r), \qquad \text{CVaR}_\alpha = \text{ES}_\alpha = -\,\mathbb{E}\left[\,r \mid r \le Q_{1-\alpha}(r)\,\right]$$
+em que $Q_{1-\alpha}$ é o quantil empírico dos retornos simples diários da janela, e as perdas vêm em número positivo.
 
 **Padrão do projeto:** α = 0,975 (o nível do Expected Shortfall no FRTB, Basileia III) e janela de 3 anos, definidos em `config/settings.py` (`CVAR_LEVEL`, `CVAR_YEARS`). O mapa de riscos e o cockpit usam a mesma função (`src/models/cockpit.py::cvar`), por isso dão o mesmo número com os mesmos parâmetros.
 * **Aplicação visual:** o tamanho de cada nó do grafo é proporcional ao CVaR, já ajustado ao regime de juros (ver secção 4).
@@ -311,7 +313,8 @@ São aceites **33 das 66** ligações. Por fator:
 O pipeline corre sozinho nos dias úteis às 22:30 (hora de Lisboa, depois do fecho dos EUA): `launchd` → `flows/pipeline.py` (Prefect).
 
 ### A. Flow
-* **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório.
+* **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Carteira → Scorecard → Ligações → Repórter → Snapshot → Sentinela → Relatório.
+* **Snapshot (Sprint 6):** copia para `app/cockpit/snapshot/` (versionado, cerca de 2,7 MB) os preços de 3 anos dos ETFs e das ações do microscópio, o Treasury 10Y e os resultados que o cockpit lê. Assim o cockpit corre sem rede, por exemplo no Streamlit Community Cloud. As séries do backtest são gravadas em float32, o que dá um erro relativo de cerca de $10^{-7}$, sem efeito nas exceções mostradas.
 * **Coletor:** 2 novas tentativas, 5 minutos entre elas, e cache por data. Dois runs no mesmo dia descarregam os dados uma só vez.
 * **Paragem em caso de falha:** as tasks correm em sequência. Se o contrato do Inspetor falhar, a exceção pára o flow e nada a jusante corre, por isso nunca se publica um mapa ou um alerta calculado com dados inválidos.
 * **Fatores macro no Inspetor:** passam a ter contrato pandera: uma coluna por fator, valores finitos, datas únicas e ordenadas. Os níveis <= 0 em séries com variação logarítmica são sinalizados sem ser apagados (o WTI de −37,63 a 2020-04-20 fica de fora pelo `logdiff`). A data do último valor de cada fator vai para `quality_report.md`, porque as séries do FRED chegam com 1 dia de atraso.
@@ -350,4 +353,21 @@ Em cada run grava um estado compacto do dia em `data/state/estado_<data>.json`: 
 * a notificação só para severidade alta;
 * a escolha do estado de referência;
 * a semana ISO, as exceções da semana e o cenário de stress mais severo.
+
+---
+
+## 📚 Referências
+* Acerbi, C. e Székely, B. (2014). *Backtesting Expected Shortfall*. Risk, dezembro de 2014.
+* Barone-Adesi, G., Giannopoulos, K. e Vosper, L. (1999). VaR without correlations for portfolios of derivative securities. *Journal of Futures Markets*, 19(5), 583–602.
+* Basel Committee on Banking Supervision (1996). *Supervisory framework for the use of "backtesting" in conjunction with the internal models approach to market risk capital requirements*.
+* Basel Committee on Banking Supervision (2019). *Minimum capital requirements for market risk* (FRTB, d457).
+* Christoffersen, P. (1998). Evaluating interval forecasts. *International Economic Review*, 39(4), 841–862.
+* Glosten, L., Jagannathan, R. e Runkle, D. (1993). On the relation between the expected value and the volatility of the nominal excess return on stocks. *Journal of Finance*, 48(5), 1779–1801.
+* Kupiec, P. (1995). Techniques for verifying the accuracy of risk measurement models. *Journal of Derivatives*, 3(2), 73–84.
+* Ledoit, O. e Wolf, M. (2004). A well-conditioned estimator for large-dimensional covariance matrices. *Journal of Multivariate Analysis*, 88(2), 365–411.
+* Mantegna, R. (1999). Hierarchical structure in financial markets. *European Physical Journal B*, 11, 193–197.
+* Newey, W. e West, K. (1987). A simple, positive semi-definite, heteroskedasticity and autocorrelation consistent covariance matrix. *Econometrica*, 55(3), 703–708.
+* Newey, W. e West, K. (1994). Automatic lag selection in covariance matrix estimation. *Review of Economic Studies*, 61(4), 631–653.
+* Rockafellar, R. T. e Uryasev, S. (2002). Conditional value-at-risk for general loss distributions. *Journal of Banking & Finance*, 26(7), 1443–1471.
+* Tasche, D. (2000). *Risk contributions and performance measurement*. Working paper, TU München.
 

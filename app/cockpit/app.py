@@ -2,8 +2,11 @@
 
 Correr a partir da raiz do projeto:
     .venv/bin/streamlit run app/cockpit/app.py
+Sem rede, ou com o Yahoo a limitar pedidos, usa o snapshot versionado em app/cockpit/snapshot/
+(COCKPIT_SNAPSHOT=1 força esse modo, como no Streamlit Community Cloud).
 Metodologia: docs/nota-metodologica.md
 """
+import json
 import os
 import sys
 from datetime import date
@@ -21,7 +24,7 @@ from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW,  # noq
                              CVAR_LEVEL, CVAR_YEARS, FEATURES, GROWTH_SECTORS, MARKET,
                              MODEL_RISK_LEVEL, MODEL_RISK_MULT, OBSIDIAN_FOLDER, OBSIDIAN_VAULT,
                              OFFICIAL_VAR_METHOD, PANIC_Q, PORTFOLIO_WEIGHTS, RATE_LOOKBACK,
-                             RATE_SERIES, SCORE_WEIGHTS, SECTOR_PROFILE, SECTORS)
+                             RATE_SERIES, SCORE_WEIGHTS, SECTOR_PROFILE, SECTORS, SNAPSHOT)
 from src.models import cockpit as ck  # noqa: E402
 from src.models.scorecard import COMPONENTS  # noqa: E402
 
@@ -52,21 +55,67 @@ choque = st.sidebar.slider("Choque adicional de juros (p.p.)", -1.0, 2.0, 0.0, s
 
 
 # ============================================================================ dados (cache)
+# Ao vivo (Yahoo + FRED) por omissão; snapshot versionado se falharem ou com COCKPIT_SNAPSHOT=1.
+FORCAR_SNAPSHOT = os.environ.get("COCKPIT_SNAPSHOT", "").lower() in ("1", "true", "sim")
+FONTES: set[str] = set()          # "ao vivo" e/ou "snapshot", para o aviso no cabeçalho
+
+
+@st.cache_data(show_spinner=False)
+def snap_precos() -> pd.DataFrame:
+    return pd.read_parquet(SNAPSHOT / "prices.parquet").astype(float)
+
+
+def precos_snapshot(tickers: tuple[str, ...], period: str) -> pd.DataFrame:
+    p = snap_precos()
+    falta = [t for t in tickers if t not in p]
+    if falta:
+        raise RuntimeError(f"snapshot sem {falta}")
+    anos = int(period.rstrip("y"))
+    return p.loc[p.index > p.index.max() - pd.DateOffset(years=anos), list(tickers)]
+
+
 @st.cache_data(ttl=3600, show_spinner="🤖 A descarregar preços dos setores…")
-def precos(tickers: tuple[str, ...], period: str) -> pd.DataFrame:
+def precos_vivo(tickers: tuple[str, ...], period: str) -> pd.DataFrame:
     return ck.download_close(list(tickers), period)
 
 
+def precos(tickers: tuple[str, ...], period: str) -> pd.DataFrame:
+    if not (FORCAR_SNAPSHOT or st.session_state.get("yahoo_falhou")):
+        try:
+            out = precos_vivo(tickers, period)
+            FONTES.add("ao vivo")
+            return out
+        except Exception:  # noqa: BLE001  Yahoo em baixo ou a limitar: snapshot até ao fim da sessão
+            st.session_state["yahoo_falhou"] = True
+    FONTES.add("snapshot")
+    return precos_snapshot(tickers, period)
+
+
 @st.cache_data(ttl=3600, show_spinner="🏦 A ler o Treasury 10Y no FRED…")
-def juros(start: str) -> pd.Series:
+def juros_vivo(start: str) -> pd.Series:
     return ck.fetch_rates(RATE_SERIES, start)
+
+
+def juros(start: str) -> pd.Series:
+    if not (FORCAR_SNAPSHOT or st.session_state.get("fred_falhou")):
+        try:
+            return juros_vivo(start)
+        except Exception:  # noqa: BLE001
+            st.session_state["fred_falhou"] = True
+    y = pd.read_parquet(SNAPSHOT / "rates.parquet")["DGS10"]
+    return y[y.index >= pd.Timestamp(start)]
+
+
+# Resultados do pipeline: data/features se existir (local), senão o snapshot (Cloud).
+FEAT = FEATURES if (FEATURES / "scorecard.csv").exists() and not FORCAR_SNAPSHOT else SNAPSHOT
+SNAP_META = json.loads((SNAPSHOT / "meta.json").read_text()) if (SNAPSHOT / "meta.json").exists() else {}
 
 
 setores = list(SECTORS)
 try:
     rets_all = ck.returns(precos(tuple(setores + [MARKET]), periodo))
 except Exception as e:  # noqa: BLE001
-    st.error(f"Não foi possível descarregar os preços do Yahoo: {e}")
+    st.error(f"Sem preços: o Yahoo falhou e o snapshot não está disponível ({e}).")
     st.stop()
 rets, mkt = rets_all[setores], rets_all[MARKET]
 
@@ -89,6 +138,12 @@ nivel = f"{alpha:.1%}".replace(".", ",")        # ex.: 97,5% (nunca arredondar o
 st.title("🛡️ Cockpit de Risco Setorial")
 st.caption(f"Dados de {rets.index[0].date()} a {rets.index[-1].date()} · CVaR {nivel} · 1 dia · "
            f"pânico = {panic_q:.0%} piores dias do SPY ({int((mkt <= mkt.quantile(panic_q)).sum())} dias)")
+if "snapshot" in FONTES:
+    st.info(f"📦 Modo snapshot: preços e juros guardados no repositório (dados até "
+            f"{SNAP_META.get('dados_ate', '?')}), porque {'COCKPIT_SNAPSHOT está ativo' if FORCAR_SNAPSHOT else 'o Yahoo não respondeu'}. "
+            "Os resultados do pipeline (scorecard, backtest, carteira) são os da mesma data.")
+elif FEAT == SNAPSHOT:
+    st.caption(f"Resultados do pipeline: snapshot de {SNAP_META.get('dados_ate', '?')}.")
 
 c1, c2, c3, c4 = st.columns(4)
 top = tab["cvar_aj"].idxmax()
@@ -103,7 +158,7 @@ if regime:
 
 # ============================================================================ scorecard
 st.subheader("🎯 Scorecard de risco por setor")
-sc_csv, off_csv = FEATURES / "scorecard.csv", FEATURES / "official_risk.csv"
+sc_csv, off_csv = FEAT / "scorecard.csv", FEAT / "official_risk.csv"
 
 
 @st.cache_data(show_spinner=False)
@@ -264,7 +319,7 @@ st.markdown("---")
 st.subheader("🧪 Backtesting do VaR e do ES")
 METODOS = {"historico": "Histórico", "garch": "GJR-GARCH(1,1)-t", "fhs": "GARCH-FHS"}
 SEMAFORO = {"verde": "🟢 verde", "amarelo": "🟡 amarelo", "vermelho": "🔴 vermelho"}
-bt_csv, bt_ser = FEATURES / "var_backtest.csv", FEATURES / "var_backtest_series.parquet"
+bt_csv, bt_ser = FEAT / "var_backtest.csv", FEAT / "var_backtest_series.parquet"
 
 
 @st.cache_data(show_spinner=False)
@@ -354,8 +409,8 @@ else:
 # ============================================================================ visão conjunta
 st.markdown("---")
 st.subheader("🧩 Visão conjunta: carteira dos 11 setores")
-rc_csv, stt_csv, lw_csv = (FEATURES / "risk_contribution.csv", FEATURES / "stress_tests.csv",
-                           FEATURES / "covariance_shrinkage.csv")
+rc_csv, stt_csv, lw_csv = (FEAT / "risk_contribution.csv", FEAT / "stress_tests.csv",
+                           FEAT / "covariance_shrinkage.csv")
 
 
 @st.cache_data(show_spinner=False)
@@ -454,7 +509,9 @@ edges = [(a, b, d["corr"]) for a, b, d in sorted(grafo.edges(data=True), key=lam
 nota = ck.obsidian_log(hoje, params, tabela.drop(columns="Tipo"), edges, regime, sel, drill)
 destino = vault / OBSIDIAN_FOLDER / f"{hoje.isoformat()}.md"
 c_a, c_b = st.columns([1, 1])
-if c_a.button("💾 Exportar estado de hoje", type="primary"):
+if not vault.is_dir():                       # ex.: Streamlit Cloud, sem cofre local
+    c_a.caption("Cofre não encontrado neste computador: usa o botão para descarregar a nota.")
+elif c_a.button("💾 Exportar estado de hoje", type="primary"):
     destino.parent.mkdir(parents=True, exist_ok=True)
     destino.write_text(nota, encoding="utf-8")
     st.success(f"Gravado em {destino}")

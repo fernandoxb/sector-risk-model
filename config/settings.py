@@ -40,9 +40,10 @@ BT_SEED = 42                         # semente das simulações (resultados repr
 BT_FRTB_MAX = {0.99: 12, 0.975: 30}
 
 # --- Modelo oficial de VaR/ES (previsão para o próximo dia útil) -------------
-# Escolhido pelo backtest de 2008–2026 (data/features/var_backtest.csv, p >= 5%, setores que passam em 11):
+# Escolhido pelo backtest de 2008–2026 (data/features/var_backtest.csv, p >= 5%, setores que passam em 11;
+# dados até 2026-11-10):
 #              97,5%: Kupiec  Christoffersen  condicional  Z2  |  99%: Kupiec  Christoffersen  condicional  Z2
-#   fhs                 11         10             10       10  |         10         8              8       10
+#   fhs                 11         10             10       11  |         10         8              8       10
 #   garch (t)            1         10              2        0  |          1        11              1        0
 #   historico            7          1              1        3  |          5         1              1        2
 # O FHS é o único que passa a cobertura, a independência e o teste do ES ao mesmo tempo.
@@ -142,3 +143,12 @@ ALERT_NOTIFY = ("alta",)             # só estas severidades geram notificação
 ALERT_KEEP_DAYS = 60                 # secções de dias mantidas em Alertas.md (as mais antigas saem)
 WEEKLY_TOP = 3                       # setores no top do relatório semanal
 WEEKLY_WEEKDAY = 4                   # o relatório semanal sai quando a data dos dados é uma sexta (0 = segunda)
+
+# --- Montra: modo snapshot do cockpit (app/cockpit/snapshot, versionado) -------
+# Usado quando não há rede ou o Yahoo limita (ex.: Streamlit Community Cloud). Atualizado pelo flow.
+SNAPSHOT = ROOT / "app" / "cockpit" / "snapshot"
+SNAPSHOT_YEARS = 3              # anos de preços guardados (= a maior janela do cockpit)
+SNAPSHOT_RATE_MARGIN_DAYS = 200 # dias de juros antes do 1.º preço (o regime usa RATE_LOOKBACK dias úteis)
+# Ficheiros de data/features copiados tal como estão (o cockpit lê-os do snapshot se data/ não existir).
+SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "var_backtest_series.parquet",
+                     "risk_contribution.csv", "stress_tests.csv", "covariance_shrinkage.csv")
