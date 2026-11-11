@@ -136,6 +136,11 @@ STATE = DATA / "state"               # um estado por data de dados (estado_AAAA-
 LOGS = ROOT / "logs"                 # saída do launchd e do flow
 COLLECT_RETRIES = 2                  # novas tentativas da coleta (rede) antes de o flow falhar
 COLLECT_RETRY_DELAY = 300            # segundos entre tentativas
+# Dados atrasados (o download correu mas os preços não chegam à última sessão fechada): o Coletor repete o
+# download até COLLECT_STALE_TRIES vezes, com COLLECT_STALE_WAIT segundos entre elas; se continuar atrasado,
+# o flow segue e o Sentinela dá o alerta "dados atrasados".
+COLLECT_STALE_TRIES = 3
+COLLECT_STALE_WAIT = 600
 # Níveis do score de risco P × I (1–25): limite superior de cada nível, do mais baixo para o mais alto.
 PI_LEVELS = ((4, "baixo"), (9, "moderado"), (16, "elevado"), (25, "crítico"))
 SEMAFORO_ORDEM = ("verde", "amarelo", "vermelho")
@@ -163,3 +168,10 @@ SHOCK_MARKET = (-40.0, 20.0, -10.0, 1.0)
 SHOCK_DIFF = (-2.0, 3.0, 1.0, 0.25)
 SHOCK_LOGDIFF = (-50.0, 150.0, 50.0, 5.0)
 
+
+# --- Calendário do mercado (cache do Coletor e alerta de dados atrasados) -----
+# Uma sessão conta como fechada 1 h depois do fecho de Nova Iorque (16:00), para os preços do Yahoo assentarem
+# (17:00 em NY = 22:00 em Lisboa, antes do run agendado das 22:30).
+# Feriados dos EUA não são tratados: num feriado espera-se uma sessão que não existe e o alerta avisa.
+MARKET_TZ = "America/New_York"
+MARKET_CLOSE = "17:00"

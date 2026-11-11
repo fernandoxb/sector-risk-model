@@ -192,3 +192,9 @@ def test_historico_do_score(ontem):
     h = al.score_history([ontem, hoje])
     assert len(h) == 6 and list(h.columns) == ["data", "setor", "score", "rank", "pi", "nivel", "semaforo"]
     assert h.query("setor == 'XLK'")["score"].tolist() == [80, 85.0]
+
+
+def test_alerta_de_dados_atrasados():
+    assert al.stale_alert("2026-11-11", "2026-11-11") is None
+    a = al.stale_alert("2026-11-10", "2026-11-11")
+    assert a["severidade"] == "alta" and "2026-11-10" in a["texto"] and "2026-11-11" in a["texto"]

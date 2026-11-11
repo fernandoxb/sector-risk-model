@@ -30,6 +30,7 @@ from config.settings import (ALERT_KEEP_DAYS, ALERT_NOTIFY, ALERT_SEVERITIES, CL
                              MACRO_FACTORS, OBSIDIAN_FOLDER, OBSIDIAN_VAULT, OFFICIAL_MEASURES,
                              OFFICIAL_VAR_METHOD, PI_LEVELS, RATE_LOOKBACK, RATE_THRESHOLD_PP,
                              SEMAFORO_ORDEM, STATE)
+from src.collect.sessao import ultima_sessao  # noqa: E402
 from src.models import cockpit as ck  # noqa: E402
 
 VAR_KEY, ES_KEY = "var975", "es975"
@@ -137,6 +138,14 @@ def compare(prev: dict | None, cur: dict) -> list[dict]:
     return sorted(out, key=lambda x: ALERT_SEVERITIES.index(x["severidade"]))
 
 
+def stale_alert(asof: str, esperado: str) -> dict | None:
+    """Alerta de severidade alta se os dados acabam antes da última sessão de NY já fechada."""
+    if asof >= esperado:
+        return None
+    return _alert("alta", "dados", "pipeline", f"Dados atrasados: os preços acabam em {asof}, mas a última sessão "
+                                               f"fechada em Nova Iorque é {esperado} (falha na coleta ou feriado).")
+
+
 # ----------------------------------------------------------------------------- Obsidian
 def render_alert(asof: str, a: dict) -> str:
     return f"- [data:: {asof}] [severidade:: {a['severidade']}] [tipo:: {a['tipo']}] {a['texto']}"
@@ -232,6 +241,9 @@ def main(notify: bool = True) -> list[dict]:
     cur, _ = load_current()
     prev = previous_state(cur["asof"])
     alerts = compare(prev, cur)
+    atraso = stale_alert(cur["asof"], ultima_sessao().isoformat())
+    if atraso:
+        alerts.insert(0, atraso)
 
     STATE.mkdir(parents=True, exist_ok=True)
     state_path(cur["asof"]).write_text(json.dumps(cur, ensure_ascii=False, indent=1))

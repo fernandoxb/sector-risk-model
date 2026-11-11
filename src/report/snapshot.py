@@ -38,6 +38,16 @@ def rates_window(rates: pd.Series, first_price: pd.Timestamp, margin_days: int =
     return rates.dropna()[rates.dropna().index >= first_price - pd.Timedelta(days=margin_days)]
 
 
+def merge_stocks(new: pd.DataFrame, old: pd.DataFrame | None, stocks: list[str]) -> tuple[pd.DataFrame, list[str]]:
+    """Ações novas onde vieram; as que falharam no download vêm do snapshot anterior. Devolve também a lista
+    das que vieram do anterior."""
+    falta = [t for t in stocks if t not in new]
+    parts = [new[[t for t in stocks if t in new]]]
+    if falta and old is not None:
+        parts.append(old[[t for t in falta if t in old]])
+    return pd.concat(parts, axis=1).reindex(columns=stocks), falta
+
+
 def main(offline: bool = False) -> Path:
     SNAPSHOT.mkdir(parents=True, exist_ok=True)
     etfs = window(pd.read_parquet(CLEAN / "prices.parquet")[list(SECTORS) + [MARKET]])
@@ -46,7 +56,10 @@ def main(offline: bool = False) -> Path:
     try:
         if offline:
             raise RuntimeError("modo offline")
-        acoes = ck.download_close(stocks, f"{SNAPSHOT_YEARS}y")
+        novas = ck.download_close(stocks, f"{SNAPSHOT_YEARS}y", allow_missing=True)
+        acoes, falta = merge_stocks(novas, pd.read_parquet(old) if old.exists() else None, stocks)
+        if falta:
+            print(f"[snapshot] {len(falta)} ações sem dados novos, mantidas do snapshot anterior: {falta}")
     except Exception as e:  # noqa: BLE001  sem rede: mantém as ações do snapshot anterior
         if not old.exists():
             raise RuntimeError(f"Sem preços das ações e sem snapshot anterior ({e})") from e

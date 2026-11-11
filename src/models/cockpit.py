@@ -23,15 +23,17 @@ import yfinance as yf
 
 
 # ----------------------------------------------------------------------------- dados
-def download_close(tickers: list[str], period: str) -> pd.DataFrame:
-    """Preços ajustados de fecho. Um único pedido, sem threads (como o Bot Coletor)."""
+def download_close(tickers: list[str], period: str, allow_missing: bool = False) -> pd.DataFrame:
+    """Preços ajustados de fecho. Um único pedido, sem threads (como o Bot Coletor).
+
+    Com allow_missing, devolve só os tickers que vieram (em vez de falhar)."""
     df = yf.download(tickers, period=period, auto_adjust=True, progress=False, threads=False)
     close = df["Close"] if isinstance(df.columns, pd.MultiIndex) else df[["Close"]].set_axis(tickers, axis=1)
     close.index = pd.to_datetime(close.index).tz_localize(None)
     missing = [t for t in tickers if t not in close or close[t].dropna().empty]
-    if missing:
+    if missing and not allow_missing:
         raise RuntimeError(f"Sem dados do Yahoo para: {missing}")
-    return close[tickers]
+    return close[[t for t in tickers if t not in missing]]
 
 
 def returns(prices: pd.DataFrame) -> pd.DataFrame:
