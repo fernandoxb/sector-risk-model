@@ -19,9 +19,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW,  # noqa: E402
                              CVAR_LEVEL, CVAR_YEARS, FEATURES, GROWTH_SECTORS, MARKET,
-                             OBSIDIAN_FOLDER, OBSIDIAN_VAULT, PANIC_Q, PORTFOLIO_WEIGHTS, RATE_LOOKBACK,
-                             RATE_SERIES, SECTOR_PROFILE, SECTORS)
+                             MODEL_RISK_LEVEL, MODEL_RISK_MULT, OBSIDIAN_FOLDER, OBSIDIAN_VAULT,
+                             OFFICIAL_VAR_METHOD, PANIC_Q, PORTFOLIO_WEIGHTS, RATE_LOOKBACK,
+                             RATE_SERIES, SCORE_WEIGHTS, SECTOR_PROFILE, SECTORS)
 from src.models import cockpit as ck  # noqa: E402
+from src.models.scorecard import COMPONENTS  # noqa: E402
 
 st.set_page_config(page_title="Cockpit de Risco Setorial", page_icon="🛡️", layout="wide",
                    initial_sidebar_state="expanded")
@@ -83,8 +85,9 @@ tab["cvar_aj"] = (ck.rate_adjusted(tab["cvar"], delta_cen, GROWTH_SECTORS, penal
 grafo, corr = ck.mst(rets)
 
 # ============================================================================ cabeçalho
+nivel = f"{alpha:.1%}".replace(".", ",")        # ex.: 97,5% (nunca arredondar o nível do rótulo)
 st.title("🛡️ Cockpit de Risco Setorial")
-st.caption(f"Dados de {rets.index[0].date()} a {rets.index[-1].date()} · CVaR {alpha:.0%} · "
+st.caption(f"Dados de {rets.index[0].date()} a {rets.index[-1].date()} · CVaR {nivel} · 1 dia · "
            f"pânico = {panic_q:.0%} piores dias do SPY ({int((mkt <= mkt.quantile(panic_q)).sum())} dias)")
 
 c1, c2, c3, c4 = st.columns(4)
@@ -97,6 +100,73 @@ if regime:
               f"{regime['delta']:+.2f} p.p. em 3 meses", delta_color="inverse")
     c4.metric("Regime de juros", regime["regime"].capitalize(),
               f"cenário {delta_cen:+.2f} p.p." if choque else None, delta_color="off")
+
+# ============================================================================ scorecard
+st.subheader("🎯 Scorecard de risco por setor")
+sc_csv, off_csv = FEATURES / "scorecard.csv", FEATURES / "official_risk.csv"
+
+
+@st.cache_data(show_spinner=False)
+def scorecard_dados(mtime: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    return pd.read_csv(sc_csv, index_col=0), pd.read_csv(off_csv)
+
+
+if not (sc_csv.exists() and off_csv.exists()):
+    st.info("Ainda não há scorecard. Corre `python run_pipeline.py --offline`.")
+else:
+    sc, off = scorecard_dados(sc_csv.stat().st_mtime)
+    data_prev = off["data_previsao"].iloc[0]
+    SEM = {"verde": "🟢 verde", "amarelo": "🟡 amarelo", "vermelho": "🔴 vermelho"}
+    NOMES = {"cauda": "Cauda", "sistemico": "Sistémico", "stress": "Stress", "regime": "Regime", "momento": "Momento"}
+    CORES_C = {"cauda": "#f97316", "sistemico": "#ef4444", "stress": "#a855f7", "regime": "#3b82f6", "momento": "#14b8a6"}
+
+    s1, s2, s3, s4 = st.columns(4)
+    lider = sc.index[0]
+    s1.metric("Setor de maior risco", lider, f"score {sc.loc[lider, 'score_final']:.0f}/100", delta_color="off")
+    s2.metric(f"ES 97,5% oficial · {data_prev}", f"{sc.loc[lider, 'bruto_cauda']:.2%}".replace(".", ","),
+              f"{lider} · modelo {OFFICIAL_VAR_METHOD.upper()}", delta_color="off")
+    flag = sc[sc["risco_modelo"].astype(bool)]
+    s3.metric("Risco de modelo", f"{len(flag)} setor(es)", ", ".join(flag.index) or "nenhum", delta_color="off")
+    s4.metric("Críticos (P × I ≥ 15)", int((sc["impacto"] * sc["probabilidade"] >= 15).sum()), delta_color="off")
+
+    col_g, col_t = st.columns([2, 3])
+    with col_g:
+        ordem = sc.index[::-1]                       # o maior score fica no topo do gráfico
+        fig_sc = go.Figure()
+        for k in COMPONENTS:                          # contribuição de cada componente: 100 · w_k · c_k (soma = score)
+            fig_sc.add_trace(go.Bar(y=ordem, x=100 * SCORE_WEIGHTS[k] * sc.loc[ordem, k], orientation="h",
+                                    name=f"{NOMES[k]} ({SCORE_WEIGHTS[k]:.0%})", marker_color=CORES_C[k]))
+        extra = (sc.loc[ordem, "score_final"] - sc.loc[ordem, "score"]).clip(lower=0)
+        fig_sc.add_trace(go.Bar(y=ordem, x=extra, orientation="h", name="Ajuste de risco de modelo",
+                                marker=dict(color="rgba(234,179,8,0.35)", pattern_shape="/",
+                                            line=dict(color="#eab308", width=1))))
+        fig_sc.update_layout(barmode="stack", height=420, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor=BG,
+                             plot_bgcolor=BG, font=dict(color="#e5e7eb"),
+                             title=dict(text="Score 0–100 por componente", x=0),
+                             xaxis=dict(range=[0, 100], gridcolor="#1f2937"),
+                             legend=dict(orientation="h", y=-0.12, font=dict(size=11)))
+        st.plotly_chart(fig_sc, width="stretch")
+    with col_t:
+        tab_sc = pd.DataFrame({
+            "#": sc["rank"],
+            "Setor": [f"{SECTORS[t]} ({t})" for t in sc.index],
+            "Score": sc["score_final"],
+            "P × I": [f"P{p} × I{i} = {p * i}" for p, i in zip(sc["probabilidade"], sc["impacto"])],
+            "Semáforo": sc["semaforo"].map(SEM) + sc["risco_modelo"].map({True: " ⚠", False: ""}),
+            "ES 97,5%": sc["bruto_cauda"],
+            **{NOMES[k]: sc[k] for k in COMPONENTS},
+        })
+        st.dataframe(tab_sc, hide_index=True, width="stretch", height=420, column_config={
+            "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f"),
+            "ES 97,5%": st.column_config.NumberColumn(format="percent"),
+            **{NOMES[k]: st.column_config.ProgressColumn(NOMES[k], min_value=0, max_value=1, format="%.2f")
+               for k in COMPONENTS},
+        })
+    mult = " · ".join(f"{c} ×{m:.2f}".replace(".", ",") for c, m in MODEL_RISK_MULT.items())
+    st.caption(f"Score = 100 · Σ peso × componente; cada componente vai de 0 (o mais baixo dos 11) a 1 (o mais alto). "
+               f"Cauda = ES 97,5% previsto pelo {OFFICIAL_VAR_METHOD.upper()} para {data_prev}. "
+               f"Risco de modelo: semáforo do backtest oficial a {MODEL_RISK_LEVEL:.0%} ({mult}). "
+               "P × I segue a mesma regra do mapa de riscos. Metodologia: docs/nota-metodologica.md, secção 8.")
 
 # ============================================================================ grafo MST
 st.subheader("🕸️ Espinha de contágio (Minimum Spanning Tree)")
@@ -178,7 +248,7 @@ try:
     col_t, col_h = st.columns([3, 2])
     with col_t:
         st.dataframe(drill, hide_index=True, width="stretch")
-        st.caption(f"CVaR {alpha:.0%} do ETF {sel} no mesmo período: {pai:.2%}.")
+        st.caption(f"CVaR {nivel} do ETF {sel} no mesmo período: {pai:.2%}.")
     with col_h:
         cm = r_ac[acoes].corr()
         hm = px.imshow(cm, text_auto=".2f", zmin=-1, zmax=1, color_continuous_scale="RdBu_r",

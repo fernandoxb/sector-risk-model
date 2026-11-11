@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.3
+versao: 3.4
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -296,3 +296,10 @@ São aceites **33 das 66** ligações. Por fator:
 * **Testes múltiplos:** com 66 testes a $|t| \ge 2$ (cerca de 5%), esperam-se ~3 ligações falsas mesmo sem relação nenhuma. As ligações com $|t|$ perto de 2 (dólar → XLRE, inflação → XLI) devem ser lidas com cautela.
 * As regressões são **univariadas**: o VIX e os spreads estão muito correlacionados entre si, e cada beta capta também o efeito dos outros fatores.
 * O CSV público do FRED só tem **os últimos 3 anos** do spread high yield (licença do ICE). Chega para `CVAR_YEARS` = 3, mas não para janelas mais longas.
+
+### F. No mapa de riscos (Sprint 4d)
+* **Nós de setor:** P × I vem do scorecard (secção 8). O painel mostra o score final, o semáforo, a flag de risco de modelo, o ES 97,5% oficial e os 5 componentes em barras.
+* **Ligações medidas:** são desenhadas automaticamente entre os nós presentes no mapa: as ligações fator → setor a tracejado fino e as de contágio (MST) a pontilhado, sem seta. Ao clicar numa, o painel mostra β, t (HAC), R² e n. Podem ser escondidas com **Ligações medidas**. As ligações manuais não mudam e continuam guardadas no navegador.
+* **Exposição de um nó macro:** o número de setores que o fator agrava (+) e que atenua (−), e a soma ponderada dos scores a jusante, $\sum_{\text{ligações }+} (w/3)\cdot \text{score\_final}_{setor}$. Só contam as ligações "+", porque são as que transmitem o choque adverso.
+* **Cadeia de impacto:** percorre as ligações manuais e as medidas fator → setor, a jusante do nó selecionado. Também destaca as origens diretas desse nó e os seus vizinhos de contágio. As arestas da MST não entram na cadeia: não têm direção e, como ligam todos os setores, acenderiam o mapa inteiro.
+* `index.html#sel=xlk` abre o mapa com um risco já selecionado.

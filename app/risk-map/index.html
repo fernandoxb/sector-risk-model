@@ -115,6 +115,17 @@ ol.steps{margin:0;padding-left:18px;color:var(--muted);font-size:13px;display:fl
 .mt td{padding:4px 0;border-bottom:1px solid var(--line)}
 .mt td:last-child{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 .toast{font-size:12px;color:var(--sev-low);min-height:16px}
+.edge.mlink path.vis{stroke-dasharray:5 4}
+.edge.mlink.cont path.vis{stroke-dasharray:1.5 4;stroke-linecap:round}
+.edge.mlink.sel path.vis{stroke-dasharray:none}
+.bars{display:flex;flex-direction:column;gap:6px}
+.bar-row{display:grid;grid-template-columns:1fr 70px;gap:2px 8px;align-items:center;font-size:12.5px}
+.bar-row .v{font-family:var(--font-mono);font-variant-numeric:tabular-nums;text-align:right;font-size:12px}
+.bar{grid-column:1/-1;height:7px;border-radius:4px;background:var(--grid);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.flag{font-size:12px;border:1px solid var(--sev-med);color:var(--ink);background:color-mix(in srgb,var(--sev-med) 14%,transparent);border-radius:6px;padding:6px 8px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12.5px}
+.kv dt{color:var(--muted)}.kv dd{margin:0;text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
 @media (max-width:900px){
   main{grid-template-columns:1fr;grid-template-rows:auto 60vh auto}
   aside.left,aside.right{border:0;border-bottom:1px solid var(--line);max-height:none}
@@ -129,6 +140,7 @@ ol.steps{margin:0;padding-left:18px;color:var(--muted);font-size:13px;display:fl
   <div class="toolbar">
     <button class="btn" id="modeBtn" title="Atalho: L">Ligar riscos</button>
     <button class="btn on" id="cascBtn">Cadeia de impacto</button>
+    <button class="btn on" id="mlBtn" title="Ligações estimadas a partir dos dados (regressões semanais e MST)">Ligações medidas</button>
     <button class="btn" id="resetBtn">Repor exemplo</button>
     <button class="btn danger" id="clearBtn">Limpar mapa</button>
   </div>
@@ -183,9 +195,10 @@ const LIBRARY = [
 const LIBMAP = Object.fromEntries(LIBRARY.map(([id,name,cat])=>[id,{id,name,cat}]));
 const EXAMPLE = {
   nodes:[
-    ["inflacao",130,90,3,4],["petroleo",130,240,3,4],["recessao",130,430,2,5],
-    ["juros",410,110,4,4],["vix",410,330,3,3],["spreads",410,530,2,4],
-    ["xlre",770,50,3,4],["xlu",770,130,2,3],["xlk",770,210,3,4],["xle",770,290,3,3],["xly",770,370,3,4],["xli",770,450,2,3],["xlf",770,560,3,4]
+    ["inflacao",118,80,3,4],["petroleo",118,220,3,4],["recessao",118,360,2,5],["dolar",118,500,3,3],
+    ["juros",355,110,4,4],["vix",355,300,3,3],["spreads",355,490,2,4],
+    ["xlre",625,50,3,4],["xlu",625,150,2,3],["xlp",625,250,2,3],["xlv",625,350,2,3],["xlc",625,450,3,3],["xlb",625,550,3,3],
+    ["xlk",870,80,3,4],["xle",870,200,3,3],["xly",870,320,3,4],["xli",870,440,2,3],["xlf",870,560,3,4]
   ].map(([id,x,y,p,i])=>({id,name:LIBMAP[id].name,cat:LIBMAP[id].cat,x,y,p,i,notes:""})),
   edges:[
     ["inflacao","juros","+",3],["petroleo","inflacao","+",2],["juros","xlre","+",3],["juros","xlu","+",2],["juros","xlk","+",2],
@@ -211,20 +224,43 @@ function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",
 function node(id){return S.nodes.find(n=>n.id===id)}
 function score(n){return n.p*n.i}
 function md(n){return DATA&&DATA.sectors?DATA.sectors[String(n.id).toUpperCase()]:null}
-function applyData(){if(!DATA)return;for(const n of S.nodes){const m=md(n);if(m&&n.auto!==false){n.p=m.probabilidade;n.i=m.impacto;n.auto=true}}}
-const pct=v=>(v*100).toFixed(1)+"%";
+// Scorecard (Sprint 4b) e ligações medidas (Sprint 4c), vindos do pipeline Python
+const SC = DATA&&DATA.scorecard ? DATA.scorecard.setores : null;
+const ML = DATA&&Array.isArray(DATA.links) ? DATA.links.map((l,k)=>({...l,id:"m"+k})) : [];
+const COMP = [["cauda","Cauda (ES 97,5% FHS)"],["sistemico","Sistémico (CVaR ÷ peso)"],["stress","Stress (perda média)"],["regime","Regime (pct. vol 63d)"],["momento","Momento (exceções 60d)"]];
+let showMeasured = true;
+function scd(n){return SC?SC[String(n.id).toUpperCase()]:null}
+function visibleML(){return showMeasured?ML.filter(l=>node(l.from)&&node(l.to)):[]}
+function measuredOut(id){return ML.filter(l=>l.tipo==="medida"&&l.from===id)}
+// exposição de um nó macro: setores afetados e soma ponderada dos scores a jusante (só ligações "+", que agravam)
+function exposure(id){
+  const out=measuredOut(id),adv=out.filter(l=>l.sign==="+");
+  const exp=adv.reduce((a,l)=>{const s=SC&&SC[l.to.toUpperCase()];return a+(s?l.w/3*s.score_final:0)},0);
+  return {out,adv:adv.length,help:out.length-adv.length,exp};
+}
+function scoreSev(v){return v>=75?"crit":v>=50?"high":v>=25?"med":"low"}
+function applyData(){if(!DATA)return;for(const n of S.nodes){const src=scd(n)||md(n);if(src&&n.auto!==false){n.p=src.probabilidade;n.i=src.impacto;n.auto=true}}}
+const num=(v,d)=>Number(v).toLocaleString("pt-PT",{minimumFractionDigits:d,maximumFractionDigits:d});
+const pct=v=>num(v*100,1)+"%";
 function sev(s){return s>=15?["crit","Crítico"]:s>=10?["high","Alto"]:s>=5?["med","Médio"]:["low","Baixo"]}
 function sevVar(s){return "var(--sev-"+sev(s)[0]+")"}
-function size(n){return {w:Math.max(178,Math.min(260,n.name.length*7.4+34)),h:46}}
+// largura: o maior entre o nome e a 2.ª linha (P × I + score), com folga para a etiqueta de nível
+function size(n){const sub=`P${n.p} × I${n.i} = ${score(n)}${subTag(n)}`;return {w:Math.min(272,Math.max(178,n.name.length*7.4+34,(sub.length+9)*6.7+24)),h:46}}
 function uid(p){return p+Math.random().toString(36).slice(2,8)}
 
 // cadeia de impacto: riscos a jusante do nó selecionado
 function downstream(id){
   const seen=new Map([[id,0]]),q=[id];
-  while(q.length){const c=q.shift();for(const e of S.edges)if(e.from===c&&!seen.has(e.to)){seen.set(e.to,seen.get(c)+1);q.push(e.to)}}
+  const E=S.edges.concat(showMeasured?ML.filter(l=>l.tipo==="medida"):[]);   // a cadeia usa também as ligações medidas
+  while(q.length){const c=q.shift();for(const e of E)if(e.from===c&&!seen.has(e.to)&&node(e.to)){seen.set(e.to,seen.get(c)+1);q.push(e.to)}}
   return seen;
 }
 
+// origens diretas do nó selecionado (ligações manuais e medidas que chegam até ele)
+function upstream(id){
+  const E=S.edges.concat(showMeasured?ML.filter(l=>l.tipo==="medida"):[]);
+  return new Set(E.filter(e=>e.to===id&&node(e.from)).map(e=>e.from));
+}
 function boxPoint(n,tx,ty){
   const {w,h}=size(n),cx=n.x,cy=n.y,dx=tx-cx,dy=ty-cy;
   if(!dx&&!dy)return [cx,cy];
@@ -234,9 +270,23 @@ function boxPoint(n,tx,ty){
 
 function render(skipPanel){
   const chain = cascade&&sel&&sel.type==="node" ? downstream(sel.id) : null;
-  const chainEdge = e => chain&&chain.has(e.from)&&chain.has(e.to)&&chain.get(e.to)>chain.get(e.from);
+  const up = chain ? upstream(sel.id) : new Set();
+  const chainEdge = e => chain&&((chain.has(e.from)&&chain.has(e.to)&&chain.get(e.to)>chain.get(e.from))||e.to===sel.id);
   // ligações
   let eh="";
+  for(const l of visibleML()){
+    const a=node(l.from),b=node(l.to),cont=l.tipo!=="medida";
+    const manual=S.edges.some(e=>(e.from===l.from&&e.to===l.to)||(e.from===l.to&&e.to===l.from));
+    let [x1,y1]=boxPoint(a,b.x,b.y),[x2,y2]=boxPoint(b,a.x,a.y);
+    const mx=(x1+x2)/2,my=(y1+y2)/2,len=Math.hypot(x2-x1,y2-y1)||1,off=manual?-26:0;
+    const cx=mx-(y2-y1)/len*off,cy=my+(x2-x1)/len*off;
+    const col=cont?"var(--muted)":l.sign==="+"?"var(--pos)":"var(--neg)";
+    const d=`M${x1.toFixed(1)} ${y1.toFixed(1)}Q${cx.toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+    const inChain=cont?(sel&&(l.from===sel.id||l.to===sel.id)):chainEdge(l);
+    const cls=["edge","mlink",cont?"cont":"",sel&&sel.type==="mlink"&&sel.id===l.id?"sel":"",chain&&!inChain?"dim":""].join(" ");
+    const tip=cont?`Contágio (MST): ${a.name} ↔ ${b.name} · r = ${num(l.corr,2)}`:`Medida: ${a.name} → ${b.name} · β = ${num(l.beta,3)} · t = ${num(l.t,1)} · R² = ${num(l.r2,2)}`;
+    eh+=`<g class="${cls}" data-mlink="${l.id}"><title>${esc(tip)}</title><path class="hit" d="${d}"/><path class="vis" d="${d}" stroke="${col}" stroke-width="${(cont?0.8:0.5)+l.w*0.45}" stroke-opacity="${cont?0.8:0.9}"${cont?"":` marker-end="url(#arr-${l.sign==="+"?"pos":"neg"})"`}/></g>`;
+  }
   for(const e of S.edges){
     const a=node(e.from),b=node(e.to);if(!a||!b)continue;
     const rev=S.edges.some(o=>o.from===e.to&&o.to===e.from);
@@ -255,23 +305,33 @@ function render(skipPanel){
   let nh="";
   for(const n of S.nodes){
     const {w,h}=size(n),s=score(n);
-    const cls=["node",sel&&sel.type==="node"&&sel.id===n.id?"sel":"",pending===n.id?"pending":"",chain&&!chain.has(n.id)?"dim":""].join(" ");
-    const depth=chain&&chain.has(n.id)&&chain.get(n.id)>0?` · nível ${chain.get(n.id)}`:"";
+    const cls=["node",sel&&sel.type==="node"&&sel.id===n.id?"sel":"",pending===n.id?"pending":"",chain&&!chain.has(n.id)&&!up.has(n.id)&&!contNeighbor(n.id)?"dim":""].join(" ");
+    const depth=chain&&chain.has(n.id)&&chain.get(n.id)>0?` · N${chain.get(n.id)}`:up.has(n.id)?" · origem":"";
     nh+=`<g class="${cls}" data-node="${esc(n.id)}" transform="translate(${n.x-w/2},${n.y-h/2})">`+
         `<rect class="box" width="${w}" height="${h}" rx="7" stroke="${CATS[n.cat]?.color||CATS.outro.color}"/>`+
         `<rect x="0" y="0" width="5" height="${h}" rx="2" fill="${sevVar(s)}"/>`+
         `<text class="name" x="14" y="19">${esc(n.name)}</text>`+
-        `<text class="sub" x="14" y="36">P${n.p} × I${n.i} = ${s}${md(n)&&n.auto?" · medido":""}${depth}</text></g>`;
+        `<text class="sub" x="14" y="36">P${n.p} × I${n.i} = ${s}${subTag(n)}${depth}</text></g>`;
   }
   document.getElementById("nodes").innerHTML=nh;
   renderStats();renderLib();if(!skipPanel)renderPanel(chain);renderHint();save();
 }
 
+function contNeighbor(id){return !!(sel&&sel.type==="node"&&showMeasured&&ML.some(l=>l.tipo!=="medida"&&((l.from===sel.id&&l.to===id)||(l.to===sel.id&&l.from===id))))}
+function subTag(n){
+  const c=scd(n);
+  if(c&&n.auto)return ` · score ${Math.round(c.score_final)}${c.risco_modelo?" ⚠":""}`;
+  if(md(n)&&n.auto)return " · medido";
+  const x=measuredOut(n.id);if(x.length&&SC){const e=exposure(n.id);return e.adv?` · exp. ${Math.round(e.exp)}`:""}
+  return "";
+}
 function renderStats(){
   const crit=S.nodes.filter(n=>score(n)>=15).length;
-  document.getElementById("stats").innerHTML=`<span><b>${S.nodes.length}</b> riscos</span><span><b>${S.edges.length}</b> ligações</span><span class="crit"><b>${crit}</b> críticos</span><span>${DATA?`dados até <b>${DATA.asof}</b>`:"sem dados de mercado"}</span>`;
+  document.getElementById("stats").innerHTML=`<span><b>${S.nodes.length}</b> riscos</span><span><b>${S.edges.length}</b> ligações${showMeasured&&ML.length?` + <b>${visibleML().length}</b> medidas`:""}</span><span class="crit"><b>${crit}</b> críticos</span><span>${DATA?`dados até <b>${DATA.asof}</b>`:"sem dados de mercado"}</span>`;
   document.getElementById("modeBtn").classList.toggle("on",mode==="link");
   document.getElementById("cascBtn").classList.toggle("on",cascade);
+  document.getElementById("mlBtn").classList.toggle("on",showMeasured);
+  document.getElementById("mlBtn").hidden=!ML.length;
 }
 function renderHint(){
   const h=document.getElementById("hint");
@@ -287,7 +347,8 @@ function renderLib(){
     html+=`<div class="lib-group"><h2>${meta.label}</h2><ul>`+items.map(([id,name])=>`<li><button class="lib-item ${placed.has(id)?"placed":""}" draggable="true" data-lib="${id}"><span class="dot" style="background:${meta.color}"></span>${esc(name)}</button></li>`).join("")+`</ul></div>`;
   }
   document.getElementById("lib").innerHTML=html||`<p class="muted">Nada encontrado. Cria-o em "Novo risco".</p>`;
-  document.getElementById("legend").innerHTML=`<span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--pos)" stroke-width="2"/></svg>+ agrava</span><span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--neg)" stroke-width="2"/></svg>− atenua</span><span><span class="dot" style="background:var(--sev-crit)"></span>barra = severidade</span>`;
+  document.getElementById("legend").innerHTML=`<span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--pos)" stroke-width="2"/></svg>+ agrava</span><span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--neg)" stroke-width="2"/></svg>− atenua</span><span><span class="dot" style="background:var(--sev-crit)"></span>barra = severidade</span>`+
+    (ML.length?`<span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/></svg>tracejado = medida (dados)</span><span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="1.5 4" stroke-linecap="round"/></svg>pontilhado = contágio (MST)</span>`:"");
 }
 
 function matrixHTML(){
@@ -318,7 +379,7 @@ function renderPanel(chain){
       <div class="field"><label for="fCat">Categoria</label><select id="fCat">${Object.entries(CATS).map(([k,v])=>`<option value="${k}" ${k===n.cat?"selected":""}>${v.label}</option>`).join("")}</select></div>
       <div class="field"><label for="fP">Probabilidade (1 rara · 5 quase certa)</label><div class="range-row"><input type="range" id="fP" min="1" max="5" value="${n.p}"><output id="oP">${n.p}</output></div></div>
       <div class="field"><label for="fI">Impacto (1 mínimo · 5 severo)</label><div class="range-row"><input type="range" id="fI" min="1" max="5" value="${n.i}"><output id="oI">${n.i}</output></div></div>
-      ${dataBox(n)}
+      ${scoreBox(n)}${exposureBox(n)}${dataBox(n)}
       <div class="field"><label for="fN">Notas e fontes</label><textarea id="fN" placeholder="Porquê esta avaliação? Que dados a suportam?">${esc(n.notes||"")}</textarea></div>
       ${cascade?`<p class="muted"><b style="color:var(--ink)">${affected}</b> ${affected===1?"risco afetado":"riscos afetados"} em cadeia.</p>`:""}
       <div><h2>Influencia</h2>${out.length?`<ul class="links">${out.map(e=>li(e,e.to)).join("")}</ul>`:`<p class="muted">Sem ligações de saída.</p>`}</div>
@@ -335,6 +396,22 @@ function renderPanel(chain){
     document.getElementById("delNode").onclick=()=>removeNode(n.id);
     const ub=document.getElementById("useData");if(ub)ub.onclick=()=>{n.auto=true;applyData();render()};
     return;
+  }
+  if(sel&&sel.type==="mlink"){
+    const l=ML.find(x=>x.id===sel.id);
+    if(l){
+      const a=node(l.from),b=node(l.to),cont=l.tipo!=="medida",M=DATA.links_metodo||{};
+      const rows=cont?[["Correlação diária (3 anos)",num(l.corr,2)],["Intensidade (tercil da correlação)",["Fraca","Média","Forte"][l.w-1]]]:
+        [["Efeito",l.sign==="+"?"+ agrava":"− atenua"],["Intensidade (tercil de |β padronizado|)",["Fraca","Média","Forte"][l.w-1]],["β",num(l.beta,4)],["t (HAC Newey–West)",num(l.t,2)],["R²",num(l.r2,3)],["n (semanas)",l.n]];
+      P.innerHTML=`
+        <div><h2>${cont?"Ligação de contágio (MST)":"Ligação medida"}</h2><p style="margin:0"><b>${esc(a?.name||l.from)}</b> ${cont?"↔":"→"} <b>${esc(b?.name||l.to)}</b></p></div>
+        <dl class="kv">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>
+        <p class="muted" style="font-size:12px">${cont?"Aresta da Minimum Spanning Tree dos retornos diários: os dois setores caem juntos. Sem direção.":
+          `Regressão semanal (${M.inicio||"?"} → ${M.fim||"?"}) do retorno do setor na variação do fator, com erros-padrão HAC. Aceite porque |t| ≥ ${M.t_min??2}. "+" = o movimento adverso do fator piora o setor.`}</p>
+        <p class="muted" style="font-size:12px">Ligação calculada pelo pipeline: não se edita aqui. Para a esconder, desliga <b>Ligações medidas</b>.</p>
+        <div><h2>Matriz de risco</h2>${matrixHTML()}</div>`;
+      return;
+    }
   }
   if(sel&&sel.type==="edge"){
     const e=S.edges.find(x=>x.id===sel.id);
@@ -354,7 +431,7 @@ function renderPanel(chain){
   }
   const top=[...S.nodes].sort((a,b)=>score(b)-score(a)||b.i-a.i).slice(0,6);
   P.innerHTML=`
-    <div><h2>Como usar</h2><ol class="steps"><li>Arrasta riscos da biblioteca para a tela, ou clica neles.</li><li>Ativa <b>Ligar riscos</b>, clica na origem e depois no risco afetado.</li><li>Seleciona um risco para avaliar a probabilidade e o impacto e ver a cadeia de impacto. Nos setores, a avaliação vem dos dados de mercado.</li></ol></div>
+    <div><h2>Como usar</h2><ol class="steps"><li>Arrasta riscos da biblioteca para a tela, ou clica neles.</li><li>Ativa <b>Ligar riscos</b>, clica na origem e depois no risco afetado.</li><li>Seleciona um risco para avaliar a probabilidade e o impacto e ver a cadeia de impacto. Nos setores, P × I vem do scorecard calculado pelo pipeline.</li><li>As ligações tracejadas são <b>medidas</b> nos dados (regressões e MST); clica nelas para ver β, t e R².</li></ol></div>
     <div><h2>Riscos mais severos</h2>${top.length?`<ul class="top-list">${top.map(n=>`<li><button data-pick="${esc(n.id)}" style="--sev:${sevVar(score(n))}"><span>${esc(n.name)}</span><span class="n">${score(n)}</span></button></li>`).join("")}</ul>`:`<p class="muted">O mapa está vazio.</p>`}</div>
     <div><h2>Matriz de risco</h2>${matrixHTML()}</div>
     <div class="io"><h2>Exportar / importar (JSON)</h2>
@@ -372,10 +449,34 @@ function dataBox(n){
   const m=md(n);if(!m)return "";
   const rows=[["Volatilidade (1 ano)",pct(m.vol_1y)],["Volatilidade prevista (GARCH)",pct(m.vol_garch)],["Vol. 63 dias: percentil histórico",Math.round(m.vol_pct*100)+"º"],
     [`VaR 99% (1 dia, ${DATA.metodo.cvar_years} anos)`,pct(-m.var99)],[`CVaR ${(DATA.metodo.cvar_level*100).toLocaleString("pt-PT")}% (1 dia, ${DATA.metodo.cvar_years} anos)`,pct(-m.cvar)],["VaR 99% condicional (GARCH)",pct(-m.var99_garch)],
-    ["Drawdown máximo",pct(m.max_dd)],["Drawdown atual",pct(m.dd_now)],["Beta face ao SPY (3 anos)",m.beta.toFixed(2)]];
+    ["Drawdown máximo",pct(m.max_dd)],["Drawdown atual",pct(m.dd_now)],["Beta face ao SPY (3 anos)",num(m.beta,2)]];
   return `<div class="databox"><h2>Dados de mercado · até ${DATA.asof}</h2><table class="mt">${rows.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join("")}</table>
-    <p class="muted" style="font-size:12px">${n.auto?`Avaliação medida: impacto = quintil do CVaR entre setores (${m.impacto}); probabilidade = regime de volatilidade (${m.probabilidade}).`:`Avaliação manual. Os dados sugerem P${m.probabilidade} × I${m.impacto}.`}</p>
+    <p class="muted" style="font-size:12px">${(()=>{const c=scd(n),src=c||m;
+      if(!n.auto)return `Avaliação manual. Os dados sugerem P${src.probabilidade} × I${src.impacto}.`;
+      return c?`Avaliação medida pelo scorecard: impacto = quintil de cauda + sistémico + stress (${c.impacto}); probabilidade = quintil de regime + momento (${c.probabilidade}).`:
+        `Avaliação medida: impacto = quintil do CVaR entre setores (${m.impacto}); probabilidade = regime de volatilidade (${m.probabilidade}).`})()}</p>
     ${n.auto?"":`<button class="btn" id="useData">Usar avaliação dos dados</button>`}</div>`;
+}
+function scoreBox(n){
+  const c=scd(n);if(!c)return "";
+  const meta=DATA.scorecard.metodo,sk=scoreSev(c.score_final),semCol={verde:"low",amarelo:"med",vermelho:"crit"}[c.semaforo]||"med";
+  const fmt={cauda:v=>pct(v),sistemico:v=>num(v,2)+"×",stress:v=>pct(v),regime:v=>Math.round(v*100)+"º pct",momento:v=>String(v)};
+  const bars=COMP.map(([k,lab])=>`<div class="bar-row"><span>${lab} <span class="muted" style="font-size:11px">${Math.round(meta.pesos[k]*100)}%</span></span><span class="v">${fmt[k](c["bruto_"+k])}</span><span class="bar" title="${Math.round(c[k]*100)}% (0 = o mais baixo dos 11, 100 = o mais alto)"><i style="width:${(c[k]*100).toFixed(0)}%"></i></span></div>`).join("");
+  return `<div class="databox"><h2>Scorecard · ${c.rank}º de ${Object.keys(SC).length}</h2>
+    <div class="score" style="--sev:var(--sev-${sk})"><span class="num">${Math.round(c.score_final)}</span><span><span class="muted">score de risco / 100</span><br><span class="pill" style="--sev:var(--sev-${semCol})">semáforo ${c.semaforo}</span></span></div>
+    ${c.risco_modelo?`<div class="flag">⚠ Risco de modelo: o backtest do VaR oficial a 99% está ${c.semaforo}; score ${num(c.score,0)} × ${num(c.mult_modelo,2)}.</div>`:""}
+    <dl class="kv"><dt>ES 97,5% oficial (FHS) · ${meta.data_previsao}</dt><dd>${pct(c.bruto_cauda)}</dd></dl>
+    <div class="bars">${bars}</div>
+    <p class="muted" style="font-size:12px">Barras = posição entre os 11 setores (o regime já é um percentil da própria história). A % é o peso no score.</p></div>`;
+}
+function exposureBox(n){
+  const x=exposure(n.id);if(!x.out.length)return "";
+  const rows=[...x.out].sort((a,b)=>Math.abs(b.t)-Math.abs(a.t)).map(l=>{const on=node(l.to),nm=(LIBMAP[l.to]||{}).name||l.to.toUpperCase();
+    return `<li><button ${on?`data-pick="${esc(l.to)}"`:`data-addlib="${esc(l.to)}"`}><span class="sgn" style="color:${l.sign==="+"?"var(--pos)":"var(--neg)"}">${l.sign==="+"?"+":"−"}</span>${esc(nm)}<span class="muted" style="margin-left:auto;font-size:11px">${on?"":"fora do mapa · "}t ${num(l.t,1)} ${"●".repeat(l.w)}</span></button></li>`}).join("");
+  return `<div class="databox"><h2>Exposição medida</h2>
+    <dl class="kv"><dt>Setores que agrava (+)</dt><dd>${x.adv}</dd><dt>Setores que atenua (−)</dt><dd>${x.help}</dd><dt>Soma ponderada dos scores a jusante</dt><dd>${Math.round(x.exp)}</dd></dl>
+    <ul class="links">${rows}</ul>
+    <p class="muted" style="font-size:12px">Soma de (intensidade ÷ 3) × score dos setores com ligação "+". Ligações medidas por regressão semanal com erros-padrão HAC.</p></div>`;
 }
 function toast(t){const el=document.getElementById("toast");if(el)el.textContent=t}
 function importText(t){
@@ -391,7 +492,7 @@ function addNode(id,name,cat,x,y){
   applyData();sel={type:"node",id};render();
 }
 function removeNode(id){S.nodes=S.nodes.filter(n=>n.id!==id);S.edges=S.edges.filter(e=>e.from!==id&&e.to!==id);sel=null;pending=null;render()}
-function clampX(x){return Math.max(80,Math.min(920,x))}
+function clampX(x){return Math.max(80,Math.min(935,x))}
 function clampY(y){return Math.max(30,Math.min(610,y))}
 function freeSpot(){let x=500,y=320,k=0;while(S.nodes.some(n=>Math.abs(n.x-x)<120&&Math.abs(n.y-y)<50)&&k<40){k++;x=500+((k%5)-2)*130;y=320+(Math.floor(k/5)%5-2)*60}return [x,y]}
 
@@ -404,6 +505,8 @@ svg.addEventListener("pointerdown",ev=>{
   if(g){const n=node(g.dataset.node),pt=svgPt(ev);drag={id:n.id,dx:n.x-pt.x,dy:n.y-pt.y,moved:false,sx:ev.clientX,sy:ev.clientY};svg.setPointerCapture(ev.pointerId);return}
   const e=ev.target.closest("[data-edge]");
   if(e){sel={type:"edge",id:e.dataset.edge};render();return}
+  const ml=ev.target.closest("[data-mlink]");
+  if(ml){sel={type:"mlink",id:ml.dataset.mlink};render();return}
   if(mode!=="link"){sel=null;pending=null;render()}
 });
 svg.addEventListener("pointermove",ev=>{
@@ -428,6 +531,7 @@ document.getElementById("lib").addEventListener("dragstart",ev=>{const b=ev.targ
 document.getElementById("lib").addEventListener("click",ev=>{const b=ev.target.closest("[data-lib]");if(!b)return;const it=LIBMAP[b.dataset.lib];const [x,y]=freeSpot();addNode(it.id,it.name,it.cat,x,y)});
 document.getElementById("panel").addEventListener("click",ev=>{
   const p=ev.target.closest("[data-pick]");if(p){sel={type:"node",id:p.dataset.pick};render();return}
+  const a=ev.target.closest("[data-addlib]");if(a){const it=LIBMAP[a.dataset.addlib];if(it){const [x,y]=freeSpot();const keep=sel;addNode(it.id,it.name,it.cat,x,y);sel=keep;render()}return}
   const e=ev.target.closest("[data-edge-pick]");if(e){sel={type:"edge",id:e.dataset.edgePick};render()}
 });
 document.getElementById("search").addEventListener("input",ev=>{filter=ev.target.value;renderLib()});
@@ -435,16 +539,20 @@ document.getElementById("addBtn").onclick=()=>{const inp=document.getElementById
 document.getElementById("newName").addEventListener("keydown",ev=>{if(ev.key==="Enter")document.getElementById("addBtn").click()});
 document.getElementById("modeBtn").onclick=()=>{mode=mode==="link"?"select":"link";pending=mode==="link"&&sel&&sel.type==="node"?sel.id:null;render()};
 document.getElementById("cascBtn").onclick=()=>{cascade=!cascade;render()};
+document.getElementById("mlBtn").onclick=()=>{showMeasured=!showMeasured;if(sel&&sel.type==="mlink")sel=null;render()};
 document.getElementById("resetBtn").onclick=()=>{S=clone(EXAMPLE);applyData();sel=null;pending=null;render()};
 document.getElementById("clearBtn").onclick=()=>{S={nodes:[],edges:[]};sel=null;pending=null;render()};
 document.addEventListener("keydown",ev=>{
   if(ev.target.matches("input,textarea,select"))return;
   if(ev.key==="Escape"){pending=null;mode="select";sel=null;render()}
   else if(ev.key==="l"||ev.key==="L"){document.getElementById("modeBtn").click()}
-  else if((ev.key==="Delete"||ev.key==="Backspace")&&sel){if(sel.type==="node")removeNode(sel.id);else{S.edges=S.edges.filter(e=>e.id!==sel.id);sel=null;render()}}
+  else if((ev.key==="Delete"||ev.key==="Backspace")&&sel&&sel.type!=="mlink"){if(sel.type==="node")removeNode(sel.id);else{S.edges=S.edges.filter(e=>e.id!==sel.id);sel=null;render()}}
 });
 applyData();
-sel={type:"node",id:"juros"};
+// seleção inicial: #sel=<id> no endereço (ex.: index.html#sel=xlk), senão "juros"
+function selFromHash(){const m=/sel=([\w-]+)/.exec(location.hash);const id=m?decodeURIComponent(m[1]):"juros";sel=node(id)?{type:"node",id}:null}
+selFromHash();
+window.addEventListener("hashchange",()=>{selFromHash();render()});
 render();
 </script>
 </body>
