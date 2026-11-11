@@ -28,7 +28,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (ALERT_KEEP_DAYS, ALERT_NOTIFY, ALERT_SEVERITIES, CLEAN, FEATURES,  # noqa: E402
                              MACRO_FACTORS, OBSIDIAN_FOLDER, OBSIDIAN_VAULT, OFFICIAL_MEASURES,
-                             OFFICIAL_VAR_METHOD, PI_LEVELS, RATE_LOOKBACK, SEMAFORO_ORDEM, STATE)
+                             OFFICIAL_VAR_METHOD, PI_LEVELS, RATE_LOOKBACK, RATE_THRESHOLD_PP,
+                             SEMAFORO_ORDEM, STATE)
 from src.models import cockpit as ck  # noqa: E402
 
 VAR_KEY, ES_KEY = "var975", "es975"
@@ -50,6 +51,12 @@ def pi_level(p: int, i: int, levels=PI_LEVELS) -> str:
     """Nível de P × I: o primeiro nível cujo limite superior é >= P × I."""
     pi = int(p) * int(i)
     return next(nome for lim, nome in levels if pi <= lim)
+
+
+def pi_min(nivel: str, levels=PI_LEVELS) -> int:
+    """Menor P × I que pertence ao `nivel` (ex.: crítico → 17)."""
+    i = [n for _, n in levels].index(nivel)
+    return levels[i - 1][0] + 1 if i else 1
 
 
 def build_state(asof: str, scorecard: pd.DataFrame, series: pd.DataFrame, links: pd.DataFrame,
@@ -188,6 +195,14 @@ def send_notification(text: str) -> None:
                                        f'subtitle "Alerta de severidade alta"'], check=False)
 
 
+def score_history(states: list[dict]) -> pd.DataFrame:
+    """Uma linha por (data, setor) a partir dos estados gravados: score, posição, P × I, nível e semáforo."""
+    rows = [{"data": st["asof"], "setor": t, **{k: v[k] for k in ("score", "rank", "pi", "nivel", "semaforo")}}
+            for st in states for t, v in st["setores"].items()]
+    cols = ["data", "setor", "score", "rank", "pi", "nivel", "semaforo"]
+    return pd.DataFrame(rows, columns=cols).sort_values(["data", "setor"]).reset_index(drop=True)
+
+
 # ----------------------------------------------------------------------------- estados gravados
 def state_path(asof: str) -> Path:
     return STATE / f"estado_{asof}.json"
@@ -209,7 +224,7 @@ def load_current() -> tuple[dict, pd.DataFrame]:
     regime = None
     fac = CLEAN / "factors.parquet"
     if fac.exists():
-        regime = ck.rate_regime(pd.read_parquet(fac)["juros"], RATE_LOOKBACK)
+        regime = ck.rate_regime(pd.read_parquet(fac)["juros"], RATE_LOOKBACK, RATE_THRESHOLD_PP)
     return build_state(asof, sc, series, links, regime), series
 
 
@@ -226,6 +241,13 @@ def main(notify: bool = True) -> list[dict]:
     note = folder / "Alertas.md"
     note.write_text(update_alerts(note.read_text() if note.exists() else None, cur["asof"], alerts,
                                   first_run=prev is None))
+    # para o cockpit e o snapshot: histórico do score (todos os estados) e alertas do último run
+    states = [json.loads(p.read_text()) for p in sorted(STATE.glob("estado_*.json"))]
+    score_history(states).to_csv(FEATURES / "score_history.csv", index=False, float_format="%.2f")
+    # alertas do último run
+    (FEATURES / "alerts.json").write_text(json.dumps(
+        {"asof": cur["asof"], "referencia": prev["asof"] if prev else None, "alertas": alerts},
+        ensure_ascii=False, indent=1))
     msg = notification(alerts)
     if notify and msg:
         send_notification(msg)

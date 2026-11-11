@@ -179,3 +179,16 @@ def test_estado_de_referencia_semanal(tmp_path):
     assert wk.reference_state("2026-11-13", tmp_path)["asof"] == "2026-11-06"   # sexta anterior
     assert wk.reference_state("2026-11-10", tmp_path)["asof"] == "2026-11-06"
 
+
+
+def test_limite_minimo_de_cada_nivel():
+    assert [al.pi_min(n) for n in ("baixo", "moderado", "elevado", "crítico")] == [1, 5, 10, 17]
+    assert al.pi_level(4, 4) == "elevado" and al.pi_level(17, 1) == "crítico"
+
+
+def test_historico_do_score(ontem):
+    hoje = copy.deepcopy(ontem) | {"asof": "2026-11-10"}
+    hoje["setores"]["XLK"]["score"] = 85.0
+    h = al.score_history([ontem, hoje])
+    assert len(h) == 6 and list(h.columns) == ["data", "setor", "score", "rank", "pi", "nivel", "semaforo"]
+    assert h.query("setor == 'XLK'")["score"].tolist() == [80, 85.0]

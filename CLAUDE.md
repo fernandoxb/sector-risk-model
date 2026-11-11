@@ -19,6 +19,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 - Modelo oficial de VaR/ES (forward-looking): `OFFICIAL_VAR_METHOD = "fhs"`, escolhido pelo backtest;
   previsão de amanhã em `data/features/official_risk.csv`. O CVaR histórico continua a ser o do mapa e do cockpit.
 - Rótulos na UI dizem sempre nível e janela (ex.: "CVaR 97,5% · 1 dia · 3 anos").
+- Números na UI em português, sempre via `src/report/formato.py` (vírgula decimal, "−" tipográfico); perdas de
+  stress mostradas como retorno com sinal. Níveis P × I e "crítico" vêm de `PI_LEVELS` (`alerts.pi_level`/`pi_min`).
 
 ## Pipeline e estrutura
 - `python run_pipeline.py` (ou `--offline` para não descarregar): coleta → validação → métricas → mapa.

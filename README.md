@@ -11,7 +11,7 @@
 > coverage, independence and the ES test at the same time**, so it is the official model.
 > The project also covers portfolio risk (Ledoit-Wolf covariance, Euler risk contributions, 2008/2020/2022 stress tests),
 > a 0–100 risk scorecard, macro-factor → sector links estimated with HAC regressions, and an automated daily pipeline
-> (Prefect + launchd) with alerts and weekly reports. There are 97 tests and CI on GitHub Actions.
+> (Prefect + launchd) with alerts and weekly reports. There are 103 tests and CI on GitHub Actions.
 
 Pipeline em Python que mede o risco de mercado dos 11 ETFs setoriais SPDR (XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLU,
 XLB, XLRE, XLC) face ao SPY, setor a setor e em carteira. Corre sozinho todos os dias úteis e publica os resultados em três
@@ -53,7 +53,23 @@ Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% 
 |---|---|
 | ![Mapa: XLK](docs/img/mapa-xlk.png) | ![Mapa: juros](docs/img/mapa-juros.png) |
 
-![Cockpit: scorecard de risco por setor](docs/img/cockpit-scorecard.png)
+O cockpit está organizado em separadores:
+* **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
+* **Setores:** scorecard e evolução do score.
+* **Ficha do setor:** tudo sobre um setor, incluindo o risco previsto desde 2008.
+* **Análise ao vivo:** CVaR histórico, downside beta, contágio e ações.
+* **Fatores macro.**
+* **Modelo:** backtest.
+* **Carteira e stress:** inclui um cenário de stress próprio.
+* **Glossário.**
+
+| Resumo | Fatores macro |
+|---|---|
+| ![Cockpit: resumo](docs/img/cockpit-resumo.png) | ![Cockpit: fatores macro](docs/img/cockpit-fatores.png) |
+
+| Scorecard | Ficha do setor |
+|---|---|
+| ![Cockpit: scorecard de risco por setor](docs/img/cockpit-scorecard.png) | ![Cockpit: ficha do setor](docs/img/cockpit-ficha.png) |
 
 **Outros números (dados até 2026-11-10):**
 * **Carteira com pesos iguais:** volatilidade de 12,1% e CVaR 97,5% de 2,21% a 1 dia. A diversificação vale 1,49× na volatilidade, mas só 1,39× no CVaR, porque nas quedas os setores caem juntos.
@@ -86,7 +102,7 @@ python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_pipeline.py            # coleta → validação → modelos → mapa (precisa de rede)
 .venv/bin/streamlit run app/cockpit/app.py  # cockpit em http://localhost:8501
 open app/risk-map/index.html                # mapa de riscos (sem servidor)
-.venv/bin/python -m pytest                  # 97 testes, sem rede
+.venv/bin/python -m pytest                  # 103 testes, sem rede
 ```
 * **Chave do FRED:** é opcional. Se definires `FRED_API_KEY` num `.env`, os dados vêm pela API; caso contrário usa-se o CSV público.
 * **Sem rede:** `run_pipeline.py --offline` reutiliza os dados de `data/raw/`.
@@ -143,7 +159,7 @@ flows/                  flow Prefect e agendamento launchd
 app/risk-map/           mapa de riscos (HTML autónomo)
 app/cockpit/            cockpit Streamlit + snapshot
 scripts/                capturas de ecrã e PDF da nota metodológica (Chrome headless)
-tests/                  97 testes (pytest), sem rede
+tests/                  103 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
 docs/                   nota metodológica (.md e .pdf) e capturas
 ```
 

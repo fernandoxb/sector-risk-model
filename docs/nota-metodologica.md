@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.6
+versao: 3.7
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -202,6 +202,14 @@ A carteira é **buy-and-hold** com os pesos no início do episódio, pelo que a 
 * **Quem pesa na cauda:** o XLK, o XLY e o XLE contribuem para o CVaR mais do que o seu peso de 9,1% (12,9%, 12,4% e 11,0%). O XLP, o XLU e o XLV contribuem bastante menos (4,7–6,8%). O XLE pesa mais no CVaR (11,0%) do que na volatilidade (7,6%), porque as suas quedas coincidem com os piores dias da carteira.
 * **Stress:** em 2008 a carteira perde 49,5% (SPY: 55,2%) e o maior contribuinte é o XLF. Na COVID perde **mais** do que o SPY (36,0% vs 33,7%), porque os pesos iguais dão à energia mais peso do que o índice. Em 2022 perde menos (17,2% vs 24,5%), porque o XLE subiu 44,5%. O pior dia da COVID equivale a 5,4× o CVaR atual, o que mostra que o CVaR de 3 anos não é um cenário de stress.
 * **Ledoit-Wolf:** com $T/N$ = 69 (3 anos) o encolhimento é pequeno ($\delta$ ≈ 0,04) e reduz a volatilidade fora da amostra em 2,2%. Com 63 dias ($T/N$ ≈ 6), $\delta$ ≈ 0,27 e o número de condição desce de 33 para 9, mas o ganho fora da amostra é marginal (0,2%). Com apenas 11 ativos a covariância amostral já está bem condicionada, e o benefício da Ledoit-Wolf vai crescer quando se descer ao nível das ações.
+
+### F. Cenário de stress próprio (cockpit)
+O utilizador escolhe **um** choque instantâneo, no SPY ou num fator macro, e o efeito propaga-se pelos betas já medidos (`portfolio.shock_returns`):
+* **Mercado:** $r_i = \beta_i \cdot \Delta_{SPY}$, com o beta diário de 3 anos em retornos simples (`sector_metrics.csv`).
+* **Fator macro $k$:** $r_i = e^{\,b_{ik} x} - 1$, com o $b_{ik}$ semanal da regressão HAC da secção 9 (retornos log do setor). Usam-se só as ligações aceites ($|t| \ge 2$); as outras contam 0. A variável é $x = \Delta$ em p.p. para juros, inflação e spreads, e $x = \ln(1 + \text{choque})$ para o VIX, o petróleo e o dólar.
+* **Carteira:** $r_p = \sum_i w_i r_i$, com os pesos da secção 7. Mostra-se também em múltiplos do CVaR diário da carteira.
+
+**Limitações.** É uma aproximação linear e não soma choques: os fatores estão correlacionados entre si e com o mercado, e somar os efeitos univariados contaria o mesmo risco duas vezes. Choques grandes extrapolam para fora da amostra em que os betas foram estimados e não captam o contágio próprio das crises. Para isso servem os cenários históricos da secção C.
 
 ---
 

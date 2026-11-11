@@ -122,7 +122,7 @@ def mst(rets: pd.DataFrame) -> tuple[nx.Graph, pd.DataFrame]:
 
 
 # ----------------------------------------------------------------------------- regime de juros
-def rate_regime(y: pd.Series, lookback: int = 63, threshold_pp: float = 0.25) -> dict:
+def rate_regime(y: pd.Series, lookback: int = 63, threshold_pp: float = 0.25) -> dict:  # padrões = settings
     """Nível atual e variação em `lookback` dias úteis do Treasury 10Y."""
     y = y.dropna()
     level, past = float(y.iloc[-1]), float(y.iloc[-1 - lookback])

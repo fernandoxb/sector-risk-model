@@ -120,3 +120,16 @@ def test_stress_buy_and_hold_a_mao():
     v2, v3 = 0.6 * 0.9 + 0.4 * 0.96, 0.6 * 0.72 + 0.4 * 0.8832
     assert s.loc["Carteira", "pior_dia"] == pytest.approx(1 - v3 / v2)
     assert s.loc["Carteira", "pior_dia_em_cvar"] == pytest.approx((1 - v3 / v2) / 0.02)
+
+
+# ----------------------------------------------------------------------------- cenário de stress próprio
+def test_choque_pelos_betas():
+    import numpy as np
+    from src.models.portfolio import shock_returns
+    b = pd.Series({"A": 1.5, "B": 0.5, "C": float("nan")})
+    r = shock_returns(b, -0.10)                                   # SPY −10%, betas em retornos simples
+    assert r.tolist() == pytest.approx([-0.15, -0.05, 0.0])
+    r = shock_returns(pd.Series({"A": -0.09}), 1.0, log_model=True)   # juros +1 p.p., regressão em log
+    assert r["A"] == pytest.approx(np.exp(-0.09) - 1)
+    r = shock_returns(pd.Series({"A": -0.16}), 0.5, log_model=True, log_shock=True)   # VIX +50%
+    assert r["A"] == pytest.approx(np.exp(-0.16 * np.log(1.5)) - 1)

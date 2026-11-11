@@ -69,17 +69,17 @@ SCORE_SENSITIVITY = 0.5        # análise de sensibilidade: cada peso varia ±50
 #   transf "diff": variação em p.p. (séries do FRED em %); "logdiff": variação log do nível.
 MACRO_FACTORS = {
     "juros":    {"serie": "DGS10",        "fonte": "fred",  "transf": "diff",    "adverso": +1,
-                 "nome": "Treasury 10Y"},
+                 "nome": "Treasury 10Y", "curto": "Juros 10Y"},
     "inflacao": {"serie": "T10YIE",       "fonte": "fred",  "transf": "diff",    "adverso": +1,
-                 "nome": "Breakeven de inflação 10Y"},
+                 "nome": "Breakeven de inflação 10Y", "curto": "Inflação implícita"},
     "spreads":  {"serie": "BAMLH0A0HYM2", "fonte": "fred",  "transf": "diff",    "adverso": +1,
-                 "nome": "Spread high yield (ICE BofA)"},
+                 "nome": "Spread high yield (ICE BofA)", "curto": "Spread high yield"},
     "vix":      {"serie": "^VIX",         "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
-                 "nome": "VIX"},
+                 "nome": "VIX", "curto": "VIX"},
     "petroleo": {"serie": "CL=F",         "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
-                 "nome": "Petróleo WTI (futuro)"},
+                 "nome": "Petróleo WTI (futuro)", "curto": "Petróleo"},
     "dolar":    {"serie": "DX-Y.NYB",     "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
-                 "nome": "Índice do dólar (DXY)"},
+                 "nome": "Índice do dólar (DXY)", "curto": "Dólar"},
 }
 FACTOR_START = "2015-01-01"   # histórico descarregado dos fatores (a regressão usa só CVAR_YEARS)
 LINK_FREQ = "W-FRI"           # retornos semanais, sexta a sexta
@@ -126,6 +126,7 @@ SECTOR_PROFILE = {
 GROWTH_SECTORS = ["XLK", "XLC", "XLY"]
 RATE_SERIES = "DGS10"   # Treasury a 10 anos (FRED)
 RATE_LOOKBACK = 63      # variação dos juros nos últimos ~3 meses define o regime
+RATE_THRESHOLD_PP = 0.25  # subida/descida se a variação em RATE_LOOKBACK dias for >= ±0,25 p.p.; senão "estável"
 # Cofre Obsidian (Documents/Obsidian Vault). Pode ser alterado no painel ou via a variável OBSIDIAN_VAULT.
 OBSIDIAN_VAULT = Path(os.environ.get("OBSIDIAN_VAULT", ROOT.parents[1] / "Obsidian Vault"))
 OBSIDIAN_FOLDER = "Risco Setorial"
@@ -151,4 +152,14 @@ SNAPSHOT_YEARS = 3              # anos de preços guardados (= a maior janela do
 SNAPSHOT_RATE_MARGIN_DAYS = 200 # dias de juros antes do 1.º preço (o regime usa RATE_LOOKBACK dias úteis)
 # Ficheiros de data/features copiados tal como estão (o cockpit lê-os do snapshot se data/ não existir).
 SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "var_backtest_series.parquet",
-                     "risk_contribution.csv", "stress_tests.csv", "covariance_shrinkage.csv")
+                     "risk_contribution.csv", "stress_tests.csv", "covariance_shrinkage.csv", "factor_links.csv",
+                     "alerts.json", "sector_metrics.csv", "score_history.csv")
+
+# --- Cenário de stress próprio (cockpit, separador Carteira e stress) --------
+# Choque instantâneo propagado pelos betas: mercado pelo beta diário de 3 anos (sector_metrics.csv) e cada
+# fator macro pelo β semanal da regressão HAC (factor_links.csv, só ligações aceites). Um fator de cada vez.
+# Limites dos sliders: (mínimo, máximo, padrão, passo), em % para o SPY e fatores "logdiff", em p.p. para "diff".
+SHOCK_MARKET = (-40.0, 20.0, -10.0, 1.0)
+SHOCK_DIFF = (-2.0, 3.0, 1.0, 0.25)
+SHOCK_LOGDIFF = (-50.0, 150.0, 50.0, 5.0)
+

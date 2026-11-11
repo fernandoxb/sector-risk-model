@@ -41,6 +41,19 @@ def portfolio_weights(tickers: list[str], custom: dict[str, float] | None = PORT
     return w
 
 
+def shock_returns(betas: pd.Series, shock: float, log_model: bool = False, log_shock: bool = False) -> pd.Series:
+    """Retorno simples de cada setor a um choque instantâneo, pela regra linear r = β × choque.
+
+    betas:     sensibilidade de cada setor (NaN = sem ligação aceite → 0)
+    shock:     choque no fator, na unidade da regressão (fração para o SPY, p.p. para juros, ...)
+    log_shock: o fator entra em variação logarítmica: o choque (ex.: +0,5 = +50%) passa a ln(1 + choque)
+    log_model: a regressão foi feita em retornos log do setor: o resultado passa a simples com e^r − 1
+    """
+    x = np.log1p(shock) if log_shock else shock
+    r = betas.fillna(0.0) * x
+    return np.expm1(r) if log_model else r
+
+
 # ----------------------------------------------------------------------------- Ledoit-Wolf
 def sample_cov(x: np.ndarray) -> np.ndarray:
     """Covariância amostral de máxima verosimilhança (divide por T), a base do Ledoit-Wolf."""
