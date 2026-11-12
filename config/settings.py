@@ -202,3 +202,10 @@ SNAPSHOT_PUBLISH_REMOTE = "origin"
 HOLDINGS_TOP = 10
 COMPANY_NEWS = 6                # notícias mostradas na ficha da empresa
 COMPANY_TTL = 900               # segundos de cache da ficha e das notícias ao vivo no cockpit
+
+# --- Carteira do utilizador (cockpit, separador Minha carteira) ----------------
+# Ativos permitidos: as empresas de holdings.csv, os 11 ETFs setoriais e o SPY. A carteira guarda-se no link
+# (?carteira=AAPL:30,MSFT:20,...), sem contas de utilizador.
+USER_PORTFOLIO_MAX = 25         # máximo de posições
+USER_PORTFOLIO_DEFAULT = 6      # carteira de exemplo: a maior posição dos primeiros N setores, pesos iguais
+USER_MARKET_LABEL = "Mercado"   # "setor" do SPY na exposição setorial

@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.8
+versao: 3.9
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -399,6 +399,33 @@ O mapa de risco é um só e vive no cockpit (separador **Mapa de risco**). Parte
 * Com 10 empresas por setor, o mapa não cobre o setor todo, e a MST entre empresas só vê essas 10.
 * As posições e os pesos são os atuais: aplicá-los a 3 anos de preços ignora mudanças na composição dos ETFs.
 * A ficha e as notícias dependem do Yahoo Finance, sem garantia de serviço; os textos vêm em inglês.
+
+---
+
+## 💼 12. Carteira do utilizador
+
+Separador **Minha carteira** do cockpit; cálculo em `src/models/carteira.py` (funções puras) · testes: `tests/test_carteira.py`.
+
+### A. Carteira
+* **Ativos:** as 110 empresas do mapa de risco, os 11 ETFs setoriais e o SPY, até `USER_PORTFOLIO_MAX` = 25 posições, só com pesos positivos (sem vendas a descoberto). Os pesos são ajustados em proporção para somar 100%.
+* **Onde se guarda:** no endereço da página (`?carteira=NVDA:40,JPM:30,XLU:20,SPY:10`), sem contas de utilizador. Entradas inválidas ou fora do universo são ignoradas.
+
+### B. Medidas
+* **Risco da carteira:** volatilidade anual (covariância Ledoit-Wolf) e CVaR 97,5% histórico a 1 dia, na janela escolhida, com as mesmas funções da carteira de referência (secção 7).
+* **Contribuições de Euler:** a parte de cada posição no CVaR, $RC_i = -w_i\,\overline{r_i}|_{\mathcal T}$, soma exatamente o CVaR da carteira. O rácio "risco / capital" é $(RC_i / \text{CVaR}_p) / w_i$: acima de 1, a posição pesa mais no risco do que no dinheiro investido.
+* **Beta e downside beta** da carteira face ao SPY; o beta é a média ponderada dos betas das posições.
+* **Exposição por setor:** cada empresa conta no seu ETF (no de maior peso, se estiver em dois), cada ETF no próprio setor e o SPY em "Mercado".
+* **Score de risco setorial:** média dos scores dos setores (secção 8) ponderada pela exposição; só conta a parte investida em setores.
+
+### C. Stress
+* **Cenários históricos:** $L_p \approx \sum_s e_s L_s$, em que $e_s$ é a exposição ao setor $s$ e $L_s$ a perda desse setor no episódio (secção 7.C). Cada posição leva a perda do seu setor.
+* **Choque no mercado:** $r_p = \sum_i w_i \beta_i \Delta_{SPY}$ (secção 7.F), com os betas da janela escolhida.
+
+### D. Limitações
+* Tudo é **histórico e descritivo**: não há previsão FHS nem backtest ao nível das empresas ou da carteira do utilizador.
+* O stress histórico ignora o risco específico de cada empresa, pelo que **subestima** carteiras concentradas em poucas ações.
+* O universo são as 10 maiores posições de cada ETF; não há obrigações, ações fora dos EUA nem outras classes de ativos.
+* Pesos fixos: não há histórico de transações nem re-equilíbrio.
 
 ---
 

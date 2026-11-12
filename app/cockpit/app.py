@@ -32,7 +32,8 @@ if getattr(sys, "_cockpit_assinatura", None) != _assinatura:
         del sys.modules[_m]
     sys._cockpit_assinatura = _assinatura
 from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW, CALENDAR_PREVIEW,  # noqa: E402
-                             COMPANY_TTL, TRADING_DAYS,
+                             COMPANY_TTL, TRADING_DAYS, USER_MARKET_LABEL, USER_PORTFOLIO_DEFAULT,
+                             USER_PORTFOLIO_MAX,
                              CVAR_LEVEL, CVAR_YEARS, FEATURES, GROWTH_SECTORS, LINK_T_MIN, MACRO_FACTORS,
                              MARKET, MODEL_RISK_LEVEL, MODEL_RISK_MULT, MOMENTUM_DAYS, OBSIDIAN_FOLDER,
                              OBSIDIAN_VAULT, OFFICIAL_VAR_METHOD, PANIC_Q, PI_LEVELS, PORTFOLIO_WEIGHTS,
@@ -40,6 +41,7 @@ from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW, CALEND
                              SECTORS, SHOCK_DIFF, SHOCK_LOGDIFF, SHOCK_MARKET, SNAPSHOT)
 from src.collect import empresas as emp  # noqa: E402
 from src.collect import sessao as cal  # noqa: E402
+from src.models import carteira as ca  # noqa: E402
 from src.models import cockpit as ck  # noqa: E402
 from src.models.portfolio import shock_returns  # noqa: E402
 from src.models.scorecard import COMPONENTS  # noqa: E402
@@ -278,9 +280,9 @@ if "snapshot" in FONTES:
     st.info(f"📦 Modo snapshot: preços e juros guardados no repositório (até {SNAP_META.get('dados_ate', '?')}), "
             f"porque {'COCKPIT_SNAPSHOT está ativo' if FORCAR_SNAPSHOT else 'o Yahoo não respondeu'}.")
 
-tabs = st.tabs(["📋 Resumo", "🕸️ Mapa de risco", "🎯 Setores", "🔎 Ficha do setor", "📊 Análise ao vivo", "🔗 Fatores macro",
-                "🧪 Modelo", "🧩 Carteira", "📖 Glossário"])
-T_RESUMO, T_MAPA, T_SETORES, T_FICHA, T_VIVO, T_FATORES, T_MODELO, T_CARTEIRA, T_GLOSSARIO = tabs
+tabs = st.tabs(["📋 Resumo", "🕸️ Mapa de risco", "💼 Minha carteira", "🎯 Setores", "🔎 Ficha do setor", "📊 Análise ao vivo", "🔗 Fatores macro",
+                "🧪 Modelo", "🧩 Carteira-base", "📖 Glossário"])
+T_RESUMO, T_MAPA, T_MINHA, T_SETORES, T_FICHA, T_VIVO, T_FATORES, T_MODELO, T_CARTEIRA, T_GLOSSARIO = tabs
 
 # ============================================================================ 1. Resumo
 with T_RESUMO:
@@ -887,6 +889,210 @@ with T_MAPA:
                 st.caption(f"Fonte: Yahoo Finance ({origem}). Títulos em inglês; as horas são UTC.")
     else:
         st.info("Nenhum setor aberto. Clica num círculo do mapa para ver as suas empresas.")
+
+
+# ============================================================================ 3. Minha carteira
+with T_MINHA:
+    SET_DE = ca.mapa_setores(hold)
+    UNIVERSO = list(dict.fromkeys(hold["ticker"])) + setores + [MARKET]
+    NOME_AT = dict(zip(hold["ticker"], hold["nome"])) | {s_: f"ETF {SECTORS[s_]}" for s_ in setores} | {MARKET: "ETF S&P 500"}
+
+    def rot_ativo(t: str) -> str:
+        return f"{t} · {NOME_AT.get(t, t)}"
+
+    if "cart_df" not in st.session_state:           # 1.ª vez: carteira do link (?carteira=AAPL:30,...) ou exemplo
+        ini = ca.parse_carteira(st.query_params.get("carteira"), set(UNIVERSO))
+        if not ini:
+            ini = {hold[hold["setor"] == s_].iloc[0]["ticker"]: 100 / USER_PORTFOLIO_DEFAULT
+                   for s_ in setores[:USER_PORTFOLIO_DEFAULT]}
+        st.session_state["cart_df"] = pd.DataFrame({"Ativo": list(ini), "Peso (%)": [round(v, 1) for v in ini.values()]})
+        st.session_state["cart_v"] = 0
+
+    st.caption(f"Monta uma carteira com as {hold['ticker'].nunique()} empresas do mapa, os 11 ETFs setoriais e o SPY "
+               f"(até {USER_PORTFOLIO_MAX} posições) e vê o risco, a exposição por setor e as ligações de contágio. "
+               "Guarda-se no link, sem conta.")
+    col_ed, col_bt = st.columns([3, 1])
+    with col_ed:
+        ed = st.data_editor(
+            st.session_state["cart_df"], num_rows="dynamic", hide_index=True, width="stretch",
+            key=f"cart_editor_{st.session_state['cart_v']}",
+            column_config={
+                "Ativo": st.column_config.SelectboxColumn("Ativo", options=UNIVERSO, format_func=rot_ativo, required=True,
+                                                          width="large"),
+                "Peso (%)": st.column_config.NumberColumn("Peso (%)", min_value=0.0, max_value=100.0, step=0.5,
+                                                          format="%.1f", required=True)})
+    pesos_ed = {}
+    for t_, v_ in zip(ed["Ativo"], ed["Peso (%)"]):
+        if isinstance(t_, str) and t_ in UNIVERSO and pd.notna(v_) and v_ > 0:
+            pesos_ed[t_] = pesos_ed.get(t_, 0.0) + float(v_)
+    pesos_ed = dict(list(pesos_ed.items())[:USER_PORTFOLIO_MAX])
+    with col_bt:
+        if st.button("⚖️ Pesos iguais", width="stretch", disabled=not pesos_ed):
+            st.session_state["cart_df"] = pd.DataFrame({"Ativo": list(pesos_ed),
+                                                        "Peso (%)": [round(100 / len(pesos_ed), 1)] * len(pesos_ed)})
+            st.session_state["cart_v"] += 1
+            st.rerun()
+        if st.button("🔗 Guardar no link", width="stretch", disabled=not pesos_ed,
+                     help="Põe a carteira no endereço da página: guarda-o nos favoritos ou partilha-o."):
+            st.query_params["carteira"] = ca.format_carteira(pesos_ed)
+            st.toast("Carteira guardada no link da página.")
+        st.caption("Linha nova: clica na última linha da tabela. Para apagar, seleciona a linha e carrega em Delete.")
+
+    if not pesos_ed:
+        st.info("Acrescenta pelo menos um ativo com peso positivo.")
+    else:
+        w_u = ca.normalizar(pesos_ed)
+        soma = sum(pesos_ed.values())
+        if abs(soma - 100) > 0.05:
+            st.caption(f"Os pesos somam {fm.num(soma, 1)}%: foram ajustados em proporção para somar 100%.")
+        try:
+            px_u = precos(tuple(dict.fromkeys(list(w_u.index) + [MARKET])), periodo)
+            r_u = ck.returns(px_u)
+            tab_u, res_u = ca.risco_carteira(r_u[list(w_u.index)], w_u, r_u[MARKET], CVAR_LEVEL, PANIC_Q)
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Sem preços para esta carteira: {e}")
+            tab_u = None
+        if tab_u is not None:
+            expo = ca.exposicao_setorial(w_u, SET_DE)
+            sc_cart = ca.score_carteira(expo, sc["score_final"]) if sc is not None else float("nan")
+            u1, u2, u3, u4, u5 = st.columns(5)
+            metrica(u1, "Volatilidade anual", fm.pct(res_u["vol"]),
+                    f"diversificação {fm.mult(res_u['racio_diversificacao_vol'])}",
+                    ajuda="Diversificação = soma dos riscos isolados ÷ risco da carteira. 1× = nenhuma.")
+            metrica(u2, f"CVaR {N_CVAR} · 1 dia", fm.pct(res_u["cvar"], 2),
+                    f"diversificação {fm.mult(res_u['racio_diversificacao_cvar'])}",
+                    ajuda=f"Perda média nos 2,5% piores dias ({janela.lower()}, {res_u['dias']} dias). Histórico.")
+            metrica(u3, f"Beta ao {MARKET}", fm.num(res_u["beta"]), f"em pânico {fm.num(res_u['downside_beta'])}",
+                    ajuda="Quanto a carteira se move por cada 1% do mercado; 'em pânico' só nos piores dias do SPY.")
+            metrica(u4, "Score de risco setorial", fm.num(sc_cart, 0) if sc_cart == sc_cart else "—",
+                    "média dos setores, pela exposição",
+                    ajuda="Média dos scores (0–100) dos setores em que a carteira está, ponderada pela exposição.")
+            top_u = tab_u["pct_cvar"].idxmax()
+            metrica(u5, "Quem mais pesa no risco", top_u,
+                    f"{fm.pct(tab_u.loc[top_u, 'pct_cvar'], 0)} do CVaR · peso {fm.pct(tab_u.loc[top_u, 'peso'], 0)}")
+
+            # --- mapa: setores (tamanho = exposição) com as posições da carteira à volta
+            st.subheader("A carteira no mapa de risco")
+            posk = {n: np.array(p_, dtype=float) for n, p_ in nx.kamada_kawai_layout(grafo, weight="weight").items()}
+            fig_u = go.Figure()
+            ux, uy = [], []
+            for a, b in grafo.edges():
+                ux += [posk[a][0], posk[b][0], None]
+                uy += [posk[a][1], posk[b][1], None]
+            fig_u.add_trace(go.Scatter(x=ux, y=uy, mode="lines", hoverinfo="skip", showlegend=False,
+                                       line=dict(width=2, color="#475569")))
+            emax = max(expo[setores].max(), 1e-9)
+            fig_u.add_trace(go.Scatter(
+                x=[posk[n][0] for n in setores], y=[posk[n][1] for n in setores], mode="markers+text", text=setores,
+                textfont=dict(color="#0b1220", size=10), hoverinfo="text", showlegend=False,
+                marker=dict(size=[26 + 34 * expo[n] / emax for n in setores],
+                            color=[float(sc.loc[n, "score_final"]) if sc is not None else 50.0 for n in setores],
+                            colorscale=[[0, RISCO["verde"]], [0.5, RISCO["amarelo"]], [1, RISCO["vermelho"]]],
+                            cmin=0, cmax=100, opacity=[1.0 if expo[n] > 0 else 0.3 for n in setores],
+                            line=dict(width=1.5, color="#ffffff"),
+                            colorbar=dict(title="Score<br>do setor", thickness=10, len=0.5)),
+                hovertext=[f"<b>{nome(n)}</b><br>Exposição da carteira: {fm.pct(expo[n])}"
+                           + (f"<br>Score {fm.num(sc.loc[n, 'score_final'], 0)}/100" if sc is not None else "")
+                           for n in setores]))
+            centro = np.mean(list(posk.values()), axis=0)
+            sx, sy, stx, shv, ssz, scol, lx, ly = [], [], [], [], [], [], [], []
+            for s_ in setores:
+                pos_do_setor = [t for t in w_u.index if SET_DE.get(t) == s_ and t != s_]
+                if not pos_do_setor:
+                    continue
+                fora = posk[s_] - centro
+                ang0 = np.arctan2(fora[1], fora[0])
+                for j, t in enumerate(pos_do_setor):
+                    ang = ang0 + (j - (len(pos_do_setor) - 1) / 2) * 0.7
+                    q = posk[s_] + 0.42 * np.array([np.cos(ang), np.sin(ang)])
+                    sx.append(q[0]); sy.append(q[1]); stx.append(t)   # noqa: E702
+                    lx += [posk[s_][0], q[0], None]
+                    ly += [posk[s_][1], q[1], None]
+                    ssz.append(14 + 20 * w_u[t] / w_u.max())
+                    scol.append(float(np.clip(tab_u.loc[t, "racio"], 0.5, 1.5)))
+                    shv.append(f"<b>{rot_ativo(t)}</b><br>Peso {fm.pct(w_u[t])} · {fm.pct(tab_u.loc[t, 'pct_cvar'])} do CVaR"
+                               f"<br>Pesa {fm.mult(tab_u.loc[t, 'racio'])} no risco face ao capital")
+            fig_u.add_trace(go.Scatter(x=lx, y=ly, mode="lines", hoverinfo="skip", showlegend=False,
+                                       line=dict(width=1.2, color="#64748b")))
+            fig_u.add_trace(go.Scatter(x=sx, y=sy, mode="markers+text", text=stx, textposition="top center",
+                                       textfont=dict(color=TXT, size=10), hoverinfo="text", hovertext=shv, showlegend=False,
+                                       marker=dict(size=ssz, color=scol, cmin=0.5, cmax=1.5, symbol="diamond",
+                                                   colorscale=[[0, RISCO["verde"]], [0.5, RISCO["amarelo"]],
+                                                               [1, RISCO["vermelho"]]],
+                                                   line=dict(width=1, color="#ffffff"))))
+            layout(fig_u, 560, hovermode="closest", dragmode=False, xaxis=dict(visible=False),
+                   yaxis=dict(visible=False, scaleanchor="x"))
+            st.plotly_chart(fig_u, width="stretch", config={"displayModeBar": False})
+            st.caption("**Círculos:** setores; o tamanho é a exposição da carteira e a cor o score de risco do setor (os "
+                       "apagados não estão na carteira). **Losangos:** as tuas empresas, junto ao seu setor; o tamanho é o "
+                       "peso e a cor diz se pesam mais no risco do que no capital (vermelho) ou menos (verde). As linhas "
+                       "entre setores são a espinha de contágio: setores vizinhos caem juntos.")
+
+            c_pos, c_set = st.columns([1, 1])
+            with c_pos:
+                st.markdown("**Posições**")
+                o_u = tab_u.sort_values("pct_cvar", ascending=False)
+                st.dataframe(pd.DataFrame({
+                    "Ativo": [f"{t} ({SET_DE.get(t, '—')})" if SET_DE.get(t) not in (t, None) else t for t in o_u.index],
+                    "Peso": o_u["peso"].map(fm.pct).values,
+                    "% do CVaR": o_u["pct_cvar"].map(fm.pct).values,
+                    "Risco / capital": o_u["racio"].map(fm.mult).values,
+                    f"CVaR {N_CVAR} isolado": o_u["cvar_individual"].map(lambda v: fm.pct(v, 2)).values,
+                    "Beta": o_u["beta"].map(fm.num).values,
+                }), hide_index=True, width="stretch")
+                st.caption("% do CVaR: parte da perda dos piores dias da carteira que vem desta posição (contribuição de "
+                           "Euler; as partes somam 100%). Risco / capital acima de 1× = pesa mais no risco do que no "
+                           "dinheiro investido.")
+            with c_set:
+                st.markdown("**Exposição por setor**")
+                e_u = expo[expo > 0].sort_values(ascending=False)
+                linhas = []
+                for s_, v_ in e_u.items():
+                    if s_ in SECTORS and sc is not None:
+                        r_ = sc.loc[s_]
+                        linhas.append([nome(s_), fm.pct(v_), int(round(r_["score_final"])),
+                                       pi_level(r_["probabilidade"], r_["impacto"]),
+                                       SEM[r_["semaforo"]].split()[0] + (" ⚠" if r_["risco_modelo"] else "")])
+                    else:
+                        linhas.append([s_ if s_ not in SECTORS else nome(s_), fm.pct(v_), None, "—", "—"])
+                st.dataframe(pd.DataFrame(linhas, columns=["Setor", "Exposição", "Score", "Nível", "Modelo"]),
+                             hide_index=True, width="stretch", column_config={
+                                 "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d")})
+                crit_u = [s_ for s_ in e_u.index if s_ in SECTORS and sc is not None
+                          and sc.loc[s_, "impacto"] * sc.loc[s_, "probabilidade"] >= CRIT_MIN]
+                if crit_u:
+                    st.warning(f"{fm.pct(e_u[crit_u].sum(), 0)} da carteira está em setores de nível {CRIT}: "
+                               f"{', '.join(crit_u)}.")
+                al_u = [a for a in (alertas or {}).get("alertas", [])
+                        if any(f"[[{s_}]]" in a["texto"] for s_ in e_u.index)]
+                for a in al_u:
+                    st.markdown(f"🔔 {a['texto'].replace('[[', '').replace(']]', '')}")
+
+            st.subheader("Stress da carteira")
+            g1, g2 = st.columns(2)
+            with g1:
+                st.markdown("**Cenários históricos (aproximação pelo setor)**")
+                if stt is not None:
+                    ss_u = ca.stress_setorial(expo, stt)
+                    st.dataframe(pd.DataFrame({
+                        "Cenário": ss_u["cenario"],
+                        "Carteira": (-ss_u["perda"]).map(fm.pct),
+                        MARKET: (-ss_u["perda_mercado"]).map(fm.pct),
+                        "Setor que mais pesa": ss_u["maior_contribuinte"],
+                    }), hide_index=True, width="stretch")
+                    st.caption("Cada posição leva a perda que o seu setor teve no episódio. Ignora o risco próprio de cada "
+                               "empresa, por isso subestima carteiras concentradas em poucas ações.")
+            with g2:
+                st.markdown(f"**Choque no mercado ({MARKET})**")
+                lo, hi, dflt, stp = SHOCK_MARKET
+                ch_u = st.slider(f"Variação do {MARKET}", lo, hi, dflt, stp, format="%.0f%%", key="cart_choque")
+                r_ch_u = float((w_u * shock_returns(tab_u["beta"], ch_u / 100)).sum())
+                metrica(st, f"Carteira com o {MARKET} a {fm.num(ch_u, 0, sinal=True)}%", fm.pct(r_ch_u, 1),
+                        f"{fm.mult(abs(r_ch_u) / res_u['cvar'], 1)} o CVaR diário da carteira")
+                st.caption("Retorno = beta de cada posição × choque (betas da janela escolhida). Aproximação linear, sem "
+                           "o contágio próprio das crises.")
+            st.caption(f"Tudo neste separador é histórico e descritivo ({janela.lower()} de preços): não há previsão nem "
+                       "backtest ao nível das empresas. Não é aconselhamento de investimento.")
 
 
 # ============================================================================ 5. Fatores macro

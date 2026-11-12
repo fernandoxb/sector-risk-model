@@ -56,12 +56,13 @@ Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% 
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
 * **Mapa de risco:** a rede de contágio entre setores; clicar num setor abre as suas 10 maiores empresas e clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
+* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco, quem mais pesa nele, a exposição por setor no mapa de contágio e o stress. Guarda-se no link, sem conta.
 * **Setores:** scorecard e evolução do score.
 * **Ficha do setor:** tudo sobre um setor, incluindo o risco previsto desde 2008.
 * **Análise ao vivo:** CVaR histórico, downside beta e ações.
 * **Fatores macro.**
 * **Modelo:** backtest.
-* **Carteira:** contribuições para o risco, stress históricos e um cenário de stress próprio.
+* **Carteira-base:** a carteira de referência dos 11 setores, com contribuições para o risco, stress históricos e um cenário de stress próprio.
 * **Glossário.**
 
 | Resumo | Fatores macro |
@@ -71,6 +72,10 @@ O cockpit está organizado em separadores:
 | Mapa de risco (setor aberto) | Ficha da empresa |
 |---|---|
 | ![Cockpit: mapa de risco](docs/img/cockpit-mapa.png) | ![Cockpit: ficha da empresa](docs/img/cockpit-empresa.png) |
+
+| Minha carteira |
+|---|
+| ![Cockpit: minha carteira](docs/img/cockpit-carteira.png) |
 
 | Scorecard | Ficha do setor |
 |---|---|
