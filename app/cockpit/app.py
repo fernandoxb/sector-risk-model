@@ -22,6 +22,15 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+
+# O Streamlit volta a correr este ficheiro a cada interação, mas não recarrega os módulos já importados. Depois de
+# uma atualização do código (ex.: novo deploy no Streamlit Cloud), este ficheiro seria novo e config/ e src/ antigos,
+# o que dá ImportError. Por isso, se algum ficheiro do projeto mudou desde o último run, esquecem-se esses módulos.
+_assinatura = max(f.stat().st_mtime for d in ("config", "src") for f in (ROOT / d).rglob("*.py"))
+if getattr(sys, "_cockpit_assinatura", None) != _assinatura:
+    for _m in [m for m in sys.modules if m.split(".")[0] in ("config", "src")]:
+        del sys.modules[_m]
+    sys._cockpit_assinatura = _assinatura
 from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW, CALENDAR_PREVIEW,  # noqa: E402
                              COMPANY_TTL, TRADING_DAYS,
                              CVAR_LEVEL, CVAR_YEARS, FEATURES, GROWTH_SECTORS, LINK_T_MIN, MACRO_FACTORS,
