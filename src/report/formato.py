@@ -41,3 +41,25 @@ def nivel(alpha: float) -> str:
     """0.975 → "97,5%"; 0.99 → "99%" (nunca arredonda o nível)."""
     s = f"{alpha * 100:.1f}".rstrip("0").rstrip(".")
     return s.replace(".", ",") + "%"
+
+
+def grande(x: float, d: int = 1) -> str:
+    """Valores grandes em português europeu: 4.2e12 → "4,2 biliões"; 8.5e11 → "850,0 mil milhões"."""
+    if x is None or (isinstance(x, float) and math.isnan(x)):
+        return "—"
+    for lim, nome in ((1e12, "biliões"), (1e9, "mil milhões"), (1e6, "milhões")):
+        if abs(x) >= lim:
+            return f"{_fmt(x / lim, d, False)} {nome}"
+    return _fmt(x, 0, False)
+
+
+def data_curta(iso: str | None) -> str:
+    """"2026-11-11T23:16:52Z" → "11/11 23:16" (UTC); None → ""."""
+    if not iso:
+        return ""
+    try:
+        from datetime import datetime
+        t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        return f"{t.day:02d}/{t.month:02d} {t.hour:02d}:{t.minute:02d}"
+    except ValueError:
+        return str(iso)[:10]

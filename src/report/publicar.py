@@ -1,4 +1,4 @@
-"""Bot Publicador: commit e push semanal só do snapshot do cockpit (app/cockpit/snapshot/).
+"""Bot Publicador: commit e push semanal (última sessão da semana) só do snapshot do cockpit (app/cockpit/snapshot/).
 
 Regras de segurança:
   - só faz commit dos ficheiros do snapshot (`git commit --only -- <pasta>`), mesmo que haja outras alterações;
@@ -18,7 +18,7 @@ from src.report.weekly import is_report_day  # noqa: E402
 
 
 def deve_publicar(asof: str, ativo: bool = SNAPSHOT_PUBLISH, forcar: bool = False) -> bool:
-    """Publica às sextas (data dos dados), ou sempre que for forçado."""
+    """Publica na última sessão da semana (normalmente sexta), ou sempre que for forçado."""
     return ativo and (forcar or is_report_day(asof))
 
 

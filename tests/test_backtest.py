@@ -12,6 +12,7 @@ from arch import arch_model
 from scipy.stats import norm
 from scipy.stats import t as student_t
 
+from src.collect.sessao import proximo_dia_util
 from src.models import backtest as bt
 from src.models.cockpit import cvar
 from src.models.risk_metrics import hist_var
@@ -271,7 +272,7 @@ def test_marcador_de_amanha_nao_altera_o_backtest(rets):
     """O dia extra (retorno 0) não muda nenhuma previsão anterior."""
     a, aux_a, _ = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
     b, aux_b, _ = bt.sector_forecasts(bt.extend_next_day(rets), (0.99, 0.975), WINDOW, "M")
-    assert b.index[-1] == rets.index[-1] + pd.offsets.BDay(1)
+    assert b.index[-1] == pd.Timestamp(proximo_dia_util(rets.index[-1].date()))
     pd.testing.assert_frame_equal(a, b.iloc[:-1], check_freq=False)   # só o atributo freq do índice difere
     pd.testing.assert_frame_equal(aux_a, aux_b.iloc[:-1], check_freq=False)
 

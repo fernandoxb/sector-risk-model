@@ -14,3 +14,9 @@ def test_numeros_pp_multiplos_e_nivel():
     assert fm.pp(0.16) == "+0,16 p.p." and fm.pp(-0.3) == "−0,30 p.p."
     assert fm.mult(1.4912) == "1,49×"
     assert fm.nivel(0.975) == "97,5%" and fm.nivel(0.99) == "99%" and fm.nivel(0.95) == "95%"
+
+
+def test_valores_grandes_e_datas():
+    assert fm.grande(4.195e12) == "4,2 biliões" and fm.grande(8.5e11) == "850,0 mil milhões"
+    assert fm.grande(3.2e7) == "32,0 milhões" and fm.grande(float("nan")) == "—"
+    assert fm.data_curta("2026-11-11T23:16:52Z") == "11/11 23:16" and fm.data_curta(None) == ""

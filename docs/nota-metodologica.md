@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.7
+versao: 3.8
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -147,7 +147,7 @@ O backtest escolhe o modelo oficial: `OFFICIAL_VAR_METHOD = "fhs"`. A 97,5%, o F
 
 Todos os dias, o pipeline grava em `data/features/official_risk.csv` o **VaR 99%, o VaR 97,5% e o ES 97,5% para o próximo dia útil** (`OFFICIAL_MEASURES`), com todos os dados disponíveis até hoje.
 
-**Sem lógica duplicada:** a série de cada setor ganha um dia extra no fim, o dia útil seguinte (seg–sex, sem calendário de feriados), com retorno 0. Corre-se o mesmo `sector_forecasts` do backtest: a última linha é a previsão de amanhã e as restantes são o backtest. O valor 0 é só um marcador, porque a previsão de um dia usa apenas dados até à véspera. Se esse dia for o primeiro de um mês, o GARCH é re-estimado com os dados até hoje, como no backtest.
+**Sem lógica duplicada:** a série de cada setor ganha um dia extra no fim, a sessão seguinte da NYSE (calendário com feriados, ver secção 10.A), com retorno 0. Corre-se o mesmo `sector_forecasts` do backtest: a última linha é a previsão de amanhã e as restantes são o backtest. O valor 0 é só um marcador, porque a previsão de um dia usa apenas dados até à véspera. Se esse dia for o primeiro de um mês, o GARCH é re-estimado com os dados até hoje, como no backtest.
 
 **Validação:**
 * a previsão feita com dados até $t-1$ coincide com a linha $t$ do backtest completo (erro relativo $< 10^{-12}$), num dia de re-estimação, a meio do mês e no último dia;
@@ -321,8 +321,16 @@ São aceites **33 das 66** ligações. Por fator:
 O pipeline corre sozinho nos dias úteis às 22:30 (hora de Lisboa, depois do fecho dos EUA): `launchd` → `flows/pipeline.py` (Prefect).
 
 ### A. Flow
+* **Calendário da NYSE (`src/collect/sessao.py`):** os feriados são calculados pelas regras da bolsa, sem dependências:
+  * data fixa (Ano Novo, Juneteenth desde 2022, Independência, Natal), passando para sexta se calharem ao sábado e para segunda se calharem ao domingo; o Ano Novo ao sábado não fecha a sexta;
+  * data móvel (Martin Luther King, Presidents' Day, Sexta-feira Santa pela Páscoa, Memorial Day, Labor Day, Thanksgiving);
+  * mais os fechos excecionais de `NYSE_SPECIAL_CLOSURES` (furacão Sandy, lutos nacionais).
+  * **Validação:** de 2005-01-03 a 2026-11-11, as sessões do calendário coincidem dia a dia com as 5 500 sessões em que o SPY negociou. O teste repete a comparação com os 3 anos do snapshot no CI.
+  * **Fechos antecipados (13:00 em NY):** 3 de julho, o dia a seguir ao Thanksgiving e a véspera de Natal, quando são dias de sessão. Nesses dias a sessão conta como fechada às 14:00 de NY. A regra reproduz os fechos antecipados de 2023 a 2025 publicados pela bolsa, mas não se consegue validar com preços diários, e a do 3 de julho teve exceções históricas.
+  * **No cockpit:** a barra lateral mostra a última sessão fechada, a próxima sessão, os 3 próximos feriados e o próximo fecho antecipado, e avisa se os resultados do pipeline estiverem atrás da última sessão.
+  * **Onde se usa:** na sessão esperada (cache e alerta de dados atrasados), na data da previsão oficial (secção 6.K) e no dia do relatório semanal e da publicação.
 * **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório → Snapshot → Publicador.
-* **Publicador (`src/report/publicar.py`):** às sextas, depois do run, faz commit e push só de `app/cockpit/snapshot/`, para o cockpit do Streamlit Cloud acompanhar os dados. Só atua no ramo `main` e só se o snapshot mudou. Usa `git commit --only`, pelo que nunca leva outras alterações, mesmo que já estejam no índice. Se o push falhar, o commit fica local, o erro vai para o log e chega uma notificação; o resto do run não é afetado.
+* **Publicador (`src/report/publicar.py`):** na última sessão de cada semana (normalmente sexta), depois do run, faz commit e push só de `app/cockpit/snapshot/`, para o cockpit do Streamlit Cloud acompanhar os dados. Só atua no ramo `main` e só se o snapshot mudou. Usa `git commit --only`, pelo que nunca leva outras alterações, mesmo que já estejam no índice. Se o push falhar, o commit fica local, o erro vai para o log e chega uma notificação; o resto do run não é afetado.
 * **Snapshot (Sprint 6):** copia para `app/cockpit/snapshot/` (versionado, cerca de 2,7 MB) os preços de 3 anos dos ETFs e das ações do microscópio, o Treasury 10Y e os resultados que o cockpit lê. Assim o cockpit corre sem rede, por exemplo no Streamlit Community Cloud. As séries do backtest são gravadas em float32, o que dá um erro relativo de cerca de $10^{-7}$, sem efeito nas exceções mostradas.
 * **Coletor:** 2 novas tentativas, 5 minutos entre elas, e cache pela **última sessão de Nova Iorque já fechada** (17:00 hora de NY, 1 h depois do fecho, `src/collect/sessao.py`). Dois runs que esperam a mesma sessão descarregam os dados uma só vez, e a cache só é usada se os preços já chegarem a essa sessão. Se o download correr mas os preços vierem atrasados, o Coletor repete-o até 3 vezes, com 10 minutos entre elas; se continuarem atrasados, o flow segue e o Sentinela alerta. A chave não pode ser a data do calendário: um run de madrugada em Lisboa ainda só tem a sessão da véspera e bloquearia o run das 22:30 desse dia (aconteceu a 2026-11-11).
 * **Paragem em caso de falha:** as tasks correm em sequência. Se o contrato do Inspetor falhar, a exceção pára o flow e nada a jusante corre, por isso nunca se publica um mapa ou um alerta calculado com dados inválidos.
@@ -338,7 +346,7 @@ Em cada run grava um estado compacto do dia em `data/state/estado_<data>.json`: 
 | Nível P × I | muda o nível de P × I: baixo ≤ 4, moderado ≤ 9, elevado ≤ 16, crítico ≤ 25 | sobe para crítico: alta; outra subida: média; descida: baixa |
 | Ligação medida | uma ligação fator → setor passa a ser aceite (\|t\| ≥ 2) ou deixa de o ser | entra: média; sai: baixa |
 | Regime de juros | muda o regime do Treasury 10Y (variação em 63 dias úteis) | para subida: alta; outra mudança: média |
-| Dados atrasados | os preços acabam antes da última sessão de NY já fechada (falha na coleta ou feriado dos EUA) | alta |
+| Dados atrasados | os preços acabam antes da última sessão de NY já fechada (falha na coleta; os feriados já estão no calendário) | alta |
 
 * **Exceções:** precisam só do próprio dia, por isso também saem no primeiro run.
 * **Alertas.md:** o Sentinela escreve `Risco Setorial/Alertas.md`, com uma secção por data e a mais recente no topo. Cada alerta tem campos inline do Dataview (`[severidade:: alta]`). Repetir o run do mesmo dia reescreve a secção, sem duplicar.
@@ -346,7 +354,7 @@ Em cada run grava um estado compacto do dia em `data/state/estado_<data>.json`: 
 * **Limitação:** o nível P × I usa quintis entre os 11 setores, por isso um setor pode mudar de nível sem que o seu score se mexa, apenas porque outro mudou de posição. Ex.: XLI a 2026-11-10, P×I 16 → 20 com score 69,3 → 69,2.
 
 ### C. Relatório semanal (`src/report/weekly.py`)
-* **Quando:** sai quando a data dos dados é uma sexta (ou com `--semanal`) e é gravado em `Risco Setorial/Semana AAAA-Www.md`.
+* **Quando:** sai na última sessão da NYSE de cada semana: normalmente sexta, quinta se a sexta for feriado, como a Sexta-feira Santa (ou com `--semanal`), e é gravado em `Risco Setorial/Semana AAAA-Www.md`.
 * **Conteúdo:**
   * top 3 do scorecard, com a variação de score e de posição;
   * exceções ao VaR 97,5% oficial na semana, face às esperadas (2,5% × dias × 11);
@@ -363,6 +371,34 @@ Em cada run grava um estado compacto do dia em `data/state/estado_<data>.json`: 
 * a notificação só para severidade alta;
 * a escolha do estado de referência;
 * a semana ISO, as exceções da semana e o cenário de stress mais severo.
+
+---
+
+## 🕸️ 11. Mapa de risco: setor → empresas → ficha da empresa
+
+O mapa de risco é um só e vive no cockpit (separador **Mapa de risco**). Parte da espinha de contágio (MST das correlações entre setores, secção 2) e desce dois níveis.
+
+### A. Empresas de cada setor
+* **Universo:** as `HOLDINGS_TOP` = 10 maiores posições de cada ETF, com o peso no ETF (Yahoo Finance, dados do fundo), num total de 110 empresas. Somam entre 37% (XLI) e 78% (XLE) do setor. Ficam em `data/features/holdings.csv` e são atualizadas pelo Coletor em cada run.
+* **Falhas:** se o Yahoo falhar num setor, mantêm-se as posições do ficheiro anterior; sem ficheiro, usam-se as 4 ações de `SECTOR_PROFILE` com pesos iguais.
+
+### B. Setor aberto
+* **Desenho:** o setor vai para o centro, as suas empresas ficam num anel interior e os outros setores num anel exterior, pela ordem angular que tinham no mapa. Só se desenham as ligações de contágio do setor aberto.
+* **Empresa:** o tamanho do círculo é o peso no ETF; a cor é o rácio entre o CVaR 97,5% da empresa e o do ETF (verde ≤ 1×, vermelho ≥ 2,5×), na janela escolhida na barra lateral.
+* **Ligações entre empresas:** ao escolher uma empresa, mostram-se as suas arestas na MST das correlações entre as empresas do setor, ou seja, as que mais se movem com ela.
+* **Métricas:** CVaR histórico, downside beta, beta, correlação com o ETF e volatilidade anual, com as mesmas funções dos setores (`cockpit.cvar`, `cockpit.tail_table`).
+
+### C. Ficha da empresa
+* **Bolsa:** preço e variação do dia, capitalização, PER, intervalo de 52 semanas, dividendo e recomendação dos analistas, do Yahoo Finance.
+* **Notícias:** as `COMPANY_NEWS` = 6 mais recentes, com fonte, hora (UTC) e ligação.
+* **Origem:** ao vivo, com cache de 15 minutos. Se o Yahoo falhar, ou no modo snapshot, usa-se `app/cockpit/snapshot/companies.json`, gravado no último run; a ficha indica sempre a origem.
+* **Ligação direta:** `?setor=XLK&empresa=NVDA` abre o mapa já nesse setor e nessa empresa.
+
+### D. Limitações
+* O risco das empresas é **descritivo**: CVaR histórico, sem previsão FHS nem backtest. Só os 11 setores têm modelo validado.
+* Com 10 empresas por setor, o mapa não cobre o setor todo, e a MST entre empresas só vê essas 10.
+* As posições e os pesos são os atuais: aplicá-los a 3 anos de preços ignora mudanças na composição dos ETFs.
+* A ficha e as notícias dependem do Yahoo Finance, sem garantia de serviço; os textos vêm em inglês.
 
 ---
 

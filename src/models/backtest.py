@@ -39,6 +39,7 @@ from config.settings import (BT_ES_GRID, BT_ES_NSIM, BT_FRTB_MAX, BT_LEVELS,  # 
                              BT_METHODS, BT_REFIT_FREQ, BT_SEED, BT_SIGNIF, BT_TL_DAYS,
                              BT_TL_GREEN, BT_TL_RED, BT_WINDOW, CLEAN, FEATURES,
                              OFFICIAL_MEASURES, OFFICIAL_VAR_METHOD, SECTORS)
+from src.collect.sessao import proximo_dia_util  # noqa: E402
 from src.models.cockpit import cvar  # noqa: E402
 
 T_DIST = StudentsT()   # t padronizada (variância 1), a mesma do arch_model(dist="t")
@@ -317,13 +318,13 @@ def backtest_table(fc: pd.DataFrame, aux: pd.DataFrame, pools: dict, r: pd.Serie
 
 # ----------------------------------------------------------------------------- previsão oficial
 def extend_next_day(r: pd.Series) -> pd.Series:
-    """Acrescenta o próximo dia útil (seg–sex, sem calendário de feriados) com retorno 0.
+    """Acrescenta a próxima sessão da NYSE (dias úteis sem feriados, src/collect/sessao.py) com retorno 0.
 
     O valor é um marcador: a previsão para esse dia só usa dados até à véspera (sem look-ahead,
     ver tests/test_backtest.py), por isso nunca entra no cálculo.
     """
     r = r.dropna()
-    nxt = r.index[-1] + pd.offsets.BDay(1)
+    nxt = pd.Timestamp(proximo_dia_util(r.index[-1].date()))
     return pd.concat([r, pd.Series([0.0], index=pd.DatetimeIndex([nxt]))]).rename(r.name)
 
 

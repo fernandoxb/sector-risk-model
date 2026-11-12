@@ -6,7 +6,7 @@ Uso:  python run_pipeline.py            (tudo)
 import sys
 
 from src.clean import validate
-from src.collect import download_factors, download_prices
+from src.collect import download_factors, download_prices, empresas
 from src.models import backtest, factor_links, portfolio, risk_metrics, scorecard
 from src.report import build_map
 
@@ -14,6 +14,7 @@ if __name__ == "__main__":
     if "--offline" not in sys.argv:
         download_prices.main()
         download_factors.main()
+        empresas.main()
     validate.main()
     risk_metrics.main()
     backtest.main()

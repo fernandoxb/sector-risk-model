@@ -5,6 +5,7 @@ O cockpit tenta sempre os dados ao vivo (Yahoo e FRED). Se falharem, ou com COCK
   prices.parquet    fechos ajustados dos 11 setores, SPY e ações do microscópio (últimos SNAPSHOT_YEARS anos)
   rates.parquet     Treasury 10Y (DGS10) desde SNAPSHOT_RATE_MARGIN_DAYS dias antes do 1.º preço
   <features>        cópias de data/features usadas pelo cockpit (séries do backtest em float32)
+  companies.json    ficha de bolsa e últimas notícias de cada empresa (à data do run)
   meta.json         data dos dados e data de geração
 
 Funções puras: window, rates_window, stock_tickers. I/O em main().
@@ -18,14 +19,32 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import (CLEAN, FEATURES, MARKET, SECTOR_PROFILE, SECTORS, SNAPSHOT,  # noqa: E402
+from config.settings import (CLEAN, FEATURES, MARKET, SECTORS, SNAPSHOT,  # noqa: E402
                              SNAPSHOT_FEATURES, SNAPSHOT_RATE_MARGIN_DAYS, SNAPSHOT_YEARS)
+from src.collect.empresas import fetch_info, fetch_news, load_holdings  # noqa: E402
 from src.models import cockpit as ck  # noqa: E402
 
 
-def stock_tickers(profile: dict = SECTOR_PROFILE) -> list[str]:
-    """Ações do microscópio, sem repetições, pela ordem dos setores."""
-    return list(dict.fromkeys(a for p in profile.values() for a in p["acoes"]))
+def stock_tickers(profile: dict | None = None) -> list[str]:
+    """Empresas do mapa de risco, sem repetições, pela ordem dos setores: as de holdings.csv ou, com `profile`
+    (ou sem ficheiro), as de SECTOR_PROFILE."""
+    if profile is not None:
+        return list(dict.fromkeys(a for p in profile.values() for a in p["acoes"]))
+    return list(dict.fromkeys(load_holdings()["ticker"]))
+
+
+def companies_payload(tickers: list[str], antigo: dict, fetch_info, fetch_news) -> tuple[dict, list[str]]:
+    """Ficha e notícias de cada empresa para o snapshot. Uma empresa que falhe mantém o que havia em `antigo`.
+    Devolve também a lista das que falharam."""
+    out, falhas = {}, []
+    for t in tickers:
+        try:
+            out[t] = {"info": fetch_info(t), "noticias": fetch_news(t)}
+        except Exception:  # noqa: BLE001
+            falhas.append(t)
+            if t in antigo:
+                out[t] = antigo[t]
+    return out, falhas
 
 
 def window(prices: pd.DataFrame, years: int = SNAPSHOT_YEARS) -> pd.DataFrame:
@@ -70,6 +89,16 @@ def main(offline: bool = False) -> Path:
 
     rates = rates_window(pd.read_parquet(CLEAN / "factors.parquet")["juros"], prices.index.min())
     rates.rename("DGS10").to_frame().to_parquet(SNAPSHOT / "rates.parquet", compression="zstd")
+
+    emp_f = SNAPSHOT / "companies.json"
+    antigo = json.loads(emp_f.read_text()) if emp_f.exists() else {}
+    if offline:
+        emp, falhas = {t: antigo[t] for t in stocks if t in antigo}, []
+    else:
+        emp, falhas = companies_payload(stocks, antigo, fetch_info, fetch_news)
+        if falhas:
+            print(f"[snapshot] {len(falhas)} empresas sem ficha nova: {falhas[:8]}{'…' if len(falhas) > 8 else ''}")
+    emp_f.write_text(json.dumps(emp, ensure_ascii=False, separators=(",", ":"), default=str))
 
     for f in SNAPSHOT_FEATURES:
         if f.endswith(".parquet"):

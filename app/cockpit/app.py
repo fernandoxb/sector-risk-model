@@ -4,7 +4,7 @@ Correr a partir da raiz do projeto:
     .venv/bin/streamlit run app/cockpit/app.py
 Sem rede, ou com o Yahoo a limitar pedidos, usa o snapshot versionado em app/cockpit/snapshot/
 (COCKPIT_SNAPSHOT=1 força esse modo, como no Streamlit Community Cloud).
-Separadores: Resumo · Setores · Ficha do setor · Análise ao vivo · Fatores macro · Modelo (backtest) ·
+Separadores: Resumo · Mapa de risco (setor → empresas → ficha da empresa) · Setores · Ficha do setor · Análise ao vivo · Fatores macro · Modelo (backtest) ·
 Carteira e stress · Glossário. Tema em .streamlit/config.toml.
 Metodologia: docs/nota-metodologica.md
 """
@@ -22,12 +22,15 @@ import streamlit as st
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW,  # noqa: E402
+from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW, CALENDAR_PREVIEW,  # noqa: E402
+                             COMPANY_TTL, TRADING_DAYS,
                              CVAR_LEVEL, CVAR_YEARS, FEATURES, GROWTH_SECTORS, LINK_T_MIN, MACRO_FACTORS,
                              MARKET, MODEL_RISK_LEVEL, MODEL_RISK_MULT, MOMENTUM_DAYS, OBSIDIAN_FOLDER,
                              OBSIDIAN_VAULT, OFFICIAL_VAR_METHOD, PANIC_Q, PI_LEVELS, PORTFOLIO_WEIGHTS,
                              RATE_LOOKBACK, RATE_SERIES, RATE_THRESHOLD_PP, SCORE_WEIGHTS, SECTOR_PROFILE,
                              SECTORS, SHOCK_DIFF, SHOCK_LOGDIFF, SHOCK_MARKET, SNAPSHOT)
+from src.collect import empresas as emp  # noqa: E402
+from src.collect import sessao as cal  # noqa: E402
 from src.models import cockpit as ck  # noqa: E402
 from src.models.portfolio import shock_returns  # noqa: E402
 from src.models.scorecard import COMPONENTS  # noqa: E402
@@ -176,6 +179,25 @@ links = feat_csv("factor_links.csv")
 metr = feat_csv("sector_metrics.csv", index_col=0)
 hist = feat_csv("score_history.csv")
 BT_SER = FEAT / "var_backtest_series.parquet"
+hold = feat_csv("holdings.csv")
+if hold is None:
+    hold = emp.fallback_holdings()
+SNAP_EMP = json.loads((SNAPSHOT / "companies.json").read_text()) if (SNAPSHOT / "companies.json").exists() else {}
+
+
+@st.cache_data(ttl=COMPANY_TTL, show_spinner="📰 A ler a ficha e as notícias da empresa…")
+def empresa_vivo(ticker: str) -> dict:
+    return {"info": emp.fetch_info(ticker), "noticias": emp.fetch_news(ticker)}
+
+
+def empresa_dados(ticker: str) -> tuple[dict, str]:
+    """Ficha e notícias: ao vivo (Yahoo) ou, se falhar, as do snapshot. Devolve também a origem."""
+    if not (FORCAR_SNAPSHOT or st.session_state.get("yahoo_falhou")):
+        try:
+            return empresa_vivo(ticker), "ao vivo"
+        except Exception:  # noqa: BLE001
+            pass
+    return SNAP_EMP.get(ticker, {"info": {}, "noticias": []}), f"snapshot de {SNAP_META.get('dados_ate', '?')}"
 alertas = json.loads((FEAT / "alerts.json").read_text()) if (FEAT / "alerts.json").exists() else None
 PIPE_ASOF = str(off["dados_ate"].iloc[0]) if off is not None else "—"
 PREV_DATA = str(off["data_previsao"].iloc[0]) if off is not None else "—"
@@ -214,7 +236,28 @@ st.sidebar.markdown(
     f"- Treasury 10Y: até **{regime['asof'] if regime else '—'}**")
 fonte = ("snapshot do repositório" if "snapshot" in FONTES else "Yahoo Finance (ao vivo)")
 st.sidebar.caption(f"Preços: {fonte}. O FRED publica os juros com 1 dia de atraso; a previsão oficial é "
-                   "para o dia útil seguinte ao último fecho.")
+                   "para a sessão seguinte ao último fecho.")
+hoje_ny = pd.Timestamp.now(tz="America/New_York").date()
+ult = cal.ultima_sessao()
+prox = cal.proximo_dia_util(ult)
+ant = cal.proximo_fecho_antecipado(hoje_ny)
+DIAS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
+
+
+def dia_txt(d) -> str:
+    return f"{DIAS[d.weekday()]} {d.day:02d}/{d.month:02d}"
+
+
+st.sidebar.markdown("**Calendário da bolsa (NYSE)**")
+st.sidebar.markdown(
+    f"- Última sessão fechada: **{dia_txt(ult)}**\n"
+    f"- Próxima sessão: **{dia_txt(prox)}**" + (" (fecha às 13:00)" if cal.fecho_antecipado(prox) else "") + "\n"
+    + "\n".join(f"- Fechada: **{dia_txt(f)}** · {n}" for f, n in cal.proximos_feriados(hoje_ny, CALENDAR_PREVIEW))
+    + f"\n- Fecho às 13:00: **{dia_txt(ant)}**")
+if PIPE_ASOF != "—" and PIPE_ASOF < ult.isoformat():
+    st.sidebar.warning(f"Os resultados do pipeline ({PIPE_ASOF}) estão atrás da última sessão fechada ({ult}).")
+st.sidebar.caption("Feriados calculados pelas regras da NYSE e validados com as sessões do SPY desde 2005. "
+                   "Horas de Nova Iorque; uma sessão conta como fechada 1 h depois do fecho.")
 st.sidebar.markdown("---")
 st.sidebar.markdown("[Código no GitHub](https://github.com/fernandoxb/sector-risk-model) · "
                     "[Nota metodológica (PDF)](https://github.com/fernandoxb/sector-risk-model/blob/main/docs/"
@@ -226,9 +269,9 @@ if "snapshot" in FONTES:
     st.info(f"📦 Modo snapshot: preços e juros guardados no repositório (até {SNAP_META.get('dados_ate', '?')}), "
             f"porque {'COCKPIT_SNAPSHOT está ativo' if FORCAR_SNAPSHOT else 'o Yahoo não respondeu'}.")
 
-tabs = st.tabs(["📋 Resumo", "🎯 Setores", "🔎 Ficha do setor", "📊 Análise ao vivo", "🔗 Fatores macro",
-                "🧪 Modelo (backtest)", "🧩 Carteira e stress", "📖 Glossário"])
-T_RESUMO, T_SETORES, T_FICHA, T_VIVO, T_FATORES, T_MODELO, T_CARTEIRA, T_GLOSSARIO = tabs
+tabs = st.tabs(["📋 Resumo", "🕸️ Mapa de risco", "🎯 Setores", "🔎 Ficha do setor", "📊 Análise ao vivo", "🔗 Fatores macro",
+                "🧪 Modelo", "🧩 Carteira", "📖 Glossário"])
+T_RESUMO, T_MAPA, T_SETORES, T_FICHA, T_VIVO, T_FATORES, T_MODELO, T_CARTEIRA, T_GLOSSARIO = tabs
 
 # ============================================================================ 1. Resumo
 with T_RESUMO:
@@ -512,41 +555,7 @@ with T_VIVO:
     else:
         c3.caption("FRED indisponível: regime de juros desligado.")
 
-    st.subheader("Espinha de contágio (Minimum Spanning Tree)")
-    st.caption("Liga os 11 setores pelas 10 correlações mais fortes que formam uma árvore. Setores próximos caem "
-               "juntos. **Cor = score de risco** (verde baixo, vermelho alto); **tamanho = CVaR histórico**.")
-    pos = nx.kamada_kawai_layout(grafo, weight="weight")
-    edge_x, edge_y, mid_x, mid_y, mid_txt = [], [], [], [], []
-    for a, b, d in grafo.edges(data=True):
-        (x0, y0), (x1, y1) = pos[a], pos[b]
-        edge_x += [x0, x1, None]
-        edge_y += [y0, y1, None]
-        mid_x.append((x0 + x1) / 2)
-        mid_y.append((y0 + y1) / 2)
-        mid_txt.append(f"{a} ↔ {b}<br>correlação {fm.num(d['corr'])}")
-    nos = list(grafo.nodes)
-    score_no = [float(sc.loc[n, "score_final"]) if sc is not None else 50.0 for n in nos]
-    cmax = tab["cvar_aj"].max()
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=edge_x, y=edge_y, mode="lines", hoverinfo="none",
-                             line=dict(width=2, color="#4b5563"), showlegend=False))
-    fig.add_trace(go.Scatter(x=mid_x, y=mid_y, mode="markers", hoverinfo="text", hovertext=mid_txt,
-                             marker=dict(size=12, color="rgba(0,0,0,0)"), showlegend=False))
-    fig.add_trace(go.Scatter(
-        x=[pos[n][0] for n in nos], y=[pos[n][1] for n in nos], mode="markers+text", text=nos,
-        textposition="bottom center", textfont=dict(color=TXT), showlegend=False, hoverinfo="text",
-        marker=dict(size=[20 + 45 * tab.loc[n, "cvar_aj"] / cmax for n in nos], color=score_no,
-                    colorscale=[[0, RISCO["verde"]], [0.5, RISCO["amarelo"]], [1, RISCO["vermelho"]]],
-                    cmin=0, cmax=100, line=dict(width=2, color="#ffffff"),
-                    colorbar=dict(title="Score", thickness=12, len=0.6)),
-        hovertext=[f"<b>{nome(n)}</b> · {SECTOR_PROFILE[n]['tipo'].lower()}<br>"
-                   f"Score {fm.num(s, 0)}/100<br>CVaR {nivel_live}: {fm.pct(tab.loc[n, 'cvar'], 2)}"
-                   + (f" (ajustado: {fm.pct(tab.loc[n, 'cvar_aj'], 2)})" if tab.loc[n, "cvar_aj"] != tab.loc[n, "cvar"]
-                      else "")
-                   + f"<br>β↓ {fm.num(tab.loc[n, 'downside_beta'])} · ligações {grafo.degree(n)}"
-                   for n, s in zip(nos, score_no)]))
-    layout(fig, 500, hovermode="closest", xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x"))
-    st.plotly_chart(fig, width="stretch")
+    st.caption("A rede de contágio entre setores e as empresas de cada setor estão no separador **Mapa de risco**.")
 
     tabela = pd.DataFrame({
         "Ticker": tab.index,
@@ -614,6 +623,262 @@ with T_VIVO:
     c_b.download_button("⬇️ Descarregar .md", nota, file_name=destino.name, mime="text/markdown")
     with st.expander("Pré-visualizar a nota"):
         st.code(nota, language="markdown")
+
+# ============================================================================ 2. Mapa de risco
+with T_MAPA:
+    ESCALA_R = [[0, RISCO["verde"]], [0.5, RISCO["amarelo"]], [1, RISCO["vermelho"]]]
+    # --- clique no gráfico (evento do run anterior) → estado, antes de desenhar os seletores
+    if "mapa_setor" not in st.session_state:        # 1.ª vez: ligação direta, ex. ?setor=XLK&empresa=NVDA
+        q_set = st.query_params.get("setor", "").upper()
+        st.session_state["mapa_setor"] = q_set if q_set in SECTORS else None
+        st.session_state["mapa_empresa"] = st.query_params.get("empresa", "").upper() or None
+    if st.session_state.pop("mapa_reset", False):
+        st.session_state["mapa_setor"], st.session_state["mapa_empresa"] = None, None
+    ev = st.session_state.get("mapa_chart")
+    try:
+        pts = list(ev["selection"]["points"]) if ev else []
+    except (KeyError, TypeError):
+        pts = []
+    clicado = next((p.get("customdata") for p in pts if p.get("customdata")), None)
+    if isinstance(clicado, (list, tuple)):
+        clicado = clicado[0]
+    if clicado != st.session_state.get("mapa_ult_clique"):
+        st.session_state["mapa_ult_clique"] = clicado
+        if clicado in SECTORS:
+            st.session_state["mapa_setor"] = clicado
+            st.session_state["mapa_empresa"] = None
+        elif clicado:
+            st.session_state["mapa_empresa"] = clicado
+
+    st.caption("**Clica num setor** para o abrir nas suas maiores empresas; **clica numa empresa** para ver a ficha: "
+               "bolsa, risco e últimas notícias. Também podes escolher nas caixas abaixo.")
+    m1, m2, m3 = st.columns([2, 2, 1], vertical_alignment="bottom")
+    m_set = m1.selectbox("Setor aberto", [None] + setores, key="mapa_setor",
+                         format_func=lambda t: "— todos os setores —" if t is None else nome(t))
+    h_set = hold[hold["setor"] == m_set].reset_index(drop=True) if m_set else hold.iloc[:0]
+    tick_set = h_set["ticker"].tolist()
+    if st.session_state.get("mapa_empresa") not in tick_set:
+        st.session_state["mapa_empresa"] = None
+    nomes_emp = dict(zip(h_set["ticker"], h_set["nome"]))
+    m_emp = m2.selectbox("Empresa", [None] + tick_set, key="mapa_empresa", disabled=not m_set,
+                         format_func=lambda t: "— escolhe uma empresa —" if t is None else f"{t} · {nomes_emp[t]}")
+    if m3.button("⬅ Fechar setor", disabled=not m_set, width="stretch"):
+        st.session_state["mapa_reset"] = True
+        st.rerun()
+
+    # --- dados das empresas do setor aberto
+    r_emp, t_emp, g_emp = None, None, None
+    if m_set:
+        try:
+            r_emp = ck.returns(precos(tuple(tick_set + [m_set, MARKET]), periodo))
+            t_emp = ck.tail_table(r_emp[tick_set], r_emp[MARKET], CVAR_LEVEL, PANIC_Q)
+            t_emp["corr_etf"] = r_emp[tick_set].corrwith(r_emp[m_set])
+            t_emp["vol"] = r_emp[tick_set].std() * np.sqrt(TRADING_DAYS)
+            t_emp["peso"] = h_set.set_index("ticker")["peso"]
+            cvar_etf = ck.cvar(r_emp[m_set], CVAR_LEVEL)
+            t_emp["racio"] = t_emp["cvar"] / cvar_etf
+            g_emp, _ = ck.mst(r_emp[tick_set])
+        except Exception as e:  # noqa: BLE001
+            st.warning(f"Sem preços para as empresas de {m_set}: {e}")
+            m_set, tick_set = None, []
+
+    # --- posições: sem setor aberto, a MST (Kamada-Kawai). Com um setor aberto, ele vai para o centro, as suas
+    # empresas ficam num anel interior e os outros setores num anel exterior, pela direção que tinham no mapa.
+    pos0 = nx.kamada_kawai_layout(grafo, weight="weight")
+    pos_s = {n: np.array(p, dtype=float) for n, p in pos0.items()}
+    pos_e = {}
+    R_EMP, R_SET = 1.0, 1.85
+    if m_set:
+        c = pos_s[m_set]
+        outros = sorted((n for n in pos_s if n != m_set),
+                        key=lambda n: np.arctan2(pos_s[n][1] - c[1], pos_s[n][0] - c[0]))
+        ang0 = np.arctan2(pos_s[outros[0]][1] - c[1], pos_s[outros[0]][0] - c[0])
+        pos_s = {m_set: np.zeros(2)} | {
+            n: R_SET * np.array([np.cos(ang0 + 2 * np.pi * j / len(outros)), np.sin(ang0 + 2 * np.pi * j / len(outros))])
+            for j, n in enumerate(outros)}
+        ordem_e = list(nx.dfs_preorder_nodes(g_emp, source=t_emp["peso"].idxmax()))   # vizinhos na MST ficam juntos
+        for j, t in enumerate(ordem_e):
+            ang = 2 * np.pi * j / len(ordem_e) + np.pi / 2
+            pos_e[t] = R_EMP * np.array([np.cos(ang), np.sin(ang)])
+    viz_set = set(grafo.neighbors(m_set)) if m_set else set()
+
+    fig_m = go.Figure()
+    # arestas entre setores
+    ex, ey, hx, hy, ht = [], [], [], [], []
+    for a, b, d in grafo.edges(data=True):
+        if m_set and m_set not in (a, b):
+            continue                            # com um setor aberto, só as suas ligações de contágio
+        if not m_set:
+            ex += [pos_s[a][0], pos_s[b][0], None]
+            ey += [pos_s[a][1], pos_s[b][1], None]
+        v_ = b if a == m_set else a
+        f_ = 0.8 if m_set else 0.5              # com setor aberto, a etiqueta fica perto do vizinho (anel exterior)
+        hx.append(pos_s[a][0] * (1 - f_) + pos_s[b][0] * f_ if not m_set else pos_s[v_][0] * f_)
+        hy.append(pos_s[a][1] * (1 - f_) + pos_s[b][1] * f_ if not m_set else pos_s[v_][1] * f_)
+        ht.append(f"{a} ↔ {b}<br>correlação {fm.num(d['corr'])}")
+    fig_m.add_trace(go.Scatter(x=ex, y=ey, mode="lines", hoverinfo="skip",
+                               line=dict(width=2, color="#475569"), showlegend=False))
+    if m_set:                                   # ligações de contágio do setor aberto, por cima
+        vx, vy = [], []
+        for v in viz_set:
+            d_ = pos_s[v] / np.linalg.norm(pos_s[v])
+            vx += [d_[0] * (R_EMP + 0.22), pos_s[v][0], None]
+            vy += [d_[1] * (R_EMP + 0.22), pos_s[v][1], None]
+        fig_m.add_trace(go.Scatter(x=vx, y=vy, mode="lines", hoverinfo="skip", showlegend=False,
+                                   line=dict(width=2.5, color="#64748b")))
+    fig_m.add_trace(go.Scatter(x=hx, y=hy, mode="markers", hoverinfo="text", hovertext=ht,
+                               marker=dict(size=14, color="rgba(0,0,0,0)"), showlegend=False))
+    if m_set:
+        # raios setor → empresa (espessura = peso no ETF) e MST entre as empresas (tracejado)
+        pmax = t_emp["peso"].max()
+        for t in tick_set:
+            fig_m.add_trace(go.Scatter(x=[pos_s[m_set][0], pos_e[t][0]], y=[pos_s[m_set][1], pos_e[t][1]], mode="lines",
+                                       hoverinfo="skip", showlegend=False,
+                                       line=dict(width=0.6 + 3.4 * t_emp.loc[t, "peso"] / pmax, color="#475569")))
+        # ligações da empresa escolhida às que mais se movem com ela (MST das correlações), em curva para não
+        # atravessarem o centro
+        viz_emp = set(g_emp.neighbors(m_emp)) if m_emp else set()
+        for v in viz_emp:
+            a_, b_ = pos_e[m_emp], pos_e[v]
+            meio = (a_ + b_) / 2
+            nm = np.linalg.norm(meio)
+            ctrl = meio / nm * 0.62 if nm > 0.15 else np.array([-a_[1], a_[0]]) * 0.62   # opostas: desvia de lado
+            tt = np.linspace(0, 1, 24)[:, None]
+            curva = (1 - tt) ** 2 * a_ + 2 * (1 - tt) * tt * ctrl + tt ** 2 * b_
+            fig_m.add_trace(go.Scatter(x=curva[:, 0], y=curva[:, 1], mode="lines", showlegend=False,
+                                       hoverinfo="text", hovertext=f"{m_emp} ↔ {v}<br>correlação "
+                                                                   f"{fm.num(g_emp[m_emp][v]['corr'])}",
+                                       line=dict(width=2.2, color="#a5b4fc", dash="dot")))
+    # nós dos setores
+    nos_s = list(grafo.nodes)
+    sc_no = [float(sc.loc[n, "score_final"]) if sc is not None else 50.0 for n in nos_s]
+    cv = rets.apply(lambda r_: ck.cvar(r_, CVAR_LEVEL))
+    fig_m.add_trace(go.Scatter(
+        x=[pos_s[n][0] for n in nos_s], y=[pos_s[n][1] for n in nos_s], mode="markers+text", text=nos_s,
+        customdata=nos_s, textposition="middle center", textfont=dict(color="#0b1220", size=11, family="sans-serif"),
+        showlegend=False, hoverinfo="text",
+        marker=dict(size=[(34 + 30 * cv[n] / cv.max()) * (1.25 if n == m_set else 0.8 if m_set else 1) for n in nos_s],
+                    color=sc_no, colorscale=ESCALA_R, cmin=0, cmax=100,
+                    opacity=[1.0 if (not m_set or n == m_set or n in viz_set) else 0.4 for n in nos_s],
+                    line=dict(width=[4 if n == m_set else 1.5 for n in nos_s], color="#ffffff"),
+                    colorbar=dict(title="Score<br>do setor", thickness=10, len=0.5, x=1.0)),
+        hovertext=[f"<b>{nome(n)}</b><br>Score {fm.num(s_, 0)}/100 · CVaR {N_CVAR} {fm.pct(cv[n], 2)}"
+                   f"<br><i>clica para {'ver' if n != m_set else 'manter'} as empresas</i>" for n, s_ in zip(nos_s, sc_no)],
+        selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=0.9))))
+    if m_set:
+        fig_m.add_trace(go.Scatter(
+            x=[pos_e[t][0] for t in tick_set], y=[pos_e[t][1] for t in tick_set], mode="markers+text", text=tick_set,
+            customdata=tick_set, textposition="middle center", textfont=dict(color="#0b1220", size=10),
+            showlegend=False, hoverinfo="text",
+            marker=dict(size=[34 + 36 * t_emp.loc[t, "peso"] / pmax for t in tick_set],
+                        color=[float(np.clip(t_emp.loc[t, "racio"], 0.5, 2.5)) for t in tick_set],
+                        colorscale=ESCALA_R, cmin=0.5, cmax=2.5,
+                        line=dict(width=[4 if t == m_emp else 3 if t in viz_emp else 1 for t in tick_set],
+                                  color=["#ffffff" if t == m_emp else "#a5b4fc" if t in viz_emp else "#cbd5e1"
+                                         for t in tick_set])),
+            hovertext=[f"<b>{nomes_emp[t]} ({t})</b><br>Peso no {m_set}: {fm.pct(t_emp.loc[t, 'peso'])}"
+                       f"<br>CVaR {N_CVAR}: {fm.pct(t_emp.loc[t, 'cvar'], 2)} ({fm.mult(t_emp.loc[t, 'racio'])} o do ETF)"
+                       f"<br>Correlação com o {m_set}: {fm.num(t_emp.loc[t, 'corr_etf'])}<br><i>clica para abrir a ficha</i>"
+                       for t in tick_set],
+            selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1))))
+    lim = dict(range=[-2.25, 2.25]) if m_set else {}
+    layout(fig_m, 700 if m_set else 520, hovermode="closest", dragmode=False,
+           xaxis=dict(visible=False, **lim), yaxis=dict(visible=False, scaleanchor="x", **lim))
+    st.plotly_chart(fig_m, width="stretch", key="mapa_chart", on_select="rerun", selection_mode="points",
+                    config={"displayModeBar": False, "scrollZoom": False})
+    if m_set:
+        st.caption(f"**Setores:** cor = score de risco, tamanho = CVaR histórico. **Empresas do {m_set}:** tamanho = peso "
+                   f"no ETF, cor = CVaR da empresa face ao do ETF (verde ≤ 1×, vermelho ≥ 2,5×), linha = peso. "
+                   "Ao escolher uma empresa, as curvas tracejadas ligam-na às que mais se movem com ela. No anel exterior ficam os outros "
+                   "setores; os ligados ao centro são os vizinhos de contágio. "
+                   f"As {len(tick_set)} maiores posições somam {fm.pct(h_set['peso'].sum(), 0)} do ETF.")
+    else:
+        st.caption("Cor = score de risco (verde baixo, vermelho alto); tamanho = CVaR histórico. As linhas ligam os "
+                   "setores pelas correlações mais fortes (espinha de contágio): setores vizinhos caem juntos.")
+
+    # --- painel: empresas do setor ou ficha da empresa
+    if m_set and not m_emp:
+        st.subheader(f"Empresas do {nome(m_set)}")
+        ord_e = t_emp.sort_values("peso", ascending=False)
+        st.dataframe(pd.DataFrame({
+            "Empresa": [f"{t} · {nomes_emp[t]}" for t in ord_e.index],
+            "Peso no ETF": ord_e["peso"].map(fm.pct).values,
+            f"CVaR {N_CVAR}": ord_e["cvar"].map(lambda v: fm.pct(v, 2)).values,
+            "Face ao ETF": ord_e["racio"].map(fm.mult).values,
+            "Downside beta": ord_e["downside_beta"].map(fm.num).values,
+            "Correlação com o ETF": ord_e["corr_etf"].map(fm.num).values,
+            "Volatilidade anual": ord_e["vol"].map(fm.pct).values,
+        }), hide_index=True, width="stretch")
+        st.caption(f"CVaR {N_CVAR} · 1 dia · {janela.lower()} (CVaR do {m_set}: {fm.pct(cvar_etf, 2)}). Descritivo: o risco das "
+                   "empresas não está backtestado.")
+    elif m_set and m_emp:
+        dados, origem = empresa_dados(m_emp)
+        info, noticias = dados.get("info", {}), dados.get("noticias", [])
+        e = t_emp.loc[m_emp]
+        with st.container(border=True):
+            st.subheader(f"{info.get('nome', nomes_emp[m_emp])} ({m_emp})")
+            st.caption(" · ".join(x for x in [info.get("industria"), info.get("pais"),
+                                              f"[site]({info['site']})" if info.get("site") else None,
+                                              f"dados de bolsa: {origem}"] if x))
+            b1, b2, b3, b4, b5 = st.columns(5)
+            moeda = info.get("moeda", "USD")
+            if "preco" in info:
+                var = info.get("var_dia_pct")
+                b1.metric("Preço", f"{fm.num(info['preco'])} {moeda}",
+                          f"{fm.num(var, 2, sinal=True)}% no dia" if var is not None else None)
+            else:
+                metrica(b1, "Preço", "—")
+            metrica(b2, "Capitalização", fm.grande(info["cap_bolsa"]) if "cap_bolsa" in info else "—", moeda)
+            metrica(b3, "PER", fm.num(info["per"], 1) if "per" in info else "—",
+                    f"futuro {fm.num(info['per_futuro'], 1)}" if "per_futuro" in info else None,
+                    ajuda="Preço a dividir pelo lucro por ação dos últimos 12 meses; 'futuro' usa o lucro estimado.")
+            metrica(b4, "Intervalo de 52 semanas",
+                    f"{fm.num(info['min_52s'], 0)} – {fm.num(info['max_52s'], 0)}" if "min_52s" in info else "—",
+                    f"dividendo {fm.num(info['dividendo_pct'], 2)}%" if info.get("dividendo_pct") else "sem dividendo")
+            REC = {"strong_buy": "compra forte", "buy": "comprar", "hold": "manter", "underperform": "abaixo do mercado",
+                   "sell": "vender", "strong_sell": "venda forte", "none": "—"}
+            metrica(b5, "Analistas", REC.get(str(info.get("recomendacao")), str(info.get("recomendacao", "—"))),
+                    f"preço-alvo {fm.num(info['preco_alvo'], 0)}" if "preco_alvo" in info else None,
+                    ajuda="Recomendação média dos analistas, segundo o Yahoo Finance. Não é aconselhamento.")
+            k1, k2, k3, k4, k5 = st.columns(5)
+            metrica(k1, f"Peso no {m_set}", fm.pct(e["peso"]))
+            metrica(k2, f"CVaR {N_CVAR} · 1 dia", fm.pct(e["cvar"], 2), f"{fm.mult(e['racio'])} o do {m_set}",
+                    ajuda="Perda média nos 2,5% piores dias da janela. Histórico, não backtestado.")
+            metrica(k3, "Downside beta", fm.num(e["downside_beta"]), f"beta {fm.num(e['beta'])}",
+                    ajuda=f"Sensibilidade ao {MARKET} nos dias de pânico; beta normal ao lado.")
+            metrica(k4, f"Correlação com o {m_set}", fm.num(e["corr_etf"]))
+            metrica(k5, "Volatilidade anual", fm.pct(e["vol"]))
+
+            col_p, col_n = st.columns([3, 2])
+            with col_p:
+                px_ = precos(tuple(tick_set + [m_set, MARKET]), periodo)[[m_emp, m_set]].dropna()
+                px_ = px_[px_.index > px_.index.max() - pd.DateOffset(years=1)]
+                base = 100 * px_ / px_.iloc[0]
+                fig_p = go.Figure()
+                fig_p.add_trace(go.Scatter(x=base.index, y=base[m_emp], mode="lines", name=m_emp,
+                                           line=dict(color="#38bdf8", width=2)))
+                fig_p.add_trace(go.Scatter(x=base.index, y=base[m_set], mode="lines", name=m_set,
+                                           line=dict(color=MUTED, width=1.4, dash="dot")))
+                layout(fig_p, 300, "Último ano (base 100)", hovermode="x unified",
+                       legend=dict(orientation="h", y=-0.15), yaxis=dict(gridcolor=GRID), xaxis=dict(gridcolor=GRID))
+                st.plotly_chart(fig_p, width="stretch", config={"displayModeBar": False})
+                viz_e = sorted(((v, g_emp[m_emp][v]["corr"]) for v in g_emp.neighbors(m_emp)), key=lambda x: -x[1])
+                st.markdown("**Move-se mais com:** " + " · ".join(f"{v} (r = {fm.num(c_)})" for v, c_ in viz_e))
+                if info.get("descricao"):
+                    with st.expander("Sobre a empresa (em inglês, do Yahoo Finance)"):
+                        st.write(info["descricao"])
+            with col_n:
+                st.markdown("**Últimas notícias**")
+                if not noticias:
+                    st.caption("Sem notícias disponíveis.")
+                for n_ in noticias:
+                    st.markdown(f"[{n_['titulo']}]({n_['link']})  \n"
+                                f"<span style='color:{MUTED};font-size:0.85em'>{n_.get('fonte') or ''} · "
+                                f"{fm.data_curta(n_.get('data'))}</span>", unsafe_allow_html=True)
+                st.caption(f"Fonte: Yahoo Finance ({origem}). Títulos em inglês; as horas são UTC.")
+    else:
+        st.info("Nenhum setor aberto. Clica num círculo do mapa para ver as suas empresas.")
+
 
 # ============================================================================ 5. Fatores macro
 with T_FATORES:

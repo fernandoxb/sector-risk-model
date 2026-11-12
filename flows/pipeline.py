@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config.settings import (COLLECT_RETRIES, COLLECT_RETRY_DELAY, COLLECT_STALE_TRIES,  # noqa: E402
                              COLLECT_STALE_WAIT, RAW)
 from src.clean import validate  # noqa: E402
-from src.collect import download_factors, download_prices  # noqa: E402
+from src.collect import download_factors, download_prices, empresas  # noqa: E402
 from src.collect.sessao import dados_completos, ultima_sessao, ultimo_fecho  # noqa: E402
 from src.models import backtest, factor_links, portfolio, risk_metrics, scorecard  # noqa: E402
 from src.report import alerts, build_map, publicar, snapshot, weekly  # noqa: E402
@@ -61,6 +61,7 @@ def coletor(sessao: str) -> str:
     for tentativa in range(1, COLLECT_STALE_TRIES + 1):
         download_prices.main()
         download_factors.main()
+        empresas.main()
         ultimo = _ultimo_fecho_raw()
         if dados_completos(ultimo, alvo):
             return sessao

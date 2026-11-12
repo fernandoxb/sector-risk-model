@@ -1,6 +1,7 @@
 """Relatório semanal no Obsidian: Risco Setorial/Semana AAAA-Www.md (+ 00 Painel.md).
 
-Sai quando a data dos dados é uma sexta (WEEKLY_WEEKDAY) ou com --semanal. Conteúdo:
+Sai na última sessão da NYSE de cada semana (normalmente sexta; quinta se a sexta for feriado, como a
+Sexta-feira Santa) ou com --semanal. Conteúdo:
   - top 3 do scorecard e variação face ao último estado da semana anterior (score e posição);
   - exceções ao VaR 97,5% oficial na semana (perda > VaR previsto, só com dados até t-1);
   - ligações medidas que entraram ou saíram face à semana anterior;
@@ -17,7 +18,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (FEATURES, OBSIDIAN_FOLDER, OBSIDIAN_VAULT, OFFICIAL_MEASURES,  # noqa: E402
-                             OFFICIAL_VAR_METHOD, SECTORS, STATE, WEEKLY_TOP, WEEKLY_WEEKDAY)
+                             OFFICIAL_VAR_METHOD, SECTORS, STATE, WEEKLY_TOP)
+from src.collect.sessao import proximo_dia_util  # noqa: E402
 from src.report.alerts import METODO_TXT, NIVEL_TXT, _fator_nome, _num, _pct, load_current, previous_state  # noqa: E402
 
 LEVEL_975 = OFFICIAL_MEASURES["var975"][1]
@@ -35,7 +37,9 @@ def week_start(day) -> pd.Timestamp:
 
 
 def is_report_day(day) -> bool:
-    return pd.Timestamp(day).weekday() == WEEKLY_WEEKDAY
+    """Última sessão da semana ISO: a sessão seguinte já cai noutra semana."""
+    d = pd.Timestamp(day).date()
+    return proximo_dia_util(d).isocalendar()[:2] != d.isocalendar()[:2]
 
 
 def reference_state(asof: str, folder: Path = STATE) -> dict | None:

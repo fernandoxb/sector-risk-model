@@ -148,7 +148,6 @@ ALERT_SEVERITIES = ("alta", "média", "baixa")
 ALERT_NOTIFY = ("alta",)             # só estas severidades geram notificação macOS
 ALERT_KEEP_DAYS = 60                 # secções de dias mantidas em Alertas.md (as mais antigas saem)
 WEEKLY_TOP = 3                       # setores no top do relatório semanal
-WEEKLY_WEEKDAY = 4                   # o relatório semanal sai quando a data dos dados é uma sexta (0 = segunda)
 
 # --- Montra: modo snapshot do cockpit (app/cockpit/snapshot, versionado) -------
 # Usado quando não há rede ou o Yahoo limita (ex.: Streamlit Community Cloud). Atualizado pelo flow.
@@ -158,7 +157,7 @@ SNAPSHOT_RATE_MARGIN_DAYS = 200 # dias de juros antes do 1.º preço (o regime u
 # Ficheiros de data/features copiados tal como estão (o cockpit lê-os do snapshot se data/ não existir).
 SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "var_backtest_series.parquet",
                      "risk_contribution.csv", "stress_tests.csv", "covariance_shrinkage.csv", "factor_links.csv",
-                     "alerts.json", "sector_metrics.csv", "score_history.csv")
+                     "alerts.json", "sector_metrics.csv", "score_history.csv", "holdings.csv")
 
 # --- Cenário de stress próprio (cockpit, separador Carteira e stress) --------
 # Choque instantâneo propagado pelos betas: mercado pelo beta diário de 3 anos (sector_metrics.csv) e cada
@@ -172,14 +171,34 @@ SHOCK_LOGDIFF = (-50.0, 150.0, 50.0, 5.0)
 # --- Calendário do mercado (cache do Coletor e alerta de dados atrasados) -----
 # Uma sessão conta como fechada 1 h depois do fecho de Nova Iorque (16:00), para os preços do Yahoo assentarem
 # (17:00 em NY = 22:00 em Lisboa, antes do run agendado das 22:30).
-# Feriados dos EUA não são tratados: num feriado espera-se uma sessão que não existe e o alerta avisa.
+# Feriados da NYSE: calculados pelas regras da bolsa em src/collect/sessao.py (sem dependências), mais os
+# fechos excecionais abaixo, que nenhuma regra prevê.
 MARKET_TZ = "America/New_York"
 MARKET_CLOSE = "17:00"
+# Fechos antecipados (13:00 em NY: 3 de julho, dia a seguir ao Thanksgiving, véspera de Natal): a sessão conta
+# como fechada às 14:00, com a mesma margem de 1 h.
+MARKET_EARLY_CLOSE = "14:00"
+CALENDAR_PREVIEW = 3                 # próximos feriados mostrados no cockpit
+NYSE_JUNETEENTH_FROM = 2022          # o Juneteenth é feriado da NYSE desde 2022
+NYSE_SPECIAL_CLOSURES = {
+    "2007-01-02": "luto nacional (Gerald Ford)",
+    "2012-10-29": "furacão Sandy",
+    "2012-10-30": "furacão Sandy",
+    "2018-12-05": "luto nacional (George H. W. Bush)",
+    "2025-01-09": "luto nacional (Jimmy Carter)",
+}
 
 # --- Publicação semanal do snapshot (bot Publicador, src/report/publicar.py) --
-# Às sextas (data dos dados = WEEKLY_WEEKDAY), depois do run, faz commit e push só de app/cockpit/snapshot/,
+# Na última sessão de cada semana (normalmente sexta; quinta se a sexta for feriado), depois do run, faz commit e push só de app/cockpit/snapshot/,
 # para o cockpit no Streamlit Cloud acompanhar os dados. Nunca toca noutros ficheiros nem noutro ramo.
 SNAPSHOT_PUBLISH = True
 SNAPSHOT_PUBLISH_BRANCH = "main"
 SNAPSHOT_PUBLISH_REMOTE = "origin"
 
+
+# --- Empresas de cada setor (mapa de risco: setor → empresas → ficha) ---------
+# As HOLDINGS_TOP maiores posições de cada ETF, com o peso no ETF (Yahoo, fundos). Se o Yahoo falhar, usa-se o
+# ficheiro anterior e, na falta dele, as ações de SECTOR_PROFILE com pesos iguais.
+HOLDINGS_TOP = 10
+COMPANY_NEWS = 6                # notícias mostradas na ficha da empresa
+COMPANY_TTL = 900               # segundos de cache da ficha e das notícias ao vivo no cockpit

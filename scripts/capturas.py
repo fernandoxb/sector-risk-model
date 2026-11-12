@@ -2,7 +2,8 @@
 
 Uso:  .venv/bin/python -m scripts.capturas URL SAIDA.png TEXTO_A_ESPERAR [largura altura] [rolar_até_título] [separador]
 Espera (até 90 s) que TEXTO_A_ESPERAR apareça e que o Streamlit deixe de mostrar spinners. Com `separador`,
-clica primeiro no separador (st.tabs) cujo nome contém esse texto.
+clica primeiro no separador (st.tabs) cujo nome contém esse texto. A variável de ambiente CAPTURA_JS corre
+JavaScript na página antes da captura (ex.: abrir um setor no mapa).
 Ex.:  .venv/bin/python -m scripts.capturas http://localhost:8501 docs/img/cockpit-backtest.png \\
           "Backtesting do VaR" 1440 1100 "Backtesting do VaR"
       .venv/bin/python -m scripts.capturas "file://$PWD/app/risk-map/index.html#sel=xlk" docs/img/mapa-xlk.png "Score"
@@ -10,6 +11,7 @@ Ex.:  .venv/bin/python -m scripts.capturas http://localhost:8501 docs/img/cockpi
 import asyncio
 import base64
 import json
+import os
 import sys
 import time
 
@@ -31,6 +33,10 @@ async def main(url, out, wait_text, w=1440, h=1250, scroll_text=None, tab=None):
                 f"[...document.querySelectorAll('[role=tab]')].find(t=>t.innerText.includes({json.dumps(tab)}))"
                 "?.click(); true"))
             await asyncio.sleep(3)
+        extra = os.environ.get("CAPTURA_JS")          # passos extra (ex.: escolher um setor) antes da captura
+        if extra:
+            await cmd("Runtime.evaluate", expression=extra, awaitPromise=True)
+            await asyncio.sleep(4)
         if scroll_text:
             await cmd("Runtime.evaluate", expression=(
                 f"[...document.querySelectorAll('h1,h2,h3')].find(e=>e.innerText.includes({json.dumps(scroll_text)}))"

@@ -35,7 +35,7 @@ Cada método falha por uma razão diferente:
 * **GARCH com t-Student:** acompanha a volatilidade, mas a cauda paramétrica é demasiado fina, por isso falha no Kupiec e no Z2.
 * **FHS:** junta a volatilidade do GARCH à cauda empírica dos resíduos, e só ela passa os três testes.
 
-Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% e o ES 97,5% do dia útil seguinte.
+Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% e o ES 97,5% da sessão seguinte (calendário da NYSE com feriados).
 
 ![Backtest no cockpit: o histórico é rejeitado e a FHS passa](docs/img/cockpit-backtest.png)
 
@@ -55,17 +55,22 @@ Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% 
 
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
+* **Mapa de risco:** a rede de contágio entre setores; clicar num setor abre as suas 10 maiores empresas e clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
 * **Setores:** scorecard e evolução do score.
 * **Ficha do setor:** tudo sobre um setor, incluindo o risco previsto desde 2008.
-* **Análise ao vivo:** CVaR histórico, downside beta, contágio e ações.
+* **Análise ao vivo:** CVaR histórico, downside beta e ações.
 * **Fatores macro.**
 * **Modelo:** backtest.
-* **Carteira e stress:** inclui um cenário de stress próprio.
+* **Carteira:** contribuições para o risco, stress históricos e um cenário de stress próprio.
 * **Glossário.**
 
 | Resumo | Fatores macro |
 |---|---|
 | ![Cockpit: resumo](docs/img/cockpit-resumo.png) | ![Cockpit: fatores macro](docs/img/cockpit-fatores.png) |
+
+| Mapa de risco (setor aberto) | Ficha da empresa |
+|---|---|
+| ![Cockpit: mapa de risco](docs/img/cockpit-mapa.png) | ![Cockpit: ficha da empresa](docs/img/cockpit-empresa.png) |
 
 | Scorecard | Ficha do setor |
 |---|---|
@@ -121,7 +126,7 @@ sh flows/install_launchd.sh --remover           # desinstala
 * **Obsidian:** o Sentinela escreve em `Risco Setorial/` do cofre (`OBSIDIAN_VAULT`). O `00 Painel.md` precisa do plugin Dataview.
 
 ### Cockpit no Streamlit Community Cloud
-O cockpit tenta sempre os dados ao vivo. Se o Yahoo não responder (ou com `COCKPIT_SNAPSHOT=1`), lê o **snapshot versionado** em `app/cockpit/snapshot/`, com cerca de 2,7 MB: preços de 3 anos, juros e resultados do pipeline. O flow atualiza o snapshot em cada run e, às sextas, o bot Publicador faz commit e push só dessa pasta (`--publicar` força a publicação noutro dia). O Streamlit Cloud atualiza a app sozinho a cada push.
+O cockpit tenta sempre os dados ao vivo. Se o Yahoo não responder (ou com `COCKPIT_SNAPSHOT=1`), lê o **snapshot versionado** em `app/cockpit/snapshot/`, com cerca de 2,7 MB: preços de 3 anos, juros e resultados do pipeline. O flow atualiza o snapshot em cada run e, na última sessão de cada semana, o bot Publicador faz commit e push só dessa pasta (`--publicar` força a publicação noutro dia). O Streamlit Cloud atualiza a app sozinho a cada push.
 
 Para o publicar:
 1. Em [share.streamlit.io](https://share.streamlit.io), entra com o GitHub e escolhe **Create app** → *Deploy a public app from GitHub*.
