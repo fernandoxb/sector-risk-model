@@ -10,7 +10,8 @@ import pandas as pd
 import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import COMPANY_NEWS, FEATURES, HOLDINGS_TOP, SECTOR_PROFILE, SECTORS  # noqa: E402
+from config.settings import (COMPANY_NEWS, COMPANY_START, FEATURES, HOLDINGS_TOP, RAW,  # noqa: E402
+                             SECTOR_PROFILE, SECTORS)
 
 COLS = ["setor", "ticker", "nome", "peso"]
 INFO_FIELDS = {  # campo do Yahoo → nome na ficha
@@ -86,6 +87,34 @@ def load_holdings(folder: Path = FEATURES) -> pd.DataFrame:
     return pd.read_csv(f) if f.exists() else fallback_holdings()
 
 
+def download_prices(tickers: list[str], start: str = COMPANY_START) -> pd.DataFrame:
+    """Fechos ajustados das empresas desde `start`, num único pedido. Empresas sem dados ficam de fora."""
+    df = yf.download(tickers, start=start, auto_adjust=True, progress=False, threads=False)["Close"]
+    df.index = pd.to_datetime(df.index).tz_localize(None)
+    df.index.name = "date"
+    return df[[t for t in tickers if t in df and not df[t].dropna().empty]]
+
+
+def merge_prices(novo: pd.DataFrame, antigo: pd.DataFrame | None, tickers: list[str]) -> pd.DataFrame:
+    """Preços novos; as empresas que falharam no download mantêm a série do ficheiro anterior."""
+    falta = [t for t in tickers if t not in novo and antigo is not None and t in antigo]
+    out = novo if not falta else novo.join(antigo[falta], how="outer")
+    return out[[t for t in tickers if t in out]]
+
+
+def main_prices() -> Path:
+    """Histórico de preços das empresas de holdings.csv → data/raw/prices_empresas.parquet."""
+    tickers = list(dict.fromkeys(load_holdings()["ticker"]))
+    out = RAW / "prices_empresas.parquet"
+    antigo = pd.read_parquet(out) if out.exists() else None
+    p = merge_prices(download_prices(tickers), antigo, tickers)
+    RAW.mkdir(parents=True, exist_ok=True)
+    p.to_parquet(out)
+    print(f"[coletor] empresas: {p.shape[1]} séries, {p.index.min().date()} → {p.index.max().date()}"
+          + (f"; sem dados: {[t for t in tickers if t not in p]}" if p.shape[1] < len(tickers) else ""))
+    return out
+
+
 def main() -> Path:
     """Posições de cada ETF; um setor que falhe mantém as posições do ficheiro anterior (ou o recurso)."""
     antigo = load_holdings()
@@ -107,3 +136,4 @@ def main() -> Path:
 
 if __name__ == "__main__":
     main()
+    main_prices()

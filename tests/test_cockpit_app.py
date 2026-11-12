@@ -48,3 +48,18 @@ def test_minha_carteira_do_link(monkeypatch):
     assert "Quem mais pesa no risco" in rotulos and any(r.startswith("Carteira com o SPY") for r in rotulos)
     quem = next(m for m in at.metric if m.label == "Quem mais pesa no risco")
     assert quem.value == "NVDA"
+
+
+def test_previsao_fhs_da_carteira_e_modelo_na_ficha(monkeypatch):
+    """A carteira tem ES previsto pelo modelo oficial e a ficha da empresa mostra o estado do backtest."""
+    monkeypatch.setenv("COCKPIT_SNAPSHOT", "1")
+    at = AppTest.from_file(str(APP), default_timeout=180)
+    at.query_params["carteira"] = "NVDA:40,JPM:30,XLU:20,SPY:10"
+    at.query_params["setor"] = "XLK"
+    at.query_params["empresa"] = "NVDA"
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    rotulos = [m.label for m in at.metric]
+    assert sum(r.startswith("ES 97,5% previsto · ") for r in rotulos) >= 2      # carteira e ficha da NVDA
+    assert "Backtest do modelo" in rotulos and "VaR 99% previsto" in rotulos
+    assert "Backtest desta carteira" in rotulos

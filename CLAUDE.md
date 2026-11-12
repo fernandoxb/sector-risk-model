@@ -37,6 +37,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   dependências do Cloud em `app/cockpit/requirements.txt`.
 - Mapa de risco = separador do cockpit (setor → 10 maiores empresas → ficha com bolsa e notícias); empresas em
   `data/features/holdings.csv` (`src/collect/empresas.py`). O mapa HTML é anterior e não tem este nível.
+- Empresas: `backtest_empresas.py` reutiliza `backtest.run` (sem lógica nova) → `company_backtest.csv`, `company_risk.csv`
+  (`validado`, `es_subestimado`). Carteira do utilizador: `carteira.py`; previsão = FHS sobre os retornos da carteira.
 - `scripts/` — capturas de ecrã (`capturas.py`) e PDF da nota (`nota_pdf.py`), via Chrome headless.
 - Funções de cálculo são **puras** (sem Streamlit, sem I/O) para poderem ser testadas.
 - `data/`, `reference/`, `.venv/` não vão para o Git.

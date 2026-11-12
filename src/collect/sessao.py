@@ -121,6 +121,11 @@ def proximo_fecho_antecipado(d: date) -> date:
     return d
 
 
+def ultima_sessao_da_semana(d: date) -> bool:
+    """`d` é a última sessão da sua semana ISO? (a sessão seguinte já cai noutra semana)"""
+    return proximo_dia_util(d).isocalendar()[:2] != d.isocalendar()[:2]
+
+
 def dias_uteis(inicio: date, fim: date) -> list[date]:
     """Sessões da NYSE entre `inicio` e `fim` (inclusive)."""
     return [d.date() for d in pd.date_range(inicio, fim, freq="D") if dia_util(d.date())]

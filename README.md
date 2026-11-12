@@ -11,7 +11,7 @@
 > coverage, independence and the ES test at the same time**, so it is the official model.
 > The project also covers portfolio risk (Ledoit-Wolf covariance, Euler risk contributions, 2008/2020/2022 stress tests),
 > a 0–100 risk scorecard, macro-factor → sector links estimated with HAC regressions, and an automated daily pipeline
-> (Prefect + launchd) with alerts and weekly reports. There are 103 tests and CI on GitHub Actions.
+> (Prefect + launchd) with alerts and weekly reports. There are 135 tests and CI on GitHub Actions.
 
 Pipeline em Python que mede o risco de mercado dos 11 ETFs setoriais SPDR (XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLU,
 XLB, XLRE, XLC) face ao SPY, setor a setor e em carteira. Corre sozinho todos os dias úteis e publica os resultados em três
@@ -39,11 +39,17 @@ Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% 
 
 ![Backtest no cockpit: o histórico é rejeitado e a FHS passa](docs/img/cockpit-backtest.png)
 
+**E empresa a empresa?** O mesmo backtest corre nas 109 maiores empresas dos 11 setores (previsões desde 2018). A FHS
+continua a ser o melhor método, mas com menos folga: passa os três testes a 97,5% em **61 de 109** empresas (GARCH-t: 22;
+histórico: 21), e em 40 o ES fica subestimado. Uma ação isolada tem saltos que um setor dilui. Nessas 40, o ES
+mostrado é corrigido pelo fator que teria acertado no backtest (k = 1 − Z2, em média ×1,31).
+
 ## O que o projeto faz
 | Bloco | Métodos | Onde |
 |---|---|---|
 | Risco de cauda | CVaR/ES 97,5% (FRTB), downside beta nos 20% piores dias do SPY | `src/models/cockpit.py`, `risk_metrics.py` |
 | Previsão e backtest | Histórico, GJR-GARCH(1,1)-t, FHS; Kupiec, Christoffersen, Z2 de Acerbi–Székely (p-valor por simulação), semáforo de Basileia, regra por mesa do FRTB | `src/models/backtest.py` |
+| Empresas e carteira própria | O mesmo backtest em 109 empresas; carteira do utilizador com contribuições de Euler, exposição por setor, stress e previsão FHS | `src/models/backtest_empresas.py`, `carteira.py` |
 | Carteira | Covariância de Ledoit-Wolf, contribuições de Euler para a volatilidade e o CVaR, stress tests de 2008, COVID-19 e 2022 | `src/models/portfolio.py` |
 | Scorecard 0–100 | 5 componentes normalizados por percentil, multiplicador de risco de modelo (semáforo), P × I, sensibilidade ±50% aos pesos | `src/models/scorecard.py` |
 | Fatores macro | Regressões semanais setor ~ fator com erros HAC de Newey–West, para juros, inflação, spreads high yield, VIX, petróleo e dólar; contágio pela MST | `src/models/factor_links.py` |
@@ -56,7 +62,7 @@ Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% 
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
 * **Mapa de risco:** a rede de contágio entre setores; clicar num setor abre as suas 10 maiores empresas e clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
-* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco, quem mais pesa nele, a exposição por setor no mapa de contágio e o stress. Guarda-se no link, sem conta.
+* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco histórico e o previsto (FHS), quem mais pesa nele, a exposição por setor no mapa de contágio e o stress. Guarda-se no link, sem conta.
 * **Setores:** scorecard e evolução do score.
 * **Ficha do setor:** tudo sobre um setor, incluindo o risco previsto desde 2008.
 * **Análise ao vivo:** CVaR histórico, downside beta e ações.
@@ -112,7 +118,7 @@ python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_pipeline.py            # coleta → validação → modelos → mapa (precisa de rede)
 .venv/bin/streamlit run app/cockpit/app.py  # cockpit em http://localhost:8501
 open app/risk-map/index.html                # mapa de riscos (sem servidor)
-.venv/bin/python -m pytest                  # 103 testes, sem rede
+.venv/bin/python -m pytest                  # 135 testes, sem rede
 ```
 * **Chave do FRED:** é opcional. Se definires `FRED_API_KEY` num `.env`, os dados vêm pela API; caso contrário usa-se o CSV público.
 * **Sem rede:** `run_pipeline.py --offline` reutiliza os dados de `data/raw/`.
@@ -150,7 +156,10 @@ Convenções:
 * **Rótulos:** dizem sempre o nível e a janela, por exemplo "CVaR 97,5% · 1 dia · 3 anos".
 
 ## Limitações
-* **Universo:** são só ETFs setoriais dos EUA, e o resultado não se generaliza a outros mercados nem a ações individuais. O microscópio de ações do cockpit é descritivo e não está backtestado.
+* **Universo:** são só ETFs setoriais dos EUA e as suas 10 maiores empresas; o resultado não se generaliza a outros mercados.
+* **Empresas:** o modelo oficial só está validado em 61 de 109 e subestima o ES em 40. O backtest das empresas começa em 2018, por isso não inclui 2008.
+* **Carteira do utilizador:** a previsão usa o modelo oficial sobre os retornos da carteira com os pesos atuais. O backtest de cada carteira tem só cerca de 2 anos de previsões, sem nenhuma crise.
+* **Correção do ES:** o fator é calibrado no mesmo backtest que o justifica; corrige o que o passado mostrou.
 * **Dados:** os preços vêm do Yahoo Finance (ajustados, sem garantia de serviço). Há séries do FRED com 1 dia de atraso, e o spread high yield (ICE BofA) só está disponível no FRED para os últimos 3 anos.
 * **Proxies em 2008:** o XLRE e o XLC ainda não existiam, por isso no stress de 2008 usam um proxy β × SPY com o β atual, que ignora o risco específico.
 * **FHS:** passa os testes, mas a 97,5% tem ligeiramente mais exceções do que as esperadas no agregado (1 267 contra 1 152, ou seja, 2,75% contra 2,5%). A 99%, o XLE está em amarelo no semáforo.
@@ -169,7 +178,7 @@ flows/                  flow Prefect e agendamento launchd
 app/risk-map/           mapa de riscos (HTML autónomo)
 app/cockpit/            cockpit Streamlit + snapshot
 scripts/                capturas de ecrã e PDF da nota metodológica (Chrome headless)
-tests/                  103 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
+tests/                  135 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
 docs/                   nota metodológica (.md e .pdf) e capturas
 ```
 

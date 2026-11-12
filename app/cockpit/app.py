@@ -33,7 +33,7 @@ if getattr(sys, "_cockpit_assinatura", None) != _assinatura:
     sys._cockpit_assinatura = _assinatura
 from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW, CALENDAR_PREVIEW,  # noqa: E402
                              COMPANY_TTL, TRADING_DAYS, USER_MARKET_LABEL, USER_PORTFOLIO_DEFAULT,
-                             USER_PORTFOLIO_MAX,
+                             USER_FORECAST_YEARS, USER_PORTFOLIO_MAX,
                              CVAR_LEVEL, CVAR_YEARS, FEATURES, GROWTH_SECTORS, LINK_T_MIN, MACRO_FACTORS,
                              MARKET, MODEL_RISK_LEVEL, MODEL_RISK_MULT, MOMENTUM_DAYS, OBSIDIAN_FOLDER,
                              OBSIDIAN_VAULT, OFFICIAL_VAR_METHOD, PANIC_Q, PI_LEVELS, PORTFOLIO_WEIGHTS,
@@ -41,6 +41,7 @@ from config.settings import (BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW, CALEND
                              SECTORS, SHOCK_DIFF, SHOCK_LOGDIFF, SHOCK_MARKET, SNAPSHOT)
 from src.collect import empresas as emp  # noqa: E402
 from src.collect import sessao as cal  # noqa: E402
+from src.models import backtest_empresas as be  # noqa: E402
 from src.models import carteira as ca  # noqa: E402
 from src.models import cockpit as ck  # noqa: E402
 from src.models.portfolio import shock_returns  # noqa: E402
@@ -84,6 +85,22 @@ def metrica(col, rotulo: str, valor: str, nota: str | None = None, ajuda: str | 
 
 def nome(t: str) -> str:
     return f"{SECTORS[t]} ({t})"
+
+
+def es_emp(t: str):
+    """ES 97,5% previsto de uma empresa, já com a correção do backtest (None se não tiver modelo)."""
+    if comp_risk is None or t not in comp_risk.index:
+        return None
+    return float(comp_risk.loc[t, "es975_aj"])
+
+
+def modelo_txt(linha) -> str:
+    """Estado do modelo oficial numa empresa (linha de company_risk.csv)."""
+    if linha is None:
+        return "sem modelo"
+    if bool(linha["validado"]):
+        return "✅ validado"
+    return f"⚠ ES corrigido ×{fm.num(linha['mult_es'])}" if bool(linha["es_subestimado"]) else "⚠ falha um teste"
 
 
 def seletor_periodo(fig: go.Figure, anos: int = 3) -> None:
@@ -190,6 +207,8 @@ links = feat_csv("factor_links.csv")
 metr = feat_csv("sector_metrics.csv", index_col=0)
 hist = feat_csv("score_history.csv")
 BT_SER = FEAT / "var_backtest_series.parquet"
+comp_bt = feat_csv("company_backtest.csv")
+comp_risk = feat_csv("company_risk.csv", index_col="empresa")
 hold = feat_csv("holdings.csv")
 if hold is None:
     hold = emp.fallback_holdings()
@@ -199,6 +218,12 @@ SNAP_EMP = json.loads((SNAPSHOT / "companies.json").read_text()) if (SNAPSHOT / 
 @st.cache_data(ttl=COMPANY_TTL, show_spinner="📰 A ler a ficha e as notícias da empresa…")
 def empresa_vivo(ticker: str) -> dict:
     return {"info": emp.fetch_info(ticker), "noticias": emp.fetch_news(ticker)}
+
+
+@st.cache_data(ttl=3600, show_spinner="📈 A testar o modelo na tua carteira…")
+def backtest_carteira(chave: str, _rets: pd.DataFrame, _w: pd.Series, ate: str) -> dict | None:
+    """Backtest e previsão FHS da carteira; `chave` (pesos) e `ate` (último preço) identificam o resultado em cache."""
+    return be.portfolio_backtest(_rets, _w)
 
 
 def empresa_dados(ticker: str) -> tuple[dict, str]:
@@ -816,12 +841,16 @@ with T_MAPA:
             "Peso no ETF": ord_e["peso"].map(fm.pct).values,
             f"CVaR {N_CVAR}": ord_e["cvar"].map(lambda v: fm.pct(v, 2)).values,
             "Face ao ETF": ord_e["racio"].map(fm.mult).values,
+            f"ES {N_CVAR} previsto": [fm.pct(es_emp(t)) if es_emp(t) is not None else "—" for t in ord_e.index],
+            "Modelo": [modelo_txt(comp_risk.loc[t] if comp_risk is not None and t in comp_risk.index else None)
+                       for t in ord_e.index],
             "Downside beta": ord_e["downside_beta"].map(fm.num).values,
             "Correlação com o ETF": ord_e["corr_etf"].map(fm.num).values,
             "Volatilidade anual": ord_e["vol"].map(fm.pct).values,
         }), hide_index=True, width="stretch")
-        st.caption(f"CVaR {N_CVAR} · 1 dia · {janela.lower()} (CVaR do {m_set}: {fm.pct(cvar_etf, 2)}). Descritivo: o risco das "
-                   "empresas não está backtestado.")
+        st.caption(f"CVaR {N_CVAR} · 1 dia · {janela.lower()}, histórico (CVaR do {m_set}: {fm.pct(cvar_etf, 2)}). ES previsto: "
+                   f"modelo oficial ({OFICIAL}) para {PREV_DATA}. Modelo: ✅ se passa os três testes do backtest a {N_CVAR} "
+                   "(frequência, independência e tamanho das perdas).")
     elif m_set and m_emp:
         dados, origem = empresa_dados(m_emp)
         info, noticias = dados.get("info", {}), dados.get("noticias", [])
@@ -860,6 +889,25 @@ with T_MAPA:
             metrica(k4, f"Correlação com o {m_set}", fm.num(e["corr_etf"]))
             metrica(k5, "Volatilidade anual", fm.pct(e["vol"]))
 
+            cr = comp_risk.loc[m_emp] if comp_risk is not None and m_emp in comp_risk.index else None
+            if cr is None:
+                st.caption("Sem modelo de previsão: a empresa ainda não tem histórico suficiente (cerca de 3 anos e "
+                           "meio). Fica só com o risco histórico acima.")
+            else:
+                f1_, f2_, f3_, f4_ = st.columns(4)
+                metrica(f1_, f"ES {N_CVAR} previsto · {cr['data_previsao']}", fm.pct(cr["es975_aj"]),
+                        f"modelo {fm.pct(cr['es975'])} × {fm.num(cr['mult_es'])}" if cr["mult_es"] > 1
+                        else f"histórico: {fm.pct(e['cvar'], 2)}",
+                        ajuda=f"Perda média esperada nos piores dias de amanhã, pelo modelo oficial ({OFICIAL}): reage à "
+                              "volatilidade atual. O histórico é a média dos piores dias da janela.")
+                metrica(f2_, "VaR 99% previsto", fm.pct(cr["var99"]), f"VaR {N_CVAR}: {fm.pct(cr['var975'])}")
+                metrica(f3_, f"Semáforo ({BT_TL_DAYS} dias)", SEM[cr["semaforo"]], "exceções ao VaR 99%")
+                metrica(f4_, "Backtest do modelo", modelo_txt(cr),
+                        "previsão fiável" if cr["validado"] else "ler a previsão com cautela",
+                        ajuda=f"Validado: desde 2018, o {OFICIAL} passa nesta empresa os testes de Kupiec, Christoffersen "
+                              f"e Z2 a {N_CVAR}. ES corrigido: no backtest as perdas nos dias maus foram maiores do que o "
+                              "previsto (típico de ações com saltos em dias de resultados), por isso o ES mostrado já "
+                              "vem multiplicado pelo fator que teria acertado no passado.")
             col_p, col_n = st.columns([3, 2])
             with col_p:
                 px_ = precos(tuple(tick_set + [m_set, MARKET]), periodo)[[m_emp, m_set]].dropna()
@@ -971,6 +1019,64 @@ with T_MINHA:
             metrica(u5, "Quem mais pesa no risco", top_u,
                     f"{fm.pct(tab_u.loc[top_u, 'pct_cvar'], 0)} do CVaR · peso {fm.pct(tab_u.loc[top_u, 'peso'], 0)}")
 
+            # --- previsão oficial da carteira e o seu backtest (FHS sobre os retornos com os pesos atuais)
+            bt_u = None
+            try:
+                px_l = precos(tuple(dict.fromkeys(list(w_u.index))), f"{USER_FORECAST_YEARS}y")
+                bt_u = backtest_carteira(ca.format_carteira(pesos_ed), px_l.pct_change().iloc[1:], w_u,
+                                         str(px_l.index[-1].date()))
+            except Exception:  # noqa: BLE001  sem preços longos ou GARCH sem convergir: fica só o histórico
+                pass
+            v1, v2, v3, v4 = st.columns(4)
+            if bt_u:
+                pv = bt_u["previsao"]
+                t975 = bt_u["testes"][np.isclose(bt_u["testes"]["nivel"], CVAR_LEVEL)].iloc[0]
+                metrica(v1, f"ES {N_CVAR} previsto · {pv['data_previsao']}", fm.pct(pv["es975_aj"], 2),
+                        f"modelo {fm.pct(pv['es975'], 2)} × {fm.num(pv['mult_es'])}" if pv["mult_es"] > 1
+                        else f"histórico: {fm.pct(res_u['cvar'], 2)}",
+                        ajuda=f"Modelo oficial ({OFICIAL}) aplicado aos retornos da carteira com os pesos atuais. Se o "
+                              "backtest desta carteira mostrar ES subestimado, o valor já vem corrigido.")
+                metrica(v2, "VaR 99% previsto", fm.pct(pv["var99"], 2), f"VaR {N_CVAR}: {fm.pct(pv['var975'], 2)}")
+                metrica(v3, "Backtest desta carteira", modelo_txt(pv),
+                        f"{int(t975['excecoes'])} exceções em {bt_u['dias']} dias (esperadas {fm.num(t975['esperadas'], 0)})",
+                        ajuda=f"O {OFICIAL} previu o VaR e o ES desta carteira, dia a dia, só com dados até à véspera; "
+                              f"✅ se passa Kupiec, Christoffersen e Z2 a {N_CVAR}.")
+                metrica(v4, f"Semáforo ({BT_TL_DAYS} dias)", SEM[pv["semaforo"]], "exceções ao VaR 99%")
+                with st.expander(f"Backtest desta carteira: {bt_u['dias']} dias de previsões"):
+                    sb = bt_u["serie"]
+                    exc_u = -sb["ret"] > sb["var"]
+                    fig_b = go.Figure()
+                    fig_b.add_trace(go.Scatter(x=sb["data"], y=sb["ret"], mode="lines", name="Retorno diário da carteira",
+                                               line=dict(width=0.8, color=MUTED)))
+                    fig_b.add_trace(go.Scatter(x=sb["data"], y=-sb["var"], mode="lines", name=f"−VaR {N_CVAR} previsto",
+                                               line=dict(width=1.6, color="#38bdf8")))
+                    fig_b.add_trace(go.Scatter(x=sb["data"], y=-sb["es"], mode="lines", name=f"−ES {N_CVAR} previsto",
+                                               line=dict(width=1, color="#a855f7", dash="dot")))
+                    fig_b.add_trace(go.Scatter(x=sb["data"][exc_u], y=sb["ret"][exc_u], mode="markers", name="Exceção",
+                                               marker=dict(size=5, color=RISCO["vermelho"])))
+                    layout(fig_b, 340, hovermode="x unified", legend=dict(orientation="h", y=-0.15),
+                           yaxis=dict(tickformat=".0%", gridcolor=GRID, zeroline=False), xaxis=dict(gridcolor=GRID))
+                    st.plotly_chart(fig_b, width="stretch", config={"displayModeBar": False})
+                    tt = bt_u["testes"]
+
+                    def _v(p_: float) -> str:
+                        return "❌ rejeita" if p_ < BT_SIGNIF else "✅ passa"
+
+                    st.dataframe(pd.DataFrame({
+                        "Nível": tt["nivel"].map(fm.nivel),
+                        "Exceções": tt["excecoes"].astype(str) + " (esperadas " + tt["esperadas"].round(0).astype(int).astype(str) + ")",
+                        "Kupiec": tt["p_kupiec"].map(_v), "Christoffersen": tt["p_christoffersen"].map(_v),
+                        "Z2 (ES)": tt["p_z2"].map(_v), "Z2": tt["z2"].map(lambda v: fm.num(v, 2, sinal=True)),
+                        f"Semáforo {BT_TL_DAYS}d": tt["semaforo"].map(SEM),
+                    }), hide_index=True, width="stretch")
+                    st.caption(f"Os pesos de hoje são aplicados ao passado ({bt_u['dias_precos']} dias em que todas as "
+                               f"posições têm preço); as previsões cobrem os últimos {bt_u['dias']} dias. É uma amostra "
+                               "curta: com cerca de 2 anos, os testes só apanham falhas grandes, e não inclui nenhuma "
+                               "crise como 2008 ou 2020.")
+            else:
+                v1.caption("Sem previsão nem backtest para a carteira: alguma posição tem menos de 3 anos e meio de "
+                           "preços. Ficam as medidas históricas.")
+
             # --- mapa: setores (tamanho = exposição) com as posições da carteira à volta
             st.subheader("A carteira no mapa de risco")
             posk = {n: np.array(p_, dtype=float) for n, p_ in nx.kamada_kawai_layout(grafo, weight="weight").items()}
@@ -1038,6 +1144,9 @@ with T_MINHA:
                     "% do CVaR": o_u["pct_cvar"].map(fm.pct).values,
                     "Risco / capital": o_u["racio"].map(fm.mult).values,
                     f"CVaR {N_CVAR} isolado": o_u["cvar_individual"].map(lambda v: fm.pct(v, 2)).values,
+                    "ES previsto": [fm.pct(es_emp(t)) if es_emp(t) is not None
+                                    else fm.pct(off.loc[t, "es975"]) if off is not None and t in off.index else "—"
+                                    for t in o_u.index],
                     "Beta": o_u["beta"].map(fm.num).values,
                 }), hide_index=True, width="stretch")
                 st.caption("% do CVaR: parte da perda dos piores dias da carteira que vem desta posição (contribuição de "
@@ -1091,8 +1200,8 @@ with T_MINHA:
                         f"{fm.mult(abs(r_ch_u) / res_u['cvar'], 1)} o CVaR diário da carteira")
                 st.caption("Retorno = beta de cada posição × choque (betas da janela escolhida). Aproximação linear, sem "
                            "o contágio próprio das crises.")
-            st.caption(f"Tudo neste separador é histórico e descritivo ({janela.lower()} de preços): não há previsão nem "
-                       "backtest ao nível das empresas. Não é aconselhamento de investimento.")
+            st.caption(f"As medidas de risco e as contribuições são históricas ({janela.lower()} de preços). O ES e o VaR "
+                       f"previstos vêm do modelo oficial ({OFICIAL}). Não é aconselhamento de investimento.")
 
 
 # ============================================================================ 5. Fatores macro
@@ -1170,6 +1279,24 @@ with T_MODELO:
         st.caption(f"O **{METODOS[OFFICIAL_VAR_METHOD]}** é o único que passa a frequência, a independência e o "
                    "teste do ES ao mesmo tempo, por isso é o modelo oficial. O histórico reage tarde às crises "
                    "(exceções em grupos); o GARCH com t-Student tem a cauda demasiado fina.")
+
+        if comp_bt is not None and comp_risk is not None:
+            with st.expander(f"E nas {len(comp_risk)} empresas? O mesmo backtest, empresa a empresa"):
+                rs = be.resumo_metodos(comp_bt)
+                n_emp = int(rs["series"].max())
+                rs = rs.assign(Método=rs["metodo"].map(METODOS), Nível=rs["nivel"].map(fm.nivel)).sort_values(
+                    ["nivel", "metodo"], ascending=[False, True])
+                st.dataframe(rs[["Método", "Nível", *be.TESTES]], hide_index=True, width="stretch", column_config={
+                    c: st.column_config.ProgressColumn(c, min_value=0, max_value=n_emp, format=f"%d / {n_emp}")
+                    for c in be.TESTES})
+                st.caption(f"Previsões desde 2018 (preços desde 2015). O {METODOS[OFFICIAL_VAR_METHOD]} continua a ser o "
+                           f"melhor, mas com menos folga do que nos setores: passa os três testes a {N_CVAR} em "
+                           f"{int(comp_risk['validado'].sum())} de {len(comp_risk)} empresas, e em "
+                           f"{int(comp_risk['es_subestimado'].sum())} o ES fica subestimado. Uma ação isolada tem saltos "
+                           "(resultados, notícias) que um setor dilui. Nessas empresas, o ES mostrado no cockpit é "
+                           "multiplicado por k = 1 − Z2 (o fator que teria acertado no backtest), em média "
+                           f"×{fm.num(comp_risk.loc[comp_risk['mult_es'] > 1, 'mult_es'].mean())}. O backtest completo das "
+                           "empresas corre uma vez por semana; a previsão é refeita todos os dias.")
 
         st.subheader("Um setor em detalhe")
         b1, b2, b3 = st.columns(3)

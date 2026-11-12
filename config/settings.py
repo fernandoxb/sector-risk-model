@@ -152,12 +152,13 @@ WEEKLY_TOP = 3                       # setores no top do relatório semanal
 # --- Montra: modo snapshot do cockpit (app/cockpit/snapshot, versionado) -------
 # Usado quando não há rede ou o Yahoo limita (ex.: Streamlit Community Cloud). Atualizado pelo flow.
 SNAPSHOT = ROOT / "app" / "cockpit" / "snapshot"
-SNAPSHOT_YEARS = 3              # anos de preços guardados (= a maior janela do cockpit)
+SNAPSHOT_YEARS = 5              # anos de preços guardados (3 para as janelas do cockpit + a previsão FHS da carteira)
 SNAPSHOT_RATE_MARGIN_DAYS = 200 # dias de juros antes do 1.º preço (o regime usa RATE_LOOKBACK dias úteis)
 # Ficheiros de data/features copiados tal como estão (o cockpit lê-os do snapshot se data/ não existir).
 SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "var_backtest_series.parquet",
                      "risk_contribution.csv", "stress_tests.csv", "covariance_shrinkage.csv", "factor_links.csv",
-                     "alerts.json", "sector_metrics.csv", "score_history.csv", "holdings.csv")
+                     "alerts.json", "sector_metrics.csv", "score_history.csv", "holdings.csv",
+                     "company_backtest.csv", "company_risk.csv")
 
 # --- Cenário de stress próprio (cockpit, separador Carteira e stress) --------
 # Choque instantâneo propagado pelos betas: mercado pelo beta diário de 3 anos (sector_metrics.csv) e cada
@@ -209,3 +210,18 @@ COMPANY_TTL = 900               # segundos de cache da ficha e das notícias ao 
 USER_PORTFOLIO_MAX = 25         # máximo de posições
 USER_PORTFOLIO_DEFAULT = 6      # carteira de exemplo: a maior posição dos primeiros N setores, pesos iguais
 USER_MARKET_LABEL = "Mercado"   # "setor" do SPY na exposição setorial
+
+# --- Modelo de risco por empresa (src/models/backtest_empresas.py) -----------
+# O mesmo backtest dos setores (histórico, GARCH-t, FHS) aplicado às empresas de holdings.csv, com preços
+# desde COMPANY_START. Com a janela de BT_WINDOW dias, as previsões começam cerca de 3 anos depois.
+COMPANY_START = "2015-01-01"
+COMPANY_MIN_DAYS = BT_WINDOW + 60    # histórico mínimo para ter modelo (senão a empresa fica só com risco descritivo)
+# Previsão FHS da carteira do utilizador no cockpit: GARCH sobre os retornos da carteira com os pesos atuais.
+USER_FORECAST_YEARS = 5              # anos de preços pedidos ao Yahoo (precisa de BT_WINDOW dias + 1 mês)
+# Correção do ES subestimado: quando o Z2 rejeita com Z2 < 0, o ES previsto é multiplicado por k = 1 − Z2, o
+# fator que teria posto o Z2 a zero no backtest (Z2 = 1 − Σ L·I / (T·p·ES) é linear em 1/ES). Limitado a ES_ADJ_MAX.
+ES_ADJ_MAX = 1.5
+# Run diário: o backtest completo das empresas só corre na última sessão de cada semana (ou se faltar o ficheiro,
+# ou se as empresas mudarem); nos outros dias calcula-se só a previsão do dia seguinte (uma estimação por empresa).
+COMPANY_FULL_WEEKLY = True
+

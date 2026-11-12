@@ -7,7 +7,7 @@ import sys
 
 from src.clean import validate
 from src.collect import download_factors, download_prices, empresas
-from src.models import backtest, factor_links, portfolio, risk_metrics, scorecard
+from src.models import backtest, backtest_empresas, factor_links, portfolio, risk_metrics, scorecard
 from src.report import build_map
 
 if __name__ == "__main__":
@@ -15,9 +15,11 @@ if __name__ == "__main__":
         download_prices.main()
         download_factors.main()
         empresas.main()
+        empresas.main_prices()
     validate.main()
     risk_metrics.main()
     backtest.main()
+    backtest_empresas.main()
     portfolio.main()
     scorecard.main()
     factor_links.main()

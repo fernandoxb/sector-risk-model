@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 3.9
+versao: 4.1
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -329,7 +329,7 @@ O pipeline corre sozinho nos dias úteis às 22:30 (hora de Lisboa, depois do fe
   * **Fechos antecipados (13:00 em NY):** 3 de julho, o dia a seguir ao Thanksgiving e a véspera de Natal, quando são dias de sessão. Nesses dias a sessão conta como fechada às 14:00 de NY. A regra reproduz os fechos antecipados de 2023 a 2025 publicados pela bolsa, mas não se consegue validar com preços diários, e a do 3 de julho teve exceções históricas.
   * **No cockpit:** a barra lateral mostra a última sessão fechada, a próxima sessão, os 3 próximos feriados e o próximo fecho antecipado, e avisa se os resultados do pipeline estiverem atrás da última sessão.
   * **Onde se usa:** na sessão esperada (cache e alerta de dados atrasados), na data da previsão oficial (secção 6.K) e no dia do relatório semanal e da publicação.
-* **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório → Snapshot → Publicador.
+* **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório → Snapshot → Publicador.
 * **Publicador (`src/report/publicar.py`):** na última sessão de cada semana (normalmente sexta), depois do run, faz commit e push só de `app/cockpit/snapshot/`, para o cockpit do Streamlit Cloud acompanhar os dados. Só atua no ramo `main` e só se o snapshot mudou. Usa `git commit --only`, pelo que nunca leva outras alterações, mesmo que já estejam no índice. Se o push falhar, o commit fica local, o erro vai para o log e chega uma notificação; o resto do run não é afetado.
 * **Snapshot (Sprint 6):** copia para `app/cockpit/snapshot/` (versionado, cerca de 2,7 MB) os preços de 3 anos dos ETFs e das ações do microscópio, o Treasury 10Y e os resultados que o cockpit lê. Assim o cockpit corre sem rede, por exemplo no Streamlit Community Cloud. As séries do backtest são gravadas em float32, o que dá um erro relativo de cerca de $10^{-7}$, sem efeito nas exceções mostradas.
 * **Coletor:** 2 novas tentativas, 5 minutos entre elas, e cache pela **última sessão de Nova Iorque já fechada** (17:00 hora de NY, 1 h depois do fecho, `src/collect/sessao.py`). Dois runs que esperam a mesma sessão descarregam os dados uma só vez, e a cache só é usada se os preços já chegarem a essa sessão. Se o download correr mas os preços vierem atrasados, o Coletor repete-o até 3 vezes, com 10 minutos entre elas; se continuarem atrasados, o flow segue e o Sentinela alerta. A chave não pode ser a data do calendário: um run de madrugada em Lisboa ainda só tem a sessão da véspera e bloquearia o run das 22:30 desse dia (aconteceu a 2026-11-11).
@@ -395,7 +395,7 @@ O mapa de risco é um só e vive no cockpit (separador **Mapa de risco**). Parte
 * **Ligação direta:** `?setor=XLK&empresa=NVDA` abre o mapa já nesse setor e nessa empresa.
 
 ### D. Limitações
-* O risco das empresas é **descritivo**: CVaR histórico, sem previsão FHS nem backtest. Só os 11 setores têm modelo validado.
+* As medidas da janela (CVaR histórico, betas, correlações) são descritivas. A previsão e o backtest por empresa estão na secção 13: o modelo oficial está validado em 61 de 109 empresas.
 * Com 10 empresas por setor, o mapa não cobre o setor todo, e a MST entre empresas só vê essas 10.
 * As posições e os pesos são os atuais: aplicá-los a 3 anos de preços ignora mudanças na composição dos ETFs.
 * A ficha e as notícias dependem do Yahoo Finance, sem garantia de serviço; os textos vêm em inglês.
@@ -422,10 +422,57 @@ Separador **Minha carteira** do cockpit; cálculo em `src/models/carteira.py` (f
 * **Choque no mercado:** $r_p = \sum_i w_i \beta_i \Delta_{SPY}$ (secção 7.F), com os betas da janela escolhida.
 
 ### D. Limitações
-* Tudo é **histórico e descritivo**: não há previsão FHS nem backtest ao nível das empresas ou da carteira do utilizador.
+* As contribuições, a exposição e o stress são **históricos e descritivos**. O VaR e o ES previstos da carteira vêm do modelo oficial, com um backtest curto da própria carteira (secção 13.C).
 * O stress histórico ignora o risco específico de cada empresa, pelo que **subestima** carteiras concentradas em poucas ações.
 * O universo são as 10 maiores posições de cada ETF; não há obrigações, ações fora dos EUA nem outras classes de ativos.
 * Pesos fixos: não há histórico de transações nem re-equilíbrio.
+
+---
+
+## 🏢 13. Modelo de risco por empresa e previsão da carteira
+
+Código: `src/models/backtest_empresas.py` · testes: `tests/test_backtest_empresas.py` · saídas: `company_backtest.csv` e `company_risk.csv`.
+
+### A. O mesmo backtest, empresa a empresa
+* **Sem lógica nova:** corre-se `backtest.run` (secção 6) sobre as empresas do mapa: histórico, GJR-GARCH(1,1)-t e FHS, com previsões feitas só com dados até à véspera e os mesmos testes.
+* **Dados:** preços desde `COMPANY_START` = 2015, validados pelo Inspetor. Com a janela de 756 dias, as previsões começam em 2018 (mediana de 2 226 dias por empresa) e apanham a COVID-19 e 2022, mas não 2008.
+* **Sem modelo:** empresas com menos de `COMPANY_MIN_DAYS` = 816 dias de preços ficam só com o risco histórico (hoje, a GEV).
+
+### B. Resultados (109 empresas, dados até 2026-11-11)
+Número de empresas em que o teste **não rejeita** o modelo a 5%:
+
+| Método | Kupiec 97,5% | Christoffersen 97,5% | Condicional 97,5% | Z2 (ES) 97,5% | Kupiec 99% | Christoffersen 99% | Condicional 99% | Z2 (ES) 99% |
+|---|---|---|---|---|---|---|---|---|
+| **GARCH-FHS** | **86** | **96** | **91** | **69** | **98** | **101** | **97** | **88** |
+| GJR-GARCH(1,1)-t | 43 | 94 | 52 | 24 | 59 | 104 | 69 | 32 |
+| Histórico | 79 | 39 | 32 | 64 | 80 | 46 | 44 | 63 |
+
+* **A FHS continua a ser o melhor método,** mas com menos folga do que nos setores: passa os três testes a 97,5% (Kupiec, Christoffersen e Z2) em **61 de 109** empresas, contra 22 do GARCH-t e 21 do histórico.
+* **Onde falha:** em 40 empresas o Z2 rejeita com $Z_2 < 0$, ou seja, o **ES fica subestimado**. Uma ação isolada tem saltos (resultados, notícias) que nem o GARCH nem os resíduos passados antecipam e que um setor dilui. A taxa média de exceções a 97,5% é 2,98%, acima dos 2,5%.
+* **Semáforo a 99%:** 87 empresas em verde e 22 em amarelo; nenhuma em vermelho.
+* **Consequência:** cada empresa leva duas marcas em `company_risk.csv`: `validado` (passa os três testes a 97,5%) e `es_subestimado`. O cockpit mostra-as na ficha e na tabela do setor.
+
+**Correção do ES subestimado.** O Z2 é linear em $1/\text{ES}$: multiplicar o ES previsto por $k$ dá $Z_2' = 1 - (1 - Z_2)/k$. Por isso $k = 1 - Z_2$ é exatamente o fator que teria posto o Z2 a zero no backtest. Quando o Z2 rejeita com $Z_2 < 0$:
+$$\text{ES}^{aj} = k \cdot \text{ES}, \qquad k = \min(1 - Z_2,\ \texttt{ES\_ADJ\_MAX} = 1{,}5)$$
+* Só agrava: sem rejeição, ou com $Z_2 \ge 0$, $k = 1$. Nas 40 empresas corrigidas, $k$ é em média 1,31.
+* O VaR não é corrigido: a correção trata o tamanho das perdas, não a sua frequência.
+* **Limitação:** $k$ é calibrado no mesmo backtest que o justifica (dentro da amostra). Corrige o que o passado mostrou, não garante o futuro.
+
+**Cadência.** O backtest completo das empresas demora cerca de 3 minutos e 20 segundos, por isso só corre na última sessão de cada semana, ou quando as empresas mudam (`COMPANY_FULL_WEEKLY`). Nos outros dias refaz-se apenas a previsão para a sessão seguinte, com uma ou duas estimações do GARCH por empresa (6 segundos no total). O semáforo e as marcas ficam então com até uma semana de atraso.
+
+### C. Previsão da carteira do utilizador
+* **Método:** aplica-se o modelo oficial aos retornos da própria carteira com os pesos atuais, $r_{p,t} = \sum_i w_i r_{i,t}$ em cada dia passado (FHS de carteira com pesos constantes). O GARCH é estimado sobre $r_p$ com a mesma janela e as mesmas regras (`backtest.next_day_forecast`).
+* **Porquê assim:** o VaR e o ES não são aditivos; somar as previsões das posições ignoraria a diversificação. Modelar $r_p$ diretamente capta-a sem estimar correlações dinâmicas.
+* **Dados:** 5 anos de preços (`USER_FORECAST_YEARS`), nos dias em que todas as posições têm preço. Sem 756 dias + 1 mês em comum, não há previsão.
+* **Backtest da própria carteira:** o cockpit corre `backtest.run` sobre $r_p$ e mostra as exceções, os testes de Kupiec, Christoffersen e Z2, o semáforo e o gráfico. Se o Z2 rejeitar com $Z_2 < 0$, aplica-se a mesma correção $k = 1 - Z_2$ ao ES da carteira.
+* **Limitações:** com 5 anos de preços e a janela de 756 dias, sobram cerca de 500 dias de previsões (2 anos), sem nenhuma crise: os testes só apanham falhas grandes. Pesos constantes no passado não são a história real da carteira.
+
+### D. Validação
+* `resumo_metodos` e `validado` contra um exemplo feito à mão.
+* A previsão da carteira é igual a correr `next_day_forecast` diretamente sobre $\sum_i w_i r_i$; o ES da carteira fica abaixo da soma ponderada dos ES isolados (diversificação); com uma posição de histórico curto, devolve "sem previsão".
+* Com um ES sintético 1,4× abaixo do real, o ES corrigido por $k = 1 - Z_2$ dá $Z_2 = 0$ (erro < $10^{-12}$).
+* A previsão diária rápida difere da do backtest completo em menos de 1% (só muda o ponto de partida do otimizador do GARCH).
+* No backtest da carteira, as exceções contadas na série coincidem com as da tabela de testes.
 
 ---
 

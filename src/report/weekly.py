@@ -19,7 +19,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (FEATURES, OBSIDIAN_FOLDER, OBSIDIAN_VAULT, OFFICIAL_MEASURES,  # noqa: E402
                              OFFICIAL_VAR_METHOD, SECTORS, STATE, WEEKLY_TOP)
-from src.collect.sessao import proximo_dia_util  # noqa: E402
+from src.collect.sessao import ultima_sessao_da_semana  # noqa: E402
 from src.report.alerts import METODO_TXT, NIVEL_TXT, _fator_nome, _num, _pct, load_current, previous_state  # noqa: E402
 
 LEVEL_975 = OFFICIAL_MEASURES["var975"][1]
@@ -38,8 +38,7 @@ def week_start(day) -> pd.Timestamp:
 
 def is_report_day(day) -> bool:
     """Última sessão da semana ISO: a sessão seguinte já cai noutra semana."""
-    d = pd.Timestamp(day).date()
-    return proximo_dia_util(d).isocalendar()[:2] != d.isocalendar()[:2]
+    return ultima_sessao_da_semana(pd.Timestamp(day).date())
 
 
 def reference_state(asof: str, folder: Path = STATE) -> dict | None:

@@ -9,7 +9,9 @@ Fatores macro
 - Níveis <= 0 em fatores com variação logarítmica são sinalizados (ex.: o WTI negativo de abril de 2020)
   e a data do último valor de cada fator é reportada (as séries do FRED chegam com 1 dia de atraso).
 Se um contrato falhar, a exceção pára o pipeline: nada a jusante corre.
-Saídas: data/clean/prices.parquet, data/clean/factors.parquet e data/clean/quality_report.md
+Empresas (mapa de risco)
+- Preços positivos, datas únicas e ordenadas; mesmo preenchimento de 1 dia.
+Saídas: data/clean/prices.parquet, factors.parquet, prices_empresas.parquet e quality_report.md
 """
 import sys
 from pathlib import Path
@@ -58,6 +60,32 @@ def validate_factors() -> list[str]:
     return factor_report(raw)
 
 
+def validate_companies() -> list[str]:
+    """Preços das empresas (mapa de risco): positivos, datas únicas e ordenadas; grava a versão limpa.
+    Devolve as linhas do relatório. Sem ficheiro bruto (ex.: primeiro run offline), não faz nada."""
+    f = RAW / "prices_empresas.parquet"
+    if not f.exists():
+        return []
+    raw = pd.read_parquet(f)
+    pa.DataFrameSchema(
+        {t: pa.Column(float, pa.Check.gt(0), nullable=True) for t in raw.columns},
+        checks=[pa.Check(lambda df: df.index.is_unique, error="datas repetidas"),
+                pa.Check(lambda df: df.index.is_monotonic_increasing, error="datas fora de ordem")],
+    ).validate(raw, lazy=True)
+    clean = raw.copy()
+    for t in clean.columns:
+        first = clean[t].first_valid_index()
+        clean.loc[first:, t] = clean.loc[first:, t].ffill(limit=1)
+    clean.to_parquet(CLEAN / "prices_empresas.parquet")
+    big = (np.log(clean).diff().abs() > MAX_ABS_RET).sum()
+    curtas = clean.notna().sum().sort_values().head(5)
+    return ["## Empresas", "",
+            f"{clean.shape[1]} empresas, {clean.index.min().date()} → {clean.index.max().date()}. "
+            f"Retornos diários acima de ±{MAX_ABS_RET:.0%}: {int(big.sum())} em {int((big > 0).sum())} empresas "
+            "(sinalizados, não apagados).", "",
+            "Séries mais curtas: " + ", ".join(f"{t} ({n} dias)" for t, n in curtas.items()) + "."]
+
+
 def main() -> Path:
     raw = pd.read_parquet(RAW / "prices.parquet")
     schema.validate(raw, lazy=True)
@@ -85,7 +113,7 @@ def main() -> Path:
     CLEAN.mkdir(parents=True, exist_ok=True)
     out = CLEAN / "prices.parquet"
     clean.to_parquet(out)
-    lines = lines[:2] + ["## Preços", ""] + lines[2:] + [""] + validate_factors()
+    lines = lines[:2] + ["## Preços", ""] + lines[2:] + [""] + validate_factors() + [""] + validate_companies()
     (CLEAN / "quality_report.md").write_text("\n".join(lines) + "\n")
     print(f"[inspetor] contratos de preços e fatores OK; relatório em {CLEAN / 'quality_report.md'}")
     return out
