@@ -15,7 +15,7 @@ def test_cockpit_corre_em_modo_snapshot(monkeypatch):
     monkeypatch.setenv("COCKPIT_SNAPSHOT", "1")
     at = AppTest.from_file(str(APP), default_timeout=120).run()
     assert not at.exception, [e.value for e in at.exception]
-    assert [t.label for t in at.tabs][:10] == ["📋 Resumo", "🕸️ Mapa de risco", "💼 Minha carteira", "🎯 Setores", "🔎 Ficha do setor", "📊 Análise ao vivo", "🔗 Fatores macro",
+    assert [t.label for t in at.tabs][:9] == ["📋 Resumo", "🕸️ Mapa de risco", "💼 Minha carteira", "🎯 Setores", "📊 Análise ao vivo", "🔗 Fatores macro",
                                               "🧪 Modelo", "🧩 Carteira-base", "📖 Glossário"]
     texto = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption)
     assert "Modo snapshot" in " ".join(i.value for i in at.info)
@@ -30,6 +30,7 @@ def test_mapa_de_risco_abre_setor_e_empresa(monkeypatch):
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("Empresas do Tecnologia (XLK)" in s.value for s in at.subheader)
+    assert "Score de risco" in [m.label for m in at.metric]            # ficha do setor, agora dentro do mapa
     at.session_state["mapa_empresa"] = "NVDA"
     at.run()
     assert not at.exception, [e.value for e in at.exception]

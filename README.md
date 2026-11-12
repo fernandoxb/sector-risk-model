@@ -61,11 +61,10 @@ mostrado é corrigido pelo fator que teria acertado no backtest (k = 1 − Z2, e
 
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
-* **Mapa de risco:** a rede de contágio entre setores; clicar num setor abre as suas 10 maiores empresas e clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
+* **Mapa de risco:** a rede de contágio entre setores. Clicar num setor abre a ficha do setor (score, fatores macro, crises, risco previsto desde 2008) e as suas 10 maiores empresas; clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
 * **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco histórico e o previsto (FHS), quem mais pesa nele, a exposição por setor no mapa de contágio e o stress. Guarda-se no link, sem conta.
 * **Setores:** scorecard e evolução do score.
-* **Ficha do setor:** tudo sobre um setor, incluindo o risco previsto desde 2008.
-* **Análise ao vivo:** CVaR histórico, downside beta e ações.
+* **Análise ao vivo:** CVaR histórico, downside beta, regime de juros e exportação para o Obsidian.
 * **Fatores macro.**
 * **Modelo:** backtest.
 * **Carteira-base:** a carteira de referência dos 11 setores, com contribuições para o risco, stress históricos e um cenário de stress próprio.
@@ -83,9 +82,9 @@ O cockpit está organizado em separadores:
 |---|
 | ![Cockpit: minha carteira](docs/img/cockpit-carteira.png) |
 
-| Scorecard | Ficha do setor |
+| Scorecard | Setor aberto no mapa |
 |---|---|
-| ![Cockpit: scorecard de risco por setor](docs/img/cockpit-scorecard.png) | ![Cockpit: ficha do setor](docs/img/cockpit-ficha.png) |
+| ![Cockpit: scorecard de risco por setor](docs/img/cockpit-scorecard.png) | ![Cockpit: setor aberto no mapa de risco](docs/img/cockpit-ficha.png) |
 
 **Outros números (dados até 2026-11-10):**
 * **Carteira com pesos iguais:** volatilidade de 12,1% e CVaR 97,5% de 2,21% a 1 dia. A diversificação vale 1,49× na volatilidade, mas só 1,39× no CVaR, porque nas quedas os setores caem juntos.
@@ -176,7 +175,7 @@ src/models/             métricas, backtest, carteira, scorecard, ligações mac
 src/report/             mapa, snapshot, Sentinela, relatório semanal
 flows/                  flow Prefect e agendamento launchd
 app/risk-map/           mapa de riscos (HTML autónomo)
-app/cockpit/            cockpit Streamlit + snapshot
+app/cockpit/            cockpit Streamlit: app.py (dados, barra lateral), paineis/ (um ficheiro por separador), snapshot/
 scripts/                capturas de ecrã e PDF da nota metodológica (Chrome headless)
 tests/                  135 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
 docs/                   nota metodológica (.md e .pdf) e capturas

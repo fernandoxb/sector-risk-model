@@ -32,7 +32,9 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
     Sentinela (`alerts.py`, estados em `data/state/`) e relatório semanal (`weekly.py`) → cofre Obsidian
 - `flows/pipeline.py` — flow Prefect (uma task por bot); agendado com launchd (`flows/install_launchd.sh`).
 - `app/risk-map/index.html` — mapa interativo (HTML autónomo, sem dependências externas de dados).
-- `app/cockpit/app.py` — Streamlit: `.venv/bin/streamlit run app/cockpit/app.py`. Sem rede (ou com
+- `app/cockpit/app.py` — Streamlit: `.venv/bin/streamlit run app/cockpit/app.py`. O `app.py` carrega os dados e
+  desenha a barra lateral; cada separador é `app/cockpit/paineis/<nome>.py::render(g)`, em que `g` são as variáveis
+  do `app.py` nesse run; estilo e helpers de apresentação em `paineis/comum.py`. Sem rede (ou com
   `COCKPIT_SNAPSHOT=1`, no Streamlit Cloud) lê `app/cockpit/snapshot/`, gerado por `src/report/snapshot.py`;
   dependências do Cloud em `app/cockpit/requirements.txt`.
 - Mapa de risco = separador do cockpit (setor → 10 maiores empresas → ficha com bolsa e notícias); empresas em

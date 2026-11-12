@@ -46,8 +46,7 @@ Entre 11 setores há 55 correlações possíveis, o que torna o grafo completo i
 ## 🔬 3. Duas camadas (setor → ativo)
 
 * **Camada macro:** os 11 ETFs SPDR (XLK, XLF, XLE, …).
-* **Camada micro:** as 4 ações mais relevantes do setor selecionado (`config/settings.py → SECTOR_PROFILE`). O CVaR de cada ação é comparado com o CVaR do ETF do setor **no mesmo período**. Se for maior, a ação recebe o diagnóstico ⚠️, ou seja, está a acrescentar risco ao setor.
-* **Correlação cruzada micro:** um mapa de calor mostra a correlação entre as ações do setor selecionado.
+* **Camada micro:** as 10 maiores posições de cada ETF, no separador Mapa de risco (secção 11). O CVaR de cada empresa é comparado com o CVaR do ETF do setor **no mesmo período**, e as ligações entre empresas vêm da MST das suas correlações. O antigo "microscópio" de 4 ações por setor foi substituído por este nível.
 
 ---
 
@@ -66,7 +65,7 @@ Entre 11 setores há 55 correlações possíveis, o que torna o grafo completo i
 
 O botão **Exportar estado de hoje** grava `<cofre>/Risco Setorial/AAAA-MM-DD.md` com:
 - frontmatter com os parâmetros e o regime de juros, para consultas Dataview;
-- a tabela de setores, a lista de ligações da MST e o drill-down do setor selecionado, com todos os tickers como `[[Ticker]]` para gerar backlinks.
+- a tabela de setores e a lista de ligações da MST, com todos os tickers como `[[Ticker]]` para gerar backlinks.
 
 O cofre usado por omissão é `Documents/Obsidian Vault`, na subpasta `Risco Setorial/`, onde a nota `00 Painel.md` lista todos os logs com o Dataview. Pode ser alterado no painel ou com a variável `OBSIDIAN_VAULT`.
 
@@ -331,7 +330,7 @@ O pipeline corre sozinho nos dias úteis às 22:30 (hora de Lisboa, depois do fe
   * **Onde se usa:** na sessão esperada (cache e alerta de dados atrasados), na data da previsão oficial (secção 6.K) e no dia do relatório semanal e da publicação.
 * **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório → Snapshot → Publicador.
 * **Publicador (`src/report/publicar.py`):** na última sessão de cada semana (normalmente sexta), depois do run, faz commit e push só de `app/cockpit/snapshot/`, para o cockpit do Streamlit Cloud acompanhar os dados. Só atua no ramo `main` e só se o snapshot mudou. Usa `git commit --only`, pelo que nunca leva outras alterações, mesmo que já estejam no índice. Se o push falhar, o commit fica local, o erro vai para o log e chega uma notificação; o resto do run não é afetado.
-* **Snapshot (Sprint 6):** copia para `app/cockpit/snapshot/` (versionado, cerca de 2,7 MB) os preços de 3 anos dos ETFs e das ações do microscópio, o Treasury 10Y e os resultados que o cockpit lê. Assim o cockpit corre sem rede, por exemplo no Streamlit Community Cloud. As séries do backtest são gravadas em float32, o que dá um erro relativo de cerca de $10^{-7}$, sem efeito nas exceções mostradas.
+* **Snapshot (Sprint 6):** copia para `app/cockpit/snapshot/` (versionado, cerca de 2,7 MB) os preços dos ETFs e das empresas do mapa de risco (5 anos, desde a secção 13), o Treasury 10Y e os resultados que o cockpit lê. Assim o cockpit corre sem rede, por exemplo no Streamlit Community Cloud. As séries do backtest são gravadas em float32, o que dá um erro relativo de cerca de $10^{-7}$, sem efeito nas exceções mostradas.
 * **Coletor:** 2 novas tentativas, 5 minutos entre elas, e cache pela **última sessão de Nova Iorque já fechada** (17:00 hora de NY, 1 h depois do fecho, `src/collect/sessao.py`). Dois runs que esperam a mesma sessão descarregam os dados uma só vez, e a cache só é usada se os preços já chegarem a essa sessão. Se o download correr mas os preços vierem atrasados, o Coletor repete-o até 3 vezes, com 10 minutos entre elas; se continuarem atrasados, o flow segue e o Sentinela alerta. A chave não pode ser a data do calendário: um run de madrugada em Lisboa ainda só tem a sessão da véspera e bloquearia o run das 22:30 desse dia (aconteceu a 2026-11-11).
 * **Paragem em caso de falha:** as tasks correm em sequência. Se o contrato do Inspetor falhar, a exceção pára o flow e nada a jusante corre, por isso nunca se publica um mapa ou um alerta calculado com dados inválidos.
 * **Fatores macro no Inspetor:** passam a ter contrato pandera: uma coluna por fator, valores finitos, datas únicas e ordenadas. Os níveis <= 0 em séries com variação logarítmica são sinalizados sem ser apagados (o WTI de −37,63 a 2020-04-20 fica de fora pelo `logdiff`). A data do último valor de cada fator vai para `quality_report.md`, porque as séries do FRED chegam com 1 dia de atraso.
@@ -383,6 +382,7 @@ O mapa de risco é um só e vive no cockpit (separador **Mapa de risco**). Parte
 * **Falhas:** se o Yahoo falhar num setor, mantêm-se as posições do ficheiro anterior; sem ficheiro, usam-se as 4 ações de `SECTOR_PROFILE` com pesos iguais.
 
 ### B. Setor aberto
+* **Ficha do setor:** com um setor aberto e nenhuma empresa escolhida, o painel mostra o score e os seus componentes face à mediana, os fatores macro que o agravam ou atenuam, os vizinhos de contágio, o retorno nas crises e, numa secção que abre, o risco previsto desde 2008 e o backtest do modelo nesse setor.
 * **Desenho:** o setor vai para o centro, as suas empresas ficam num anel interior e os outros setores num anel exterior, pela ordem angular que tinham no mapa. Só se desenham as ligações de contágio do setor aberto.
 * **Empresa:** o tamanho do círculo é o peso no ETF; a cor é o rácio entre o CVaR 97,5% da empresa e o do ETF (verde ≤ 1×, vermelho ≥ 2,5×), na janela escolhida na barra lateral.
 * **Ligações entre empresas:** ao escolher uma empresa, mostram-se as suas arestas na MST das correlações entre as empresas do setor, ou seja, as que mais se movem com ela.
