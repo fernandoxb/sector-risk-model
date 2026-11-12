@@ -1,6 +1,6 @@
 """Flow Prefect do pipeline diário: uma task por bot.
 
-Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório →
+Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Cauda → Repórter → Sentinela → Relatório →
 Snapshot → Publicador (às sextas: commit e push só de app/cockpit/snapshot/)
 - Coletor: retries=COLLECT_RETRIES (rede); se os preços vierem atrasados, repete o download até
   COLLECT_STALE_TRIES vezes. Cache pela última sessão de NY fechada, e só com os dados já completos.
@@ -32,7 +32,7 @@ from config.settings import (COLLECT_RETRIES, COLLECT_RETRY_DELAY, COLLECT_STALE
 from src.clean import validate  # noqa: E402
 from src.collect import download_factors, download_prices, empresas  # noqa: E402
 from src.collect.sessao import dados_completos, ultima_sessao, ultimo_fecho  # noqa: E402
-from src.models import backtest, backtest_empresas, factor_links, portfolio, risk_metrics, scorecard  # noqa: E402
+from src.models import backtest, backtest_empresas, cauda, factor_links, portfolio, risk_metrics, scorecard  # noqa: E402
 from src.report import alerts, build_map, publicar, snapshot, weekly  # noqa: E402
 
 
@@ -109,6 +109,11 @@ def ligacoes():
     factor_links.main()
 
 
+@task(name="Cauda")
+def dependencia_cauda():
+    cauda.main()
+
+
 @task(name="Repórter")
 def reporter():
     build_map.main()
@@ -159,6 +164,7 @@ def pipeline(offline: bool = False, semanal: bool = False, notificar: bool = Tru
     carteira()
     score()
     ligacoes()
+    dependencia_cauda()
     reporter()
     al = sentinela(notificar)
     rel = relatorio(semanal)

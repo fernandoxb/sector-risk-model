@@ -41,6 +41,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   `data/features/holdings.csv` (`src/collect/empresas.py`). O mapa HTML é anterior e não tem este nível.
 - Empresas: `backtest_empresas.py` reutiliza `backtest.run` (sem lógica nova) → `company_backtest.csv`, `company_risk.csv`
   (`validado`, `es_subestimado`). Carteira do utilizador: `carteira.py`; previsão = FHS sobre os retornos da carteira.
+- Dependência de cauda (`src/models/cauda.py`, QRM cap. 5): `tail_dependence.csv` liga o mapa de risco por quedas
+  conjuntas (padrão) ou correlação.
 - `scripts/` — capturas de ecrã (`capturas.py`) e PDF da nota (`nota_pdf.py`), via Chrome headless.
 - Funções de cálculo são **puras** (sem Streamlit, sem I/O) para poderem ser testadas.
 - `data/`, `reference/`, `.venv/` não vão para o Git.

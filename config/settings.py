@@ -163,7 +163,7 @@ SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "
                      "risk_contribution.csv", "stress_tests.csv", "covariance_shrinkage.csv", "factor_links.csv",
                      "alerts.json", "sector_metrics.csv", "score_history.csv", "holdings.csv",
                      "company_backtest.csv", "company_risk.csv", "var_backtest_split.csv",
-                     "var_backtest_multiple.csv")
+                     "var_backtest_multiple.csv", "tail_dependence.csv", "tail_meta.json")
 
 # --- Cenário de stress próprio (cockpit, separador Carteira e stress) --------
 # Choque instantâneo propagado pelos betas: mercado pelo beta diário de 3 anos (sector_metrics.csv) e cada
@@ -230,3 +230,12 @@ ES_ADJ_MAX = 1.5
 # ou se as empresas mudarem); nos outros dias calcula-se só a previsão do dia seguinte (uma estimação por empresa).
 COMPANY_FULL_WEEKLY = True
 
+
+# --- Dependência de cauda (src/models/cauda.py; McNeil, Frey e Embrechts 2005, cap. 5) ----------
+# "Quando um cai muito, o outro cai também?" Duas medidas, na janela de CVAR_YEARS anos:
+#   p_conj  frequência observada: P(B nos CAUDA_Q piores dias | A nos CAUDA_Q piores dias), em retornos simples
+#   lam     coeficiente de dependência de cauda λ da cópula t ajustada aos resíduos do GARCH (ρ pelo tau de
+#           Kendall, ν por máxima verosimilhança)
+CAUDA_Q = 0.05                  # cauda = 5% piores dias (cerca de 38 dias em 3 anos)
+CAUDA_NU_BOUNDS = (2.1, 60.0)   # limites dos graus de liberdade ν da cópula t (ν alto ≈ cópula de Gauss, λ ≈ 0)
+CAUDA_MIN_DAYS = 500            # mínimo de dias comuns para uma série entrar num grupo

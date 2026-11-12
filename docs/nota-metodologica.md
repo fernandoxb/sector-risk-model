@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 4.2
+versao: 4.3
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -500,6 +500,48 @@ $$\text{ES}^{aj} = k \cdot \text{ES}, \qquad k = \min(1 - Z_2,\ \texttt{ES\_ADJ\
 * Com um ES sintético 1,4× abaixo do real, o ES corrigido por $k = 1 - Z_2$ dá $Z_2 = 0$ (erro < $10^{-12}$).
 * A previsão diária rápida difere da do backtest completo em menos de 1% (só muda o ponto de partida do otimizador do GARCH).
 * No backtest da carteira, as exceções contadas na série coincidem com as da tabela de testes.
+
+---
+
+## 🌊 14. Dependência de cauda: quem cai com quem (Fase A)
+
+Código: `src/models/cauda.py` · parâmetros: `CAUDA_*` · testes: `tests/test_cauda.py` · saídas: `tail_dependence.csv` e `tail_meta.json`. Segue McNeil, Frey e Embrechts (2005), capítulo 5.
+
+### A. Porque não basta a correlação
+A correlação linear mede o andamento conjunto em dias normais. Para o contágio interessa outra pergunta: quando um setor tem um dia muito mau, o outro também tem? Na cópula de Gauss, a resposta no limite é "não", para qualquer correlação abaixo de 1. Um mapa feito só de correlações subestima por isso as quedas conjuntas.
+
+### B. Duas medidas
+* **Quedas conjuntas observadas:** com a cauda de cada série definida como os $q$ = 5% piores dias (retornos simples, 3 anos),
+  $$\hat p_{AB} = \frac{\#\{t : A_t \text{ e } B_t \text{ na cauda}\}}{\#\{t : A_t \text{ na cauda}\}}$$
+  É simétrica, porque as duas caudas têm a mesma probabilidade $q$. Sob independência vale cerca de 5%.
+* **Coeficiente de dependência de cauda da cópula t:**
+  $$\lambda = 2\, t_{\nu+1}\!\left(-\sqrt{\frac{(\nu+1)(1-\rho)}{1+\rho}}\right)$$
+  É o limite da probabilidade condicional quando a cauda fica cada vez mais extrema. A cópula é ajustada assim:
+  1. resíduos padronizados de um GJR-GARCH(1,1)-t por série, para tirar os clusters de volatilidade;
+  2. $\rho_{ij} = \sin(\pi \tau_{ij}/2)$ a partir do tau de Kendall de cada par, com a matriz corrigida para ser definida positiva;
+  3. um $\nu$ comum por máxima verosimilhança nas pseudo-observações (postos a dividir por $n + 1$).
+
+### C. No mapa de risco
+* As ligações do mapa passam a ser, por omissão, a árvore geradora mínima das **quedas conjuntas** (distância $1 - \hat p$), entre os 11 setores e entre as 10 empresas de cada setor. A correlação fica como alternativa.
+* Cada ligação mostra a frequência de quedas conjuntas, o $\lambda$ e a correlação. A ficha do setor e a da empresa dizem com quem cada um cai junto.
+* O separador Minha carteira usa a mesma espinha.
+
+### D. Resultados (dados até 2026-11-11)
+* **Setores:** $\nu$ = 9,6. Os pares que mais caem juntos são XLY–XLC (54%), XLF–XLY (51%), XLI–XLB e XLI–XLY (49%), contra 5% por acaso.
+* **O que a correlação esconde:** o XLK–XLC está no top 10 das quedas conjuntas, mas é só o 17.º par por correlação (0,54). O centro do mapa muda: pelas quedas conjuntas é o XLY (consumo discricionário); pela correlação eram o XLI e o XLRE.
+* O $\lambda$ é baixo (0,11 a 0,21 nos pares de topo): com $\nu$ perto de 10, a dependência no limite extremo é moderada. A frequência observada a 5% é bem mais alta, porque mede uma cauda menos extrema.
+
+### E. Validação
+* `lambda_t` reproduz os 11 valores da tabela 5.1 do livro (erro < 0,005).
+* A verosimilhança da cópula t é igual à calculada com `scipy.stats.multivariate_t`.
+* Com dados simulados de uma t bivariada ($\rho$ = 0,5, $\nu$ = 4), o ajuste recupera $\rho$ (±0,04), $\nu$ (±1,2) e $\lambda$; com dados gaussianos dá $\nu$ > 25 e $\lambda$ < 0,03.
+* Quedas conjuntas: séries iguais dão 1, opostas dão 0 e independentes dão cerca de $q$.
+
+### F. Limitações
+* **Poucos dias de cauda:** 5% de 751 dias são cerca de 38 dias por série. Cada frequência tem um erro-padrão de uns 8 pontos percentuais; diferenças pequenas entre pares não são significativas.
+* **Três anos sem crise sistémica:** a janela não inclui 2008 nem 2020. A dependência de cauda numa crise a sério é provavelmente maior.
+* **Um só $\nu$ por grupo:** a cópula t tem a mesma cauda para todos os pares e é simétrica (quedas e subidas conjuntas iguais). Nos dados reais, as quedas conjuntas costumam ser mais fortes do que as subidas.
+* **A árvore deixa ligações de fora:** mostra as N − 1 mais fortes que ligam tudo; a matriz completa está no cockpit.
 
 ---
 

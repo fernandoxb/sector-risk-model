@@ -11,7 +11,7 @@
 > coverage, independence and the ES test at the same time**, so it is the official model.
 > The project also covers portfolio risk (Ledoit-Wolf covariance, Euler risk contributions, 2008/2020/2022 stress tests),
 > a 0–100 risk scorecard, macro-factor → sector links estimated with HAC regressions, and an automated daily pipeline
-> (Prefect + launchd) with alerts and weekly reports. There are 139 tests and CI on GitHub Actions.
+> (Prefect + launchd) with alerts and weekly reports. There are 157 tests and CI on GitHub Actions.
 
 Pipeline em Python que mede o risco de mercado dos 11 ETFs setoriais SPDR (XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLU,
 XLB, XLRE, XLC) face ao SPY, setor a setor e em carteira. Corre sozinho todos os dias úteis e publica os resultados em três
@@ -57,6 +57,7 @@ mostrado é corrigido pelo fator que teria acertado no backtest (k = 1 − Z2, e
 | Empresas e carteira própria | O mesmo backtest em 109 empresas; carteira do utilizador com contribuições de Euler, exposição por setor, stress e previsão FHS | `src/models/backtest_empresas.py`, `carteira.py` |
 | Carteira | Covariância de Ledoit-Wolf, contribuições de Euler para a volatilidade e o CVaR, stress tests de 2008, COVID-19 e 2022 | `src/models/portfolio.py` |
 | Scorecard 0–100 | 5 componentes normalizados por percentil, multiplicador de risco de modelo (semáforo), P × I, sensibilidade ±50% aos pesos | `src/models/scorecard.py` |
+| Dependência de cauda | Quedas conjuntas observadas e cópula t (tau de Kendall, ν por máxima verosimilhança) nos resíduos do GARCH; é o que liga o mapa de risco | `src/models/cauda.py` |
 | Fatores macro | Regressões semanais setor ~ fator com erros HAC de Newey–West, para juros, inflação, spreads high yield, VIX, petróleo e dólar; contágio pela MST | `src/models/factor_links.py` |
 | Bots | Prefect (uma task por bot), launchd nos dias úteis às 22:30, alertas do Sentinela e relatório semanal no Obsidian | `flows/`, `src/report/` |
 
@@ -66,7 +67,7 @@ mostrado é corrigido pelo fator que teria acertado no backtest (k = 1 − Z2, e
 
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
-* **Mapa de risco:** a rede de contágio entre setores. Clicar num setor abre a ficha do setor (score, fatores macro, crises, risco previsto desde 2008) e as suas 10 maiores empresas; clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
+* **Mapa de risco:** a rede de contágio entre setores, ligados pelas quedas conjuntas (dependência de cauda) e não só pela correlação. Clicar num setor abre a ficha do setor (score, fatores macro, crises, risco previsto desde 2008) e as suas 10 maiores empresas; clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
 * **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco histórico e o previsto (FHS), quem mais pesa nele, a exposição por setor no mapa de contágio e o stress. Guarda-se no link, sem conta.
 * **Setores:** scorecard e evolução do score.
 * **Análise ao vivo:** CVaR histórico, downside beta, regime de juros e exportação para o Obsidian.
@@ -78,6 +79,10 @@ O cockpit está organizado em separadores:
 | Resumo | Fatores macro |
 |---|---|
 | ![Cockpit: resumo](docs/img/cockpit-resumo.png) | ![Cockpit: fatores macro](docs/img/cockpit-fatores.png) |
+
+| Mapa de risco: quem cai com quem |
+|---|
+| ![Cockpit: mapa por quedas conjuntas](docs/img/cockpit-cauda.png) |
 
 | Mapa de risco (setor aberto) | Ficha da empresa |
 |---|---|
@@ -122,7 +127,7 @@ python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_pipeline.py            # coleta → validação → modelos → mapa (precisa de rede)
 .venv/bin/streamlit run app/cockpit/app.py  # cockpit em http://localhost:8501
 open app/risk-map/index.html                # mapa de riscos (sem servidor)
-.venv/bin/python -m pytest                  # 139 testes, sem rede
+.venv/bin/python -m pytest                  # 157 testes, sem rede
 ```
 * **Chave do FRED:** é opcional. Se definires `FRED_API_KEY` num `.env`, os dados vêm pela API; caso contrário usa-se o CSV público.
 * **Sem rede:** `run_pipeline.py --offline` reutiliza os dados de `data/raw/`.
@@ -168,6 +173,7 @@ Convenções:
 * **Proxies em 2008:** o XLRE e o XLC ainda não existiam, por isso no stress de 2008 usam um proxy β × SPY com o β atual, que ignora o risco específico.
 * **FHS:** passa os testes, mas a 97,5% tem ligeiramente mais exceções do que as esperadas no agregado (1 267 contra 1 152, ou seja, 2,75% contra 2,5%). A 99%, o XLE está em amarelo no semáforo.
 * **Ligações macro:** são regressões univariadas (não isolam efeitos conjuntos) e não há correção para testes múltiplos nas 66 regressões. Com |t| ≥ 2, é de esperar cerca de 3 falsos positivos.
+* **Dependência de cauda:** cada frequência de quedas conjuntas assenta em cerca de 38 dias (erro de uns 8 pontos), numa janela de 3 anos sem crise sistémica.
 * **Scorecard e P × I:** são relativos aos 11 setores (percentis e quintis). Um setor pode mudar de nível sem que o seu risco mude. Na média dos stress tests, ganhos compensam perdas (o XLE em 2022).
 * **Âmbito:** é um projeto académico e não é aconselhamento de investimento.
 
@@ -182,7 +188,7 @@ flows/                  flow Prefect e agendamento launchd
 app/risk-map/           mapa de riscos (HTML autónomo)
 app/cockpit/            cockpit Streamlit: app.py (dados, barra lateral), paineis/ (um ficheiro por separador), snapshot/
 scripts/                capturas de ecrã e PDF da nota metodológica (Chrome headless)
-tests/                  139 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
+tests/                  157 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
 docs/                   nota metodológica (.md e .pdf) e capturas
 ```
 

@@ -1,6 +1,7 @@
 """Mapa de risco: espinha de contágio → setor aberto (ficha do setor e empresas) → ficha da empresa.
 
-Gerado a partir do antigo app.py: o código do separador é o mesmo; os dados do run chegam em `g`.
+As ligações do mapa podem ser por quedas conjuntas (dependência de cauda, src/models/cauda.py) ou por correlação.
+Os dados do run chegam em `g` (as variáveis do app.py).
 """
 import networkx as nx
 import numpy as np
@@ -9,6 +10,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from config.settings import (BT_SIGNIF, BT_TL_DAYS, CVAR_LEVEL, CVAR_YEARS, MACRO_FACTORS, MARKET, MODEL_RISK_LEVEL,
                              OFFICIAL_VAR_METHOD, PANIC_Q, SECTORS, SECTOR_PROFILE, TRADING_DAYS)
+from src.models import cauda as cd
 from src.models import cockpit as ck
 from src.models.scorecard import COMPONENTS
 from src.report import formato as fm
@@ -26,6 +28,8 @@ def render(g: dict) -> None:
     empresa_dados = g["empresa_dados"]
     es_emp = g["es_emp"]
     grafo = g["grafo"]
+    cauda = g["cauda"]
+    cauda_meta = g["cauda_meta"]
     hold = g["hold"]
     janela = g["janela"]
     ler_series = g["ler_series"]
@@ -65,8 +69,31 @@ def render(g: dict) -> None:
 
     st.caption("**Clica num setor** para o abrir nas suas maiores empresas; **clica numa empresa** para ver a ficha: "
                "bolsa, risco e últimas notícias. Também podes escolher nas caixas abaixo.")
+    Q_TXT = fm.pct(cauda_meta.get("q", 0.05), 0)
+    MODOS = {"cauda": "Quedas conjuntas (cauda)", "corr": "Correlação"}
+    modo = st.radio("Ligar por", list(MODOS), format_func=MODOS.get, horizontal=True, key="mapa_modo",
+                    disabled=cauda is None,
+                    help=f"Quedas conjuntas: quando um está nos {Q_TXT} piores dias, com que frequência o outro também "
+                         "está. É o que interessa para o contágio em crises. A correlação mede o andamento conjunto "
+                         "em dias normais e subestima as quedas conjuntas.") if cauda is not None else "corr"
+    por_cauda = modo == "cauda"
+    if por_cauda:                               # espinha de contágio pelas quedas conjuntas dos 11 setores
+        grafo = cd.graph(cauda[cauda["grupo"] == cd.GRUPO_SETORES], by="p_conj")
+
+    def liga_txt(d: dict) -> str:
+        """Texto de uma ligação: quedas conjuntas (se houver) e correlação."""
+        if "p_conj" in d:
+            return (f"caem juntos em {fm.pct(d['p_conj'], 0)} dos piores dias (acaso: {Q_TXT})"
+                    f"<br>dependência de cauda λ = {fm.num(d['lam'])} · correlação {fm.num(d['corr'])}")
+        return f"correlação {fm.num(d['corr'])}"
+
+    def liga_curta(d: dict) -> str:
+        return f"{fm.pct(d['p_conj'], 0)} dos piores dias" if "p_conj" in d else f"r = {fm.num(d['corr'])}"
+
+    def forca(d: dict) -> float:
+        return d["p_conj"] if "p_conj" in d else d["corr"]
     m1, m2, m3 = st.columns([2, 2, 1], vertical_alignment="bottom")
-    m_set = m1.selectbox("Setor aberto", [None] + setores, key="mapa_setor",
+    m_set = m1.selectbox("Setor aberto", [None] + setores, key="mapa_setor", placeholder="— todos os setores —",
                          format_func=lambda t: "— todos os setores —" if t is None else nome(t))
     h_set = hold[hold["setor"] == m_set].reset_index(drop=True) if m_set else hold.iloc[:0]
     tick_set = h_set["ticker"].tolist()
@@ -74,6 +101,7 @@ def render(g: dict) -> None:
         st.session_state["mapa_empresa"] = None
     nomes_emp = dict(zip(h_set["ticker"], h_set["nome"]))
     m_emp = m2.selectbox("Empresa", [None] + tick_set, key="mapa_empresa", disabled=not m_set,
+                         placeholder="— escolhe uma empresa —",
                          format_func=lambda t: "— escolhe uma empresa —" if t is None else f"{t} · {nomes_emp[t]}")
     if m3.button("⬅ Fechar setor", disabled=not m_set, width="stretch"):
         st.session_state["mapa_reset"] = True
@@ -91,6 +119,10 @@ def render(g: dict) -> None:
             cvar_etf = ck.cvar(r_emp[m_set], CVAR_LEVEL)
             t_emp["racio"] = t_emp["cvar"] / cvar_etf
             g_emp, _ = ck.mst(r_emp[tick_set])
+            if por_cauda:                       # ligações entre as empresas do setor pelas quedas conjuntas
+                pe = cauda[(cauda["grupo"] == m_set) & cauda["a"].isin(tick_set) & cauda["b"].isin(tick_set)]
+                if set(pe["a"]) | set(pe["b"]) == set(tick_set):
+                    g_emp = cd.graph(pe, by="p_conj")
         except Exception as e:  # noqa: BLE001
             st.warning(f"Sem preços para as empresas de {m_set}: {e}")
             m_set, tick_set = None, []
@@ -128,7 +160,7 @@ def render(g: dict) -> None:
         f_ = 0.8 if m_set else 0.5              # com setor aberto, a etiqueta fica perto do vizinho (anel exterior)
         hx.append(pos_s[a][0] * (1 - f_) + pos_s[b][0] * f_ if not m_set else pos_s[v_][0] * f_)
         hy.append(pos_s[a][1] * (1 - f_) + pos_s[b][1] * f_ if not m_set else pos_s[v_][1] * f_)
-        ht.append(f"{a} ↔ {b}<br>correlação {fm.num(d['corr'])}")
+        ht.append(f"{a} ↔ {b}<br>{liga_txt(d)}")
     fig_m.add_trace(go.Scatter(x=ex, y=ey, mode="lines", hoverinfo="skip",
                                line=dict(width=2, color="#475569"), showlegend=False))
     if m_set:                                   # ligações de contágio do setor aberto, por cima
@@ -159,8 +191,7 @@ def render(g: dict) -> None:
             tt = np.linspace(0, 1, 24)[:, None]
             curva = (1 - tt) ** 2 * a_ + 2 * (1 - tt) * tt * ctrl + tt ** 2 * b_
             fig_m.add_trace(go.Scatter(x=curva[:, 0], y=curva[:, 1], mode="lines", showlegend=False,
-                                       hoverinfo="text", hovertext=f"{m_emp} ↔ {v}<br>correlação "
-                                                                   f"{fm.num(g_emp[m_emp][v]['corr'])}",
+                                       hoverinfo="text", hovertext=f"{m_emp} ↔ {v}<br>{liga_txt(g_emp[m_emp][v])}",
                                        line=dict(width=2.2, color="#a5b4fc", dash="dot")))
     # nós dos setores
     nos_s = list(grafo.nodes)
@@ -202,12 +233,38 @@ def render(g: dict) -> None:
     if m_set:
         st.caption(f"**Setores:** cor = score de risco, tamanho = CVaR histórico. **Empresas do {m_set}:** tamanho = peso "
                    f"no ETF, cor = CVaR da empresa face ao do ETF (verde ≤ 1×, vermelho ≥ 2,5×), linha = peso. "
-                   "Ao escolher uma empresa, as curvas tracejadas ligam-na às que mais se movem com ela. No anel exterior ficam os outros "
+                   "Ao escolher uma empresa, as curvas tracejadas ligam-na às que mais caem (ou andam) com ela. No anel exterior ficam os outros "
                    "setores; os ligados ao centro são os vizinhos de contágio. "
                    f"As {len(tick_set)} maiores posições somam {fm.pct(h_set['peso'].sum(), 0)} do ETF.")
     else:
-        st.caption("Cor = score de risco (verde baixo, vermelho alto); tamanho = CVaR histórico. As linhas ligam os "
-                   "setores pelas correlações mais fortes (espinha de contágio): setores vizinhos caem juntos.")
+        st.caption("Cor = score de risco (verde baixo, vermelho alto); tamanho = CVaR histórico. As linhas ligam os setores "
+                   + (f"que mais caem juntos: passa o rato numa linha para ver em quantos dos {Q_TXT} piores dias de um "
+                      "o outro também caiu." if por_cauda else
+                      "pelas correlações mais fortes: setores vizinhos andam juntos em dias normais."))
+        if por_cauda:
+            with st.expander("Todas as ligações: quedas conjuntas contra correlação"):
+                ps = cauda[cauda["grupo"] == cd.GRUPO_SETORES]
+                mat = pd.DataFrame(np.nan, index=setores, columns=setores)
+                for r_ in ps.itertuples():
+                    mat.loc[r_.a, r_.b] = mat.loc[r_.b, r_.a] = r_.p_conj
+                hm_c = go.Figure(go.Heatmap(
+                    z=mat.values, x=setores, y=setores, zmin=0, zmax=max(0.6, float(np.nanmax(mat.values))),
+                    colorscale=[[0, "#131c2e"], [1, RISCO["vermelho"]]], xgap=2, ygap=2,
+                    text=[["" if pd.isna(v) else fm.pct(v, 0) for v in row] for row in mat.values],
+                    texttemplate="%{text}", colorbar=dict(title="quedas<br>conjuntas", thickness=10)))
+                layout(hm_c, 420, f"Quando um setor está nos {Q_TXT} piores dias, o outro também está em…",
+                       yaxis=dict(autorange="reversed"))
+                st.plotly_chart(hm_c, width="stretch", config={"displayModeBar": False})
+                top_c = ps.sort_values("p_conj", ascending=False).head(5)
+                dif = ps.assign(posto_c=ps["corr"].rank(ascending=False), posto_q=ps["p_conj"].rank(ascending=False))
+                sub = dif[dif["posto_q"] <= 10].sort_values("posto_c", ascending=False).head(3)
+                st.caption("Pares que mais caem juntos: " + "; ".join(f"{r_.a}–{r_.b} {fm.pct(r_.p_conj, 0)}" for r_ in top_c.itertuples())
+                           + ". Pares que a correlação subestima (estão no top 10 das quedas conjuntas mas mais abaixo na "
+                           "correlação): " + "; ".join(f"{r_.a}–{r_.b} (correlação {fm.num(r_.corr)}, {int(r_.posto_c)}.º)"
+                                                       for r_ in sub.itertuples())
+                           + f". Cópula t ajustada aos resíduos do GARCH: ν = {fm.num(cauda_meta['grupos'][cd.GRUPO_SETORES]['nu'], 1)} "
+                           f"({cauda_meta['grupos'][cd.GRUPO_SETORES]['dias']} dias). Com cerca de 38 dias de cauda por setor, "
+                           "cada percentagem tem uma margem de erro de uns 8 pontos.")
 
     # --- painel: empresas do setor ou ficha da empresa
     if m_set and not m_emp:
@@ -257,8 +314,9 @@ def render(g: dict) -> None:
                         st.markdown(f"{'🔺' if ag else '🔻'} **{MACRO_FACTORS[l['fator']]['curto']}** a subir "
                                     f"{'agrava' if ag else 'atenua'} (t = {fm.num(l['t'], 1, sinal=True)}, "
                                     f"R² {fm.pct(l['r2'], 0)})")
-                viz = sorted(((v, grafo[fs][v]["corr"]) for v in grafo.neighbors(fs)), key=lambda x: -x[1])
-                st.markdown("**Contágio (vizinhos na MST)**  \n" + " · ".join(f"{v} (r = {fm.num(c)})" for v, c in viz))
+                viz = sorted(((v, grafo[fs][v]) for v in grafo.neighbors(fs)), key=lambda x: -forca(x[1]))
+                st.markdown(("**Cai junto com**  \n" if por_cauda else "**Contágio (vizinhos pela correlação)**  \n")
+                            + " · ".join(f"{v} ({liga_curta(d_)})" for v, d_ in viz))
                 if stt is not None:
                     st.markdown("**Nas crises históricas**")
                     ss = stt[stt["serie"] == fs].set_index("cenario")
@@ -383,8 +441,9 @@ def render(g: dict) -> None:
                 layout(fig_p, 300, "Último ano (base 100)", hovermode="x unified",
                        legend=dict(orientation="h", y=-0.15), yaxis=dict(gridcolor=GRID), xaxis=dict(gridcolor=GRID))
                 st.plotly_chart(fig_p, width="stretch", config={"displayModeBar": False})
-                viz_e = sorted(((v, g_emp[m_emp][v]["corr"]) for v in g_emp.neighbors(m_emp)), key=lambda x: -x[1])
-                st.markdown("**Move-se mais com:** " + " · ".join(f"{v} (r = {fm.num(c_)})" for v, c_ in viz_e))
+                viz_e = sorted(((v, g_emp[m_emp][v]) for v in g_emp.neighbors(m_emp)), key=lambda x: -forca(x[1]))
+                st.markdown(("**Cai junto com:** " if por_cauda else "**Move-se mais com:** ")
+                            + " · ".join(f"{v} ({liga_curta(d_)})" for v, d_ in viz_e))
                 if info.get("descricao"):
                     with st.expander("Sobre a empresa (em inglês, do Yahoo Finance)"):
                         st.write(info["descricao"])

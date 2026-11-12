@@ -1,6 +1,6 @@
 """Minha carteira: carteira do utilizador, risco histórico e previsto, mapa, posições e stress.
 
-Gerado a partir do antigo app.py: o código do separador é o mesmo; os dados do run chegam em `g`.
+Os dados do run chegam em `g` (as variáveis do app.py).
 """
 import networkx as nx
 import numpy as np
@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from config.settings import (BT_SIGNIF, BT_TL_DAYS, CVAR_LEVEL, MARKET, PANIC_Q, SECTORS, SHOCK_MARKET, USER_FORECAST_YEARS,
                              USER_PORTFOLIO_DEFAULT, USER_PORTFOLIO_MAX)
-from src.models import carteira as ca, cockpit as ck
+from src.models import carteira as ca, cauda as cd, cockpit as ck
 from src.models.portfolio import shock_returns
 from src.report import formato as fm
 from src.report.alerts import pi_level
@@ -21,6 +21,9 @@ def render(g: dict) -> None:
     backtest_carteira = g["backtest_carteira"]
     es_emp = g["es_emp"]
     grafo = g["grafo"]
+    cauda = g["cauda"]
+    if cauda is not None:                    # espinha de contágio pelas quedas conjuntas, como no Mapa de risco
+        grafo = cd.graph(cauda[cauda["grupo"] == cd.GRUPO_SETORES], by="p_conj")
     hold = g["hold"]
     janela = g["janela"]
     off = g["off"]
