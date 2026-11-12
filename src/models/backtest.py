@@ -37,8 +37,8 @@ from scipy.stats import binom, chi2
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (BT_ES_GRID, BT_ES_NSIM, BT_FRTB_MAX, BT_LEVELS,  # noqa: E402
                              BT_METHODS, BT_REFIT_FREQ, BT_SEED, BT_SIGNIF, BT_TL_DAYS,
-                             BT_TL_GREEN, BT_TL_RED, BT_WINDOW, CLEAN, FEATURES,
-                             OFFICIAL_MEASURES, OFFICIAL_VAR_METHOD, SECTORS)
+                             BT_SPLIT, BT_SPLIT_MIN_DAYS, BT_TL_GREEN, BT_TL_RED, BT_WINDOW, CLEAN,
+                             CVAR_LEVEL, FEATURES, OFFICIAL_MEASURES, OFFICIAL_VAR_METHOD, SECTORS)
 from src.collect.sessao import proximo_dia_util  # noqa: E402
 from src.models.cockpit import cvar  # noqa: E402
 
@@ -343,12 +343,16 @@ def next_day_forecast(r: pd.Series, method: str = OFFICIAL_VAR_METHOD, levels: t
     return {"dados_ate": str(r.dropna().index[-1].date())} | official_row(fc, method)
 
 
-def run(simple: pd.DataFrame, tickers: list[str],
-        seed: int = BT_SEED) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def run(simple: pd.DataFrame, tickers: list[str], seed: int = BT_SEED,
+        split: str | None = None, min_days: int = BT_SPLIT_MIN_DAYS) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Devolve (tabela de resultados, séries diárias em formato longo, previsão oficial de amanhã).
 
     Cada setor corre `sector_forecasts` uma só vez sobre a série estendida: a última linha é a
     previsão de amanhã e as restantes são exatamente o backtest (o marcador não as afeta).
+
+    Com `split` (data), a tabela ganha a coluna `periodo`: "total", "selecao" (previsões antes de `split`) e
+    "confirmacao" (de `split` em diante). As previsões são as mesmas; só muda a amostra dos testes. Um setor
+    com menos de `min_days` previsões num período não entra nesse período.
     """
     tables, series, official = [], [], []
     for k, t in enumerate(tickers):
@@ -356,7 +360,15 @@ def run(simple: pd.DataFrame, tickers: list[str],
         fc_ext, aux, pools = sector_forecasts(extend_next_day(r))
         official.append({"setor": t, "dados_ate": str(r.index[-1].date())} | official_row(fc_ext))
         fc, aux = fc_ext.iloc[:-1], aux.iloc[:-1]
-        tables.append(backtest_table(fc, aux, pools, r, seed=seed + k).assign(setor=t))
+        tab = backtest_table(fc, aux, pools, r, seed=seed + k).assign(setor=t)
+        if split is not None:
+            tab = tab.assign(periodo="total")
+            antes = fc.index < pd.Timestamp(split)
+            for nome, m in (("selecao", antes), ("confirmacao", ~antes)):
+                if m.sum() >= min_days:
+                    tab = pd.concat([tab, backtest_table(fc[m], aux[m], pools, r, seed=seed + k)
+                                     .assign(setor=t, periodo=nome)], ignore_index=True)
+        tables.append(tab)
         series.append(fc.assign(setor=t))
     res = pd.concat(tables, ignore_index=True)
     res = res[["setor", *[c for c in res.columns if c != "setor"]]]
@@ -364,15 +376,67 @@ def run(simple: pd.DataFrame, tickers: list[str],
     return res, ser, pd.DataFrame(official)
 
 
+# ----------------------------------------------------------------------------- escolha do método e testes múltiplos
+TESTES_ESCOLHA = ("p_kupiec", "p_christoffersen", "p_z2")       # frequência, independência e ES
+
+
+def passes(res: pd.DataFrame, signif: float = BT_SIGNIF) -> pd.DataFrame:
+    """Por método e nível: nº de séries que passam cada teste, nº que passam os três e nº de séries."""
+    ok = res.assign(**{c: res[c] >= signif for c in TESTES_ESCOLHA})
+    ok["tudo"] = ok[list(TESTES_ESCOLHA)].all(axis=1)
+    out = ok.groupby(["metodo", "nivel"])[[*TESTES_ESCOLHA, "tudo"]].sum()
+    out["series"] = ok.groupby(["metodo", "nivel"]).size()
+    return out.reset_index()
+
+
+def choose_method(res: pd.DataFrame, level: float = CVAR_LEVEL, signif: float = BT_SIGNIF) -> str:
+    """Método com mais séries a passar os três testes ao nível `level`; em empate, o que passa mais no outro nível."""
+    p = passes(res, signif)
+    principal = p[np.isclose(p["nivel"], level)].set_index("metodo")["tudo"]
+    outro = p[~np.isclose(p["nivel"], level)].groupby("metodo")["tudo"].sum().reindex(principal.index).fillna(0)
+    return max(principal.index, key=lambda m: (principal[m], outro[m]))
+
+
+def holm(pvals, signif: float = BT_SIGNIF) -> np.ndarray:
+    """Correção de Holm (1979) para testes múltiplos: devolve True onde H0 continua rejeitada.
+
+    Ordena os p-valores; rejeita o i-ésimo menor (i = 0, 1, …) enquanto p_(i) <= signif / (m − i) e pára no
+    primeiro que falha. Controla a probabilidade de pelo menos um falso positivo, sem assumir independência.
+    """
+    p = np.asarray(pvals, dtype=float)
+    ordem = np.argsort(p)
+    rej = np.zeros(len(p), dtype=bool)
+    for i, j in enumerate(ordem):
+        if p[j] > signif / (len(p) - i):
+            break
+        rej[j] = True
+    return rej
+
+
+def multiple_testing(res: pd.DataFrame, signif: float = BT_SIGNIF) -> pd.DataFrame:
+    """Por método: nº de testes (séries × níveis × 4 testes), rejeições a `signif`, as esperadas por acaso se o
+    modelo estivesse certo, e as que sobrevivem à correção de Holm."""
+    cols = ["p_kupiec", "p_christoffersen", "p_cc", "p_z2"]
+    rows = []
+    for m, g in res.groupby("metodo"):
+        p = g[cols].to_numpy().ravel()
+        rows.append({"metodo": m, "testes": len(p), "rejeicoes": int((p < signif).sum()),
+                     "esperadas_por_acaso": round(len(p) * signif, 1), "rejeicoes_holm": int(holm(p, signif).sum())})
+    return pd.DataFrame(rows)
+
+
 # ----------------------------------------------------------------------------- I/O
 def main() -> Path:
     prices = pd.read_parquet(CLEAN / "prices.parquet")
     simple = prices.pct_change()
     t0 = time.time()
-    res, ser, official = run(simple, list(SECTORS))
+    res_all, ser, official = run(simple, list(SECTORS), split=BT_SPLIT)
+    res = res_all[res_all["periodo"] == "total"].drop(columns="periodo").reset_index(drop=True)
     FEATURES.mkdir(parents=True, exist_ok=True)
     out = FEATURES / "var_backtest.csv"
     res.to_csv(out, index=False, float_format="%.6f")
+    res_all[res_all["periodo"] != "total"].to_csv(FEATURES / "var_backtest_split.csv", index=False, float_format="%.6f")
+    multiple_testing(res).to_csv(FEATURES / "var_backtest_multiple.csv", index=False)
     ser.to_parquet(FEATURES / "var_backtest_series.parquet", index=False)
     official.to_csv(FEATURES / "official_risk.csv", index=False, float_format="%.6f")
     print(f"[backtest] {len(res)} linhas em {time.time() - t0:.0f}s → {out.name} "
@@ -380,6 +444,13 @@ def main() -> Path:
     cols = ["setor", "metodo", "nivel", "excecoes", "esperadas", "p_kupiec", "p_christoffersen",
             "p_cc", "z2", "p_z2", f"excecoes_{BT_TL_DAYS}", "semaforo", "frtb_mesa"]
     print(res[cols].round(3).to_string(index=False))
+    sel, conf = (res_all[res_all["periodo"] == k] for k in ("selecao", "confirmacao"))
+    escolhido = choose_method(sel)
+    print(f"[backtest] escolha com as previsões antes de {BT_SPLIT}: {escolhido} "
+          f"({'igual ao' if escolhido == OFFICIAL_VAR_METHOD else 'DIFERENTE do'} método oficial)")
+    print(passes(sel).assign(periodo="selecao").to_string(index=False))
+    print(passes(conf).assign(periodo="confirmacao").to_string(index=False))
+    print(multiple_testing(res).to_string(index=False))
     print(f"[backtest] previsão oficial ({OFFICIAL_VAR_METHOD}) para {official['data_previsao'].iloc[0]} "
           f"→ official_risk.csv")
     print(official.round(4).to_string(index=False))

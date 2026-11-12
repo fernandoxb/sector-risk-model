@@ -282,3 +282,53 @@ def test_previsao_usa_o_metodo_oficial(rets):
     prev = bt.next_day_forecast(rets, levels=(0.99, 0.975), window=WINDOW, refit_freq="M")
     assert prev["metodo"] == OFFICIAL_VAR_METHOD
     assert 0 < prev["var975"] < prev["var99"] and prev["es975"] > prev["var975"]
+
+
+# ----------------------------------------------------------------------------- escolha fora da amostra e testes múltiplos
+def test_holm_igual_ao_statsmodels():
+    from statsmodels.stats.multitest import multipletests
+    rng = np.random.default_rng(3)
+    p = np.concatenate([rng.uniform(0, 1, 40), rng.uniform(0, 0.002, 8)])
+    np.testing.assert_array_equal(bt.holm(p, 0.05), multipletests(p, alpha=0.05, method="holm")[0])
+    assert bt.holm([0.04, 0.03, 0.02], 0.05).sum() == 0          # 0,02 > 0,05/3: nenhuma sobrevive
+    assert bt.holm([0.001, 0.02, 0.9], 0.05).tolist() == [True, True, False]
+
+
+def _res(linhas):
+    return pd.DataFrame(linhas, columns=["setor", "metodo", "nivel", "p_kupiec", "p_christoffersen", "p_cc", "p_z2"])
+
+
+def test_escolha_do_metodo_e_contagens():
+    res = _res([("A", "fhs", 0.975, .5, .5, .5, .5), ("B", "fhs", 0.975, .5, .01, .5, .5),
+                ("A", "hist", 0.975, .5, .5, .5, .01), ("B", "hist", 0.975, .01, .5, .5, .5),
+                ("A", "fhs", 0.99, .5, .5, .5, .5), ("B", "fhs", 0.99, .5, .5, .5, .5),
+                ("A", "hist", 0.99, .5, .5, .5, .5), ("B", "hist", 0.99, .5, .5, .5, .5)])
+    p = bt.passes(res).set_index(["metodo", "nivel"])
+    assert p.loc[("fhs", 0.975), ["p_kupiec", "p_christoffersen", "p_z2", "tudo", "series"]].tolist() == [2, 1, 2, 1, 2]
+    assert p.loc[("hist", 0.975), "tudo"] == 0
+    assert bt.choose_method(res, level=0.975) == "fhs"
+    empate = res.copy()
+    empate.loc[(empate.metodo == "hist") & (empate.nivel == 0.975), ["p_kupiec", "p_z2"]] = 0.5   # hist: 2 a 97,5%
+    empate.loc[(empate.metodo == "fhs") & (empate.setor == "B") & (empate.nivel == 0.975), "p_christoffersen"] = 0.5
+    empate.loc[(empate.metodo == "hist") & (empate.setor == "A") & (empate.nivel == 0.99), "p_kupiec"] = 0.01
+    assert bt.choose_method(empate, level=0.975) == "fhs"        # empate a 97,5%: decide o outro nível
+    m = bt.multiple_testing(res).set_index("metodo")
+    assert m.loc["fhs", ["testes", "rejeicoes"]].tolist() == [16, 1] and m.loc["fhs", "esperadas_por_acaso"] == 0.8
+
+
+def test_periodos_usam_as_mesmas_previsoes(rets):
+    """Com split, 'total' é igual ao run sem split e as exceções dos dois períodos somam as do total."""
+    simple = rets.to_frame("X")
+    w = bt.BT_WINDOW                                   # run usa a janela do projeto: há len(rets) − w previsões
+    meio = str(rets.index[w + (len(rets) - w) // 2].date())
+    base, _, _ = bt.run(simple, ["X"])
+    res, _, _ = bt.run(simple, ["X"], split=meio, min_days=10)
+    total = res[res.periodo == "total"].drop(columns="periodo").reset_index(drop=True)
+    pd.testing.assert_frame_equal(total, base)
+    chave = ["metodo", "nivel"]
+    soma = (res[res.periodo != "total"].groupby(chave)["excecoes"].sum()
+            .reindex(pd.MultiIndex.from_frame(base[chave])).to_numpy())
+    np.testing.assert_array_equal(soma, base["excecoes"].to_numpy())
+    assert set(res.periodo) == {"total", "selecao", "confirmacao"}
+    curto, _, _ = bt.run(simple, ["X"], split=meio, min_days=10_000)          # períodos curtos demais ficam de fora
+    assert set(curto.periodo) == {"total"}

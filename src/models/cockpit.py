@@ -6,7 +6,7 @@ Funções puras (sem Streamlit) para poderem ser testadas e reutilizadas:
   tail_table       CVaR + Downside Beta + beta de juros para várias séries
   mst              Minimum Spanning Tree sobre d = sqrt(2(1 - r))
   rate_regime      nível e variação do Treasury a 10 anos (FRED) → regime de juros
-  rate_adjusted    CVaR penalizado para setores de crescimento em subida de juros
+  rate_stress      CVaR com um choque de juros, pelo β medido de cada setor (só ligações significativas)
   obsidian_log     nota Markdown diária com links [[Ticker]]
 """
 from __future__ import annotations
@@ -133,16 +133,16 @@ def rate_regime(y: pd.Series, lookback: int = 63, threshold_pp: float = 0.25) ->
     return {"asof": str(y.index[-1].date()), "nivel": level, "delta": delta, "regime": regime}
 
 
-def rate_adjusted(cvar_s: pd.Series, delta_pp: float, growth: list[str], penalty_per_pp: float) -> pd.Series:
-    """CVaR × (1 + penalização × subida dos juros em p.p.) apenas para setores de crescimento.
+def rate_stress(cvar_s: pd.Series, betas: pd.Series, delta_pp: float) -> pd.Series:
+    """CVaR com um choque de juros por cima: CVaR_i + max(0, −(e^{b_i·Δ} − 1)).
 
-    Só penaliza subidas (delta > 0). Ex.: penalização 0.5 e juros +0.4 p.p. → CVaR × 1.20.
+    `betas` são os β medidos (retorno log semanal do setor por +1 p.p. no Treasury 10Y, regressão HAC), só das
+    ligações aceites; setores sem ligação significativa (NaN ou ausentes) não mudam. A perda do choque só soma
+    quando é perda: um setor que ganha com o choque fica com o CVaR original.
     """
-    factor = 1 + penalty_per_pp * max(delta_pp, 0.0)
-    out = cvar_s.copy()
-    idx = [t for t in growth if t in out.index]
-    out[idx] = out[idx] * factor
-    return out
+    b = betas.reindex(cvar_s.index).fillna(0.0)
+    perda = -np.expm1(b * delta_pp)
+    return cvar_s + perda.clip(lower=0.0)
 
 
 # ----------------------------------------------------------------------------- Obsidian

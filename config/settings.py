@@ -39,6 +39,11 @@ BT_SEED = 42                         # semente das simulações (resultados repr
 # FRTB, backtest por mesa: reprovada se, nos últimos 250 dias, houver mais exceções do que isto
 BT_FRTB_MAX = {0.99: 12, 0.975: 30}
 
+# Validação fora da amostra da escolha do método: escolhe-se com as previsões até BT_SPLIT (exclusive) e
+# confirma-se com as seguintes, que não entraram na escolha. Um setor só conta num período com BT_SPLIT_MIN_DAYS.
+BT_SPLIT = "2019-01-01"
+BT_SPLIT_MIN_DAYS = 500
+
 # --- Modelo oficial de VaR/ES (previsão para o próximo dia útil) -------------
 # Escolhido pelo backtest de 2008–2026 (data/features/var_backtest.csv, p >= 5%, setores que passam em 11;
 # dados até 2026-11-10):
@@ -122,8 +127,7 @@ SECTOR_PROFILE = {
     "XLRE": {"tipo": "Cíclico",   "acoes": ["PLD", "AMT", "EQIX", "CCI"]},
     "XLC":  {"tipo": "Sensível",  "acoes": ["META", "GOOGL", "NFLX", "TMUS"]},
 }
-# Setores de crescimento (valuation de longa duração) penalizados quando os juros sobem.
-GROWTH_SECTORS = ["XLK", "XLC", "XLY"]
+# (A antiga lista GROWTH_SECTORS saiu: o efeito dos juros usa o β medido em factor_links.csv, ver cockpit.rate_stress.)
 RATE_SERIES = "DGS10"   # Treasury a 10 anos (FRED)
 RATE_LOOKBACK = 63      # variação dos juros nos últimos ~3 meses define o regime
 RATE_THRESHOLD_PP = 0.25  # subida/descida se a variação em RATE_LOOKBACK dias for >= ±0,25 p.p.; senão "estável"
@@ -158,7 +162,8 @@ SNAPSHOT_RATE_MARGIN_DAYS = 200 # dias de juros antes do 1.º preço (o regime u
 SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "var_backtest_series.parquet",
                      "risk_contribution.csv", "stress_tests.csv", "covariance_shrinkage.csv", "factor_links.csv",
                      "alerts.json", "sector_metrics.csv", "score_history.csv", "holdings.csv",
-                     "company_backtest.csv", "company_risk.csv")
+                     "company_backtest.csv", "company_risk.csv", "var_backtest_split.csv",
+                     "var_backtest_multiple.csv")
 
 # --- Cenário de stress próprio (cockpit, separador Carteira e stress) --------
 # Choque instantâneo propagado pelos betas: mercado pelo beta diário de 3 anos (sector_metrics.csv) e cada

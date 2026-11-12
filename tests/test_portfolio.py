@@ -133,3 +133,16 @@ def test_choque_pelos_betas():
     assert r["A"] == pytest.approx(np.exp(-0.09) - 1)
     r = shock_returns(pd.Series({"A": -0.16}), 0.5, log_model=True, log_shock=True)   # VIX +50%
     assert r["A"] == pytest.approx(np.exp(-0.16 * np.log(1.5)) - 1)
+
+
+def test_choque_de_juros_pelo_beta_medido():
+    import numpy as np
+    from src.models.cockpit import rate_stress
+    cv = pd.Series({"XLRE": 0.028, "XLE": 0.040, "XLK": 0.046})
+    b = pd.Series({"XLRE": -0.088, "XLE": 0.070, "XLK": float("nan")})      # XLK: ligação não significativa
+    aj = rate_stress(cv, b, 1.0)
+    assert aj["XLRE"] == pytest.approx(0.028 + (1 - np.exp(-0.088)))         # sofre com a subida
+    assert aj["XLE"] == 0.040 and aj["XLK"] == 0.046                         # ganha / sem ligação: não muda
+    desce = rate_stress(cv, b, -1.0)
+    assert desce["XLE"] == pytest.approx(0.040 + (1 - np.exp(-0.070))) and desce["XLRE"] == 0.028
+    assert rate_stress(cv, b, 0.0).equals(cv)

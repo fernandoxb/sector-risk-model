@@ -1,12 +1,13 @@
 """Modelo: backtest do VaR e do ES nos setores e nas empresas.
 
-Gerado a partir do antigo app.py: o código do separador é o mesmo; os dados do run chegam em `g`.
+Os dados do run chegam em `g` (as variáveis do app.py).
 """
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from config.settings import BT_LEVELS, BT_SIGNIF, BT_TL_DAYS, BT_WINDOW, CVAR_LEVEL, OFFICIAL_VAR_METHOD
+from config.settings import BT_LEVELS, BT_SIGNIF, BT_SPLIT, BT_TL_DAYS, BT_WINDOW, CVAR_LEVEL, OFFICIAL_VAR_METHOD
+from src.models import backtest as bt
 from src.models import backtest_empresas as be
 from src.report import formato as fm
 from paineis.comum import GRID, METODOS, MUTED, N_CVAR, RISCO, SEM, layout, metrica, nome, seletor_periodo
@@ -15,6 +16,8 @@ from paineis.comum import GRID, METODOS, MUTED, N_CVAR, RISCO, SEM, layout, metr
 def render(g: dict) -> None:
     BT_SER = g["BT_SER"]
     bt_res = g["bt_res"]
+    bt_split = g["bt_split"]
+    bt_multi = g["bt_multi"]
     comp_bt = g["comp_bt"]
     comp_risk = g["comp_risk"]
     ler_series = g["ler_series"]
@@ -46,6 +49,32 @@ def render(g: dict) -> None:
         st.caption(f"O **{METODOS[OFFICIAL_VAR_METHOD]}** é o único que passa a frequência, a independência e o "
                    "teste do ES ao mesmo tempo, por isso é o modelo oficial. O histórico reage tarde às crises "
                    "(exceções em grupos); o GARCH com t-Student tem a cauda demasiado fina.")
+
+        if bt_split is not None:
+            with st.expander(f"A escolha resiste a dados que não entraram nela? Validação antes e depois de {BT_SPLIT[:4]}"):
+                escolhido = bt.choose_method(bt_split[bt_split["periodo"] == "selecao"])
+                linhas = []
+                for per, rot in (("selecao", f"Escolha: até {int(BT_SPLIT[:4]) - 1}"),
+                                 ("confirmacao", f"Confirmação: desde {BT_SPLIT[:4]}")):
+                    ps = bt.passes(bt_split[bt_split["periodo"] == per])
+                    for _, l in ps.sort_values(["nivel", "metodo"], ascending=[False, True]).iterrows():
+                        linhas.append([rot, METODOS[l["metodo"]], fm.nivel(l["nivel"]), int(l["p_kupiec"]),
+                                       int(l["p_christoffersen"]), int(l["p_z2"]), int(l["tudo"]), int(l["series"])])
+                st.dataframe(pd.DataFrame(linhas, columns=["Período", "Método", "Nível", "Kupiec", "Christoffersen",
+                                                           "Z2 (ES)", "Passa os três", "Setores"]),
+                             hide_index=True, width="stretch")
+                st.caption(f"O método foi escolhido só com as previsões até {int(BT_SPLIT[:4]) - 1}: o que passa os três "
+                           f"testes em mais setores é o **{METODOS[escolhido]}**. As previsões de {BT_SPLIT[:4]} em diante "
+                           "não entraram na escolha e confirmam-na. No período da escolha contam 9 setores, porque o "
+                           "XLRE e o XLC ainda não tinham previsões suficientes.")
+                if bt_multi is not None:
+                    mm = bt_multi.set_index("metodo")
+                    st.markdown(
+                        f"**Testes múltiplos.** Cada método faz {int(mm['testes'].iloc[0])} testes (11 setores × 2 níveis × 4 "
+                        f"testes), por isso a 5% esperam-se cerca de {fm.num(mm['esperadas_por_acaso'].iloc[0], 1)} rejeições "
+                        "por puro acaso, mesmo com um modelo certo. Rejeições observadas e as que sobrevivem à correção "
+                        "de Holm: " + "; ".join(f"{METODOS[m]} {int(mm.loc[m, 'rejeicoes'])} → {int(mm.loc[m, 'rejeicoes_holm'])}"
+                                                 for m in ("fhs", "garch", "historico") if m in mm.index) + ".")
 
         if comp_bt is not None and comp_risk is not None:
             with st.expander(f"E nas {len(comp_risk)} empresas? O mesmo backtest, empresa a empresa"):

@@ -11,7 +11,7 @@
 > coverage, independence and the ES test at the same time**, so it is the official model.
 > The project also covers portfolio risk (Ledoit-Wolf covariance, Euler risk contributions, 2008/2020/2022 stress tests),
 > a 0–100 risk scorecard, macro-factor → sector links estimated with HAC regressions, and an automated daily pipeline
-> (Prefect + launchd) with alerts and weekly reports. There are 135 tests and CI on GitHub Actions.
+> (Prefect + launchd) with alerts and weekly reports. There are 139 tests and CI on GitHub Actions.
 
 Pipeline em Python que mede o risco de mercado dos 11 ETFs setoriais SPDR (XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLU,
 XLB, XLRE, XLC) face ao SPY, setor a setor e em carteira. Corre sozinho todos os dias úteis e publica os resultados em três
@@ -34,6 +34,11 @@ Cada método falha por uma razão diferente:
 * **Histórico:** acerta mais ou menos na frequência das exceções, mas reage tarde às crises e as exceções aparecem em grupos, por isso falha no Christoffersen.
 * **GARCH com t-Student:** acompanha a volatilidade, mas a cauda paramétrica é demasiado fina, por isso falha no Kupiec e no Z2.
 * **FHS:** junta a volatilidade do GARCH à cauda empírica dos resíduos, e só ela passa os três testes.
+
+**A escolha não depende dos dados em que foi avaliada.** Escolhendo o método só com as previsões de 2008–2018, a FHS é
+o único que passa os três testes (6 de 9 setores a 97,5%; os outros dois, zero). Em 2019–2026, que não entrou na
+escolha, passa em 9 de 11. Com a correção de Holm para os 88 testes de cada método, a FHS fica sem nenhuma rejeição
+(GARCH-t: 23; histórico: 42).
 
 Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% e o ES 97,5% da sessão seguinte (calendário da NYSE com feriados).
 
@@ -117,7 +122,7 @@ python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_pipeline.py            # coleta → validação → modelos → mapa (precisa de rede)
 .venv/bin/streamlit run app/cockpit/app.py  # cockpit em http://localhost:8501
 open app/risk-map/index.html                # mapa de riscos (sem servidor)
-.venv/bin/python -m pytest                  # 135 testes, sem rede
+.venv/bin/python -m pytest                  # 139 testes, sem rede
 ```
 * **Chave do FRED:** é opcional. Se definires `FRED_API_KEY` num `.env`, os dados vêm pela API; caso contrário usa-se o CSV público.
 * **Sem rede:** `run_pipeline.py --offline` reutiliza os dados de `data/raw/`.
@@ -177,7 +182,7 @@ flows/                  flow Prefect e agendamento launchd
 app/risk-map/           mapa de riscos (HTML autónomo)
 app/cockpit/            cockpit Streamlit: app.py (dados, barra lateral), paineis/ (um ficheiro por separador), snapshot/
 scripts/                capturas de ecrã e PDF da nota metodológica (Chrome headless)
-tests/                  135 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
+tests/                  139 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
 docs/                   nota metodológica (.md e .pdf) e capturas
 ```
 

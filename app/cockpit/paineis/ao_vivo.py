@@ -1,21 +1,21 @@
 """Análise ao vivo: CVaR histórico, downside beta, regime de juros e exportação para o Obsidian.
 
-Gerado a partir do antigo app.py: o código do separador é o mesmo; os dados do run chegam em `g`.
+Os dados do run chegam em `g` (as variáveis do app.py).
 """
 import os
 import pandas as pd
 import streamlit as st
 from datetime import date
 from pathlib import Path
-from config.settings import (CVAR_LEVEL, GROWTH_SECTORS, OBSIDIAN_FOLDER, OBSIDIAN_VAULT, PANIC_Q, RATE_LOOKBACK,
-                             RATE_THRESHOLD_PP, SECTORS, SECTOR_PROFILE)
+from config.settings import (CVAR_LEVEL, LINK_T_MIN, OBSIDIAN_FOLDER, OBSIDIAN_VAULT, PANIC_Q, RATE_LOOKBACK,
+                             RATE_THRESHOLD_PP, SECTORS, SECTOR_PROFILE, SHOCK_DIFF)
 from src.models import cockpit as ck
 from src.report import formato as fm
 from paineis.comum import N_CVAR, metrica
 
 
 def render(g: dict) -> None:
-    d_yield = g["d_yield"]
+    links = g["links"]
     grafo = g["grafo"]
     janela = g["janela"]
     mkt = g["mkt"]
@@ -24,31 +24,36 @@ def render(g: dict) -> None:
 
     st.caption(f"Calculado agora, com os preços de {rets.index[0].date()} a {rets.index[-1].date()} "
                f"(janela de {janela.lower()} escolhida na barra lateral).")
+    # β medido de cada setor face aos juros (regressão semanal HAC): só as ligações significativas contam
+    if links is not None:
+        lj = links[links["fator"] == "juros"].set_index("setor")
+        b_juros = lj["beta"].where(lj["aceite"].astype(bool))
+        t_juros = lj["t"]
+    else:
+        b_juros, t_juros = pd.Series(dtype=float), pd.Series(dtype=float)
+    sofrem = sorted(b_juros[b_juros < 0].index, key=lambda t: b_juros[t])
     with st.container(border=True):
-        p1, p2, p3, p4 = st.columns(4)
+        p1, p2, p3 = st.columns(3)
         alpha = p1.slider("Nível do CVaR", 0.900, 0.995, CVAR_LEVEL, step=0.005, format="%.3f",
                           help=f"Padrão do projeto: {N_CVAR} (nível do ES no FRTB).")
         panic_q = p2.slider("Dias de pânico do SPY", 0.05, 0.30, PANIC_Q, step=0.05,
                             help="Fração dos piores dias do SPY usada no downside beta (β↓).")
-        usar_juros = p3.toggle("Ajuste de juros", value=True,
-                               help=f"Penaliza os setores de crescimento ({', '.join(GROWTH_SECTORS)}) quando os "
-                                    "juros sobem: CVaR ajustado = CVaR × "
-                                    "(1 + penalização × subida dos juros em p.p.).")
-        penal = p3.slider("Penalização por +1 p.p.", 0.0, 2.0, 0.5, step=0.1, disabled=not usar_juros)
-        choque = p4.slider("Choque adicional de juros (p.p.)", -1.0, 2.0, 0.0, step=0.25, disabled=not usar_juros,
-                           help="Soma-se à variação real dos últimos ~3 meses, para simular um cenário.")
+        choque = p3.slider("Choque de juros (p.p.)", SHOCK_DIFF[0], SHOCK_DIFF[1], 0.0, SHOCK_DIFF[3],
+                           format="%+.2f p.p.", disabled=b_juros.dropna().empty,
+                           help="Simula uma subida (ou descida) do Treasury 10Y. A perda de cada setor vem do seu β "
+                                f"medido; só contam os setores com ligação significativa (|t| ≥ {fm.num(LINK_T_MIN, 0)}): "
+                                f"{', '.join(sofrem) or 'nenhum'} sofrem quando os juros sobem.")
     nivel_live = fm.nivel(alpha)
 
-    tab = ck.tail_table(rets, mkt, alpha, panic_q, d_yield)
-    delta_cen = (regime["delta"] if regime else 0.0) + choque
-    tab["cvar_aj"] = (ck.rate_adjusted(tab["cvar"], delta_cen, GROWTH_SECTORS, penal)
-                      if usar_juros and regime else tab["cvar"])
+    tab = ck.tail_table(rets, mkt, alpha, panic_q)
+    tab["cvar_aj"] = ck.rate_stress(tab["cvar"], b_juros, choque)
     n_panico = int((mkt <= mkt.quantile(panic_q)).sum())
 
     c1, c2, c3, c4 = st.columns(4)
     top = tab["cvar_aj"].idxmax()
-    metrica(c1, f"Maior CVaR histórico ({nivel_live})", top, fm.pct(tab.loc[top, "cvar_aj"], 2),
-            ajuda="Perda média nos piores dias da janela, já com o ajuste de juros se estiver ativo.")
+    metrica(c1, f"Maior CVaR histórico ({nivel_live})", top,
+            fm.pct(tab.loc[top, "cvar_aj"], 2) + (" com o choque de juros" if choque else ""),
+            ajuda="Perda média nos piores dias da janela; com um choque de juros, soma a perda estimada pelo β medido.")
     amp = tab["downside_beta"].idxmax()
     metrica(c2, "Maior amplificador em pânico", amp, f"β↓ = {fm.num(tab.loc[amp, 'downside_beta'])}",
             ajuda=f"Downside beta: quanto o setor se move por cada 1% do SPY nos {n_panico} piores dias do SPY. "
@@ -57,7 +62,7 @@ def render(g: dict) -> None:
         metrica(c3, f"Treasury 10Y ({regime['asof']})", fm.pct(regime["nivel"] / 100, 2),
                 f"{fm.pp(regime['delta'])} em {RATE_LOOKBACK} dias úteis")
         metrica(c4, "Regime de juros", regime["regime"].capitalize(),
-                f"cenário {fm.pp(delta_cen)}" if choque else None,
+                f"choque simulado {fm.pp(choque)}" if choque else None,
                 ajuda=f"Subida se os juros subiram ≥ {fm.num(RATE_THRESHOLD_PP)} p.p. em {RATE_LOOKBACK} dias úteis, "
                       f"descida se caíram ≥ {fm.num(RATE_THRESHOLD_PP)} p.p., estável no meio.")
     else:
@@ -70,16 +75,19 @@ def render(g: dict) -> None:
         "Setor": [SECTORS[t] for t in tab.index],
         "Tipo": [SECTOR_PROFILE[t]["tipo"] for t in tab.index],
         "CVaR": tab["cvar"].map(lambda v: fm.pct(v, 2)).values,
-        "CVaR ajustado": tab["cvar_aj"].map(lambda v: fm.pct(v, 2)).values,
+        "CVaR com choque de juros": tab["cvar_aj"].map(lambda v: fm.pct(v, 2)).values,
         "Downside beta": tab["downside_beta"].map(fm.num).values,
         "Beta": tab["beta"].map(fm.num).values,
-        "Beta aos juros (%/p.p.)": (tab["beta_juros"].map(lambda v: fm.num(v * 100, 1, sinal=True))
-                                    if "beta_juros" in tab else ["—"] * len(tab)),
+        "Beta aos juros (%/p.p.)": [fm.num(100 * lj.loc[t, "beta"], 1, sinal=True) + ("" if pd.notna(b_juros.get(t)) else " (n.s.)")
+                                    if links is not None and t in lj.index else "—" for t in tab.index],
+        "t (HAC)": [fm.num(t_juros[t], 1, sinal=True) if t in t_juros.index else "—" for t in tab.index],
     })
     with st.expander(f"📋 Tabela: CVaR {nivel_live}, betas e sensibilidade aos juros"):
         st.dataframe(tabela.iloc[tab["cvar_aj"].values.argsort()[::-1]], hide_index=True, width="stretch")
-        st.caption("Beta aos juros: variação diária média do setor (%) por +1 p.p. no Treasury 10Y. Tipo: classificação "
-                   "económica do setor (cíclico, sensível, defensivo), não um nível de risco.")
+        st.caption("Beta aos juros: retorno semanal do setor (%) por +1 p.p. no Treasury 10Y, medido por regressão com "
+                   f"erros HAC nos últimos 3 anos; (n.s.) = não significativo (|t| < {fm.num(LINK_T_MIN, 0)}), não entra "
+                   "no choque. CVaR com choque = CVaR + perda estimada do choque, só quando é perda. Tipo: classificação "
+                   "económica do setor, não um nível de risco.")
 
     st.subheader("🗂️ Exportar para o Obsidian")
     vault = Path(st.text_input("Pasta do cofre", os.environ.get("OBSIDIAN_VAULT", str(OBSIDIAN_VAULT))))

@@ -137,6 +137,8 @@ links = feat_csv("factor_links.csv")
 metr = feat_csv("sector_metrics.csv", index_col=0)
 hist = feat_csv("score_history.csv")
 BT_SER = FEAT / "var_backtest_series.parquet"
+bt_split = feat_csv("var_backtest_split.csv")
+bt_multi = feat_csv("var_backtest_multiple.csv")
 comp_bt = feat_csv("company_backtest.csv")
 comp_risk = feat_csv("company_risk.csv", index_col="empresa")
 hold = feat_csv("holdings.csv")

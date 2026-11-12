@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 4.1
+versao: 4.2
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -54,10 +54,10 @@ Entre 11 setores há 55 correlações possíveis, o que torna o grafo completo i
 
 * Série `DGS10`, lida pela `fredapi` quando `FRED_API_KEY` está definida e, caso contrário, pelo CSV público do FRED.
 * **Regime:** variação do 10Y nos últimos 63 dias úteis. É *subida* se ≥ +0,25 p.p., *descida* se ≤ −0,25 p.p. e *estável* nos restantes casos.
-* **Penalização:** para os setores de crescimento (XLK, XLC, XLY), aplica-se
-  $\text{CVaR}_{aj} = \text{CVaR} \times (1 + \lambda \cdot \max(\Delta y, 0))$,
-  em que $\lambda$ é a penalização por +1 p.p. (ajustável) e $\Delta y$ é a variação real somada a um choque opcional definido no painel. A penalização é contínua: aplica-se a qualquer $\Delta y > 0$, mesmo quando o rótulo do regime é *estável*.
-* **Beta de juros (informativo):** sensibilidade do retorno diário de cada setor a +1 p.p. no 10Y. Serve para confirmar empiricamente se o setor se comporta como um ativo de longa duração.
+* **Choque de juros (Análise ao vivo):** o utilizador escolhe uma variação $\Delta y$ do 10Y e o CVaR de cada setor recebe por cima a perda estimada pelo seu β medido (secção 9, regressão semanal com erros HAC):
+  $$\text{CVaR}_i^{choque} = \text{CVaR}_i + \max\left(0,\ -(e^{\,b_i \Delta y} - 1)\right)$$
+  Só contam as ligações significativas ($|t| \ge 2$); os outros setores não mudam, e um setor que ganha com o choque fica com o CVaR original.
+* **Correção de uma incoerência (2026-11):** a versão anterior penalizava uma lista fixa de "setores de crescimento" (XLK, XLC, XLY) com um parâmetro arbitrário, o que contradizia a regressão do próprio projeto. Os dados dizem que quem sofre com a subida dos juros são o XLRE (t = −4,1), o XLU (−2,7) e o XLP (−2,4); o XLK não tem ligação significativa (t = +0,6) e o XLE até ganha (+2,8). A lista fixa e o parâmetro foram retirados.
 
 ---
 
@@ -140,6 +140,33 @@ No FRTB (BCBS d457, §32.5), uma mesa de negociação perde a aprovação do mod
 * **GARCH-t:** reage à volatilidade e passa quase sempre a independência, mas tem exceções a mais (1,4–1,7% a 99%) e o Z2 rejeita o ES em todos os setores. A t simétrica com o ν estimado tem a cauda esquerda demasiado leve.
 * **GARCH-FHS:** junta o melhor dos dois. A volatilidade do GARCH resolve o agrupamento das exceções e a cauda empírica corrige a cobertura. O Kupiec e o Z2 só a rejeitam no XLE, o setor com a cauda mais instável (choques do petróleo). O teste condicional rejeita-a no XLE e, a 99%, também no XLI e no XLB (p = 0,048 e 0,039), por exceções agrupadas.
 * Nenhum setor reprova o backtest por mesa do FRTB nos últimos 250 dias, com qualquer dos métodos.
+
+### L. A escolha do método resiste a dados que não entraram nela?
+Escolher o método e avaliá-lo com os mesmos dados enviesa a conclusão (enviesamento de seleção). Para o medir, as previsões são divididas em `BT_SPLIT` = 2019-01-01. As previsões são as mesmas do backtest; só muda a amostra em que os testes são feitos. Um setor só conta num período com pelo menos 500 previsões.
+
+Número de setores que passam os **três** testes (Kupiec, Christoffersen e Z2), dados até 2026-11-11:
+
+| Método | Escolha 2008–2018, 97,5% | Escolha, 99% | Confirmação 2019–2026, 97,5% | Confirmação, 99% |
+|---|---|---|---|---|
+| **GARCH-FHS** | **6 de 9** | **9 de 9** | **9 de 11** | **8 de 11** |
+| GJR-GARCH(1,1)-t | 0 de 9 | 0 de 9 | 0 de 11 | 1 de 11 |
+| Histórico | 0 de 9 | 0 de 9 | 3 de 11 | 2 de 11 |
+
+* **Escolha:** só com 2008–2018, a regra `choose_method` (mais setores a passar os três testes a 97,5%) escolhe a FHS. No período da escolha contam 9 setores, porque o XLRE e o XLC ainda não tinham previsões suficientes.
+* **Confirmação:** em 2019–2026, que a escolha nunca viu e que inclui a COVID-19 e 2022, a FHS continua claramente à frente. A conclusão não depende de ter usado os mesmos dados.
+* **Leitura honesta:** no período da escolha a FHS só passa os três testes a 97,5% em 6 de 9 setores; é o melhor método, não um método perfeito.
+
+**Testes múltiplos.** Cada método é sujeito a 88 testes (11 setores × 2 níveis × 4 testes). A 5%, esperam-se cerca de 4,4 rejeições por acaso mesmo com um modelo certo, por isso uma rejeição isolada não condena um método. A correção de Holm (1979) controla a probabilidade de haver pelo menos um falso positivo, sem assumir independência entre os testes:
+
+| Método | Rejeições a 5% (de 88) | Depois da correção de Holm |
+|---|---|---|
+| GARCH-FHS | 12 | 0 |
+| GJR-GARCH(1,1)-t | 62 | 23 |
+| Histórico | 67 | 42 |
+
+A FHS tem mais rejeições do que as 4,4 esperadas por acaso (os testes não são independentes: o condicional combina os outros dois), mas nenhuma sobrevive à correção. Nos outros dois métodos sobrevivem dezenas.
+
+**Validação:** `holm` é comparada com `statsmodels.stats.multitest.multipletests`; no teste dos períodos, a linha "total" é igual à do backtest sem divisão e as exceções dos dois períodos somam as do total.
 
 ### K. Modelo oficial e previsão para o próximo dia útil (Sprint 4a)
 O backtest escolhe o modelo oficial: `OFFICIAL_VAR_METHOD = "fhs"`. A 97,5%, o FHS passa o Kupiec em 11/11 setores, o Christoffersen em 10/11 e o Z2 em 10/11. O histórico só passa a independência em 1/11 e o GARCH-t passa o Kupiec em 1/11 e o Z2 em 0/11. A tabela completa está no comentário de `config/settings.py`.
@@ -483,11 +510,12 @@ $$\text{ES}^{aj} = k \cdot \text{ES}, \qquad k = \min(1 - Z_2,\ \texttt{ES\_ADJ\
 * Basel Committee on Banking Supervision (2019). *Minimum capital requirements for market risk* (FRTB, d457).
 * Christoffersen, P. (1998). Evaluating interval forecasts. *International Economic Review*, 39(4), 841–862.
 * Glosten, L., Jagannathan, R. e Runkle, D. (1993). On the relation between the expected value and the volatility of the nominal excess return on stocks. *Journal of Finance*, 48(5), 1779–1801.
+* Holm, S. (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics*, 6(2), 65–70.
 * Kupiec, P. (1995). Techniques for verifying the accuracy of risk measurement models. *Journal of Derivatives*, 3(2), 73–84.
 * Ledoit, O. e Wolf, M. (2004). A well-conditioned estimator for large-dimensional covariance matrices. *Journal of Multivariate Analysis*, 88(2), 365–411.
+* McNeil, A., Frey, R. e Embrechts, P. (2005). *Quantitative Risk Management: Concepts, Techniques and Tools*. Princeton University Press.
 * Mantegna, R. (1999). Hierarchical structure in financial markets. *European Physical Journal B*, 11, 193–197.
 * Newey, W. e West, K. (1987). A simple, positive semi-definite, heteroskedasticity and autocorrelation consistent covariance matrix. *Econometrica*, 55(3), 703–708.
 * Newey, W. e West, K. (1994). Automatic lag selection in covariance matrix estimation. *Review of Economic Studies*, 61(4), 631–653.
 * Rockafellar, R. T. e Uryasev, S. (2002). Conditional value-at-risk for general loss distributions. *Journal of Banking & Finance*, 26(7), 1443–1471.
 * Tasche, D. (2000). *Risk contributions and performance measurement*. Working paper, TU München.
-
