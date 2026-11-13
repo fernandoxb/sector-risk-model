@@ -87,9 +87,11 @@ def daily_forecast(prices: pd.DataFrame, tickers: list[str], window: int = BT_WI
 
 
 def needs_full(asof, tickers: list[str], anterior: pd.DataFrame | None, weekly: bool = COMPANY_FULL_WEEKLY) -> bool:
-    """Backtest completo? Sim se não houver um anterior, se as empresas mudaram, na última sessão da semana,
+    """Backtest completo? Sim se não houver um anterior, se as empresas ou o modelo oficial mudaram, na última sessão da semana,
     ou sempre que COMPANY_FULL_WEEKLY estiver desligado."""
     if anterior is None or set(anterior["empresa"]) != set(tickers) or not weekly:
+        return True
+    if OFFICIAL_VAR_METHOD not in set(anterior["metodo"]):     # o modelo oficial mudou: o backtest guardado não o tem
         return True
     return ultima_sessao_da_semana(pd.Timestamp(asof).date())
 

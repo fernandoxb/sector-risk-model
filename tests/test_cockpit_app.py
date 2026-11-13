@@ -64,3 +64,11 @@ def test_previsao_fhs_da_carteira_e_modelo_na_ficha(monkeypatch):
     assert sum(r.startswith("ES 97,5% previsto · ") for r in rotulos) >= 2      # carteira e ficha da NVDA
     assert "Backtest do modelo" in rotulos and "VaR 99% previsto" in rotulos
     assert "Backtest desta carteira" in rotulos
+
+
+def test_empresa_sem_backtest_nao_aparece_validada():
+    import sys
+    sys.path.insert(0, str(APP.parent))
+    from paineis.comum import modelo_txt
+    assert modelo_txt({"validado": float("nan"), "es_subestimado": float("nan"), "mult_es": 1.0}) == "sem backtest"
+    assert modelo_txt({"validado": True, "es_subestimado": False, "mult_es": 1.0}) == "✅ validado"

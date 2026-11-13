@@ -89,13 +89,14 @@ def test_previsao_diaria_igual_a_do_backtest_completo():
 
 
 def test_quando_corre_o_backtest_completo():
-    ant = pd.DataFrame({"empresa": ["A", "B"]})
+    ant = pd.DataFrame({"empresa": ["A", "B"], "metodo": OF})
     assert be.needs_full("2026-11-11", ["A", "B"], None)                     # sem backtest anterior
     assert be.needs_full("2026-11-11", ["A", "C"], ant)                      # as empresas mudaram
     assert not be.needs_full("2026-11-11", ["A", "B"], ant)                  # quarta: só previsão
     assert be.needs_full("2026-11-13", ["A", "B"], ant)                      # sexta: completo
     assert be.needs_full("2026-04-02", ["A", "B"], ant)                      # quinta antes da Sexta-feira Santa
     assert be.needs_full("2026-11-11", ["A", "B"], ant, weekly=False)
+    assert be.needs_full("2026-11-11", ["A", "B"], ant.assign(metodo="outro"))  # o modelo oficial mudou
 
 
 def test_backtest_da_carteira():

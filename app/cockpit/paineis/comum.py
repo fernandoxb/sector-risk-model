@@ -70,6 +70,8 @@ def modelo_txt(linha) -> str:
     """Estado do modelo oficial numa empresa (linha de company_risk.csv)."""
     if linha is None:
         return "sem modelo"
+    if pd.isna(linha["validado"]):                             # sem backtest do modelo oficial: não é "validado"
+        return "sem backtest"
     if bool(linha["validado"]):
         return "✅ validado"
     return f"⚠ ES corrigido ×{fm.num(linha['mult_es'])}" if bool(linha["es_subestimado"]) else "⚠ falha um teste"
