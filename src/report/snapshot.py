@@ -23,6 +23,7 @@ from config.settings import (CLEAN, FEATURES, MARKET, SECTORS, SNAPSHOT,  # noqa
                              SNAPSHOT_FEATURES, SNAPSHOT_RATE_MARGIN_DAYS, SNAPSHOT_YEARS)
 from src.collect.empresas import fetch_info, fetch_news, load_holdings  # noqa: E402
 from src.models import cockpit as ck  # noqa: E402
+from src.report.publicar import deve_publicar  # noqa: E402
 
 
 def stock_tickers(profile: dict | None = None) -> list[str]:
@@ -67,7 +68,7 @@ def merge_stocks(new: pd.DataFrame, old: pd.DataFrame | None, stocks: list[str])
     return pd.concat(parts, axis=1).reindex(columns=stocks), falta
 
 
-def main(offline: bool = False) -> Path:
+def main(offline: bool = False, fichas: bool = False) -> Path:
     SNAPSHOT.mkdir(parents=True, exist_ok=True)
     etfs = window(pd.read_parquet(CLEAN / "prices.parquet")[list(SECTORS) + [MARKET]])
     stocks = stock_tickers()
@@ -92,7 +93,8 @@ def main(offline: bool = False) -> Path:
 
     emp_f = SNAPSHOT / "companies.json"
     antigo = json.loads(emp_f.read_text()) if emp_f.exists() else {}
-    if offline:
+    # 220 pedidos ao Yahoo: só no dia em que o snapshot é publicado, com `fichas`, ou se faltar alguma empresa
+    if offline or not (fichas or deve_publicar(str(etfs.index.max().date())) or any(t not in antigo for t in stocks)):
         emp, falhas = {t: antigo[t] for t in stocks if t in antigo}, []
     else:
         emp, falhas = companies_payload(stocks, antigo, fetch_info, fetch_news)
@@ -117,4 +119,4 @@ def main(offline: bool = False) -> Path:
 
 
 if __name__ == "__main__":
-    main(offline="--offline" in sys.argv)
+    main(offline="--offline" in sys.argv, fichas="--fichas" in sys.argv)

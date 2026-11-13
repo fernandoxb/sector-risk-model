@@ -23,22 +23,20 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   stress mostradas como retorno com sinal. Níveis P × I e "crítico" vêm de `PI_LEVELS` (`alerts.pi_level`/`pi_min`).
 
 ## Pipeline e estrutura
-- `python run_pipeline.py` (ou `--offline` para não descarregar): coleta → validação → métricas → mapa.
+- `python run_pipeline.py` (ou `--offline` para não descarregar): coleta → validação → métricas.
   - `src/collect/` Coletor (yfinance, um pedido, `threads=False`; fatores macro do FRED + Yahoo) → `data/raw/`
   - `src/clean/` Inspetor (pandera) → `data/clean/` + `quality_report.md`
   - `src/models/` Modelador (`risk_metrics.py`, `cockpit.py`, `backtest.py`, `portfolio.py`, `scorecard.py`,
     `factor_links.py`) → `data/features/`
-  - `src/report/` Repórter → embebe `data/features/risk_map_data.json` no mapa (`/*DATA*/…/*END*/`);
-    Sentinela (`alerts.py`, estados em `data/state/`) e relatório semanal (`weekly.py`) → cofre Obsidian
+  - `src/report/` Sentinela (`alerts.py`, estados em `data/state/`) e relatório semanal (`weekly.py`) → cofre Obsidian
 - `flows/pipeline.py` — flow Prefect (uma task por bot); agendado com launchd (`flows/install_launchd.sh`).
-- `app/risk-map/index.html` — mapa interativo (HTML autónomo, sem dependências externas de dados).
 - `app/cockpit/app.py` — Streamlit: `.venv/bin/streamlit run app/cockpit/app.py`. O `app.py` carrega os dados e
   desenha a barra lateral; cada separador é `app/cockpit/paineis/<nome>.py::render(g)`, em que `g` são as variáveis
   do `app.py` nesse run; estilo e helpers de apresentação em `paineis/comum.py`. Sem rede (ou com
   `COCKPIT_SNAPSHOT=1`, no Streamlit Cloud) lê `app/cockpit/snapshot/`, gerado por `src/report/snapshot.py`;
   dependências do Cloud em `app/cockpit/requirements.txt`.
 - Mapa de risco = separador do cockpit (setor → 10 maiores empresas → ficha com bolsa e notícias); empresas em
-  `data/features/holdings.csv` (`src/collect/empresas.py`). O mapa HTML é anterior e não tem este nível.
+  `data/features/holdings.csv` (`src/collect/empresas.py`). O mapa HTML antigo foi apagado.
 - Empresas: `backtest_empresas.py` reutiliza `backtest.run` (sem lógica nova) → `company_backtest.csv`, `company_risk.csv`
   (`validado`, `es_subestimado`). Carteira do utilizador: `carteira.py`; previsão = FHS sobre os retornos da carteira.
 - Dependência de cauda (`src/models/cauda.py`, QRM cap. 5): `tail_dependence.csv` liga o mapa de risco por quedas

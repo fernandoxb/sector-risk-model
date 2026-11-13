@@ -90,7 +90,8 @@ def render(g: dict) -> None:
                    "económica do setor, não um nível de risco.")
 
     st.subheader("🗂️ Exportar para o Obsidian")
-    vault = Path(st.text_input("Pasta do cofre", os.environ.get("OBSIDIAN_VAULT", str(OBSIDIAN_VAULT))))
+    # a pasta vem só da configuração: uma caixa de texto deixaria um visitante do site escolher onde gravar
+    vault = Path(os.environ.get("OBSIDIAN_VAULT", str(OBSIDIAN_VAULT)))
     hoje = date.today()
     params = {"janela": janela, "confianca_cvar": alpha, "limiar_panico": panic_q,
               "dados_ate": str(rets.index[-1].date())}

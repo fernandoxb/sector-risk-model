@@ -11,7 +11,7 @@ Funções puras (sem Streamlit, sem I/O) — o `main()` no fim é o único ponto
   sensitivity          como muda o top 3 quando cada peso varia ±x% (re-normalizando)
 
 Componentes (maior = mais risco):
-  cauda       ES 97,5% oficial (FHS) de amanhã                       official_risk.csv
+  cauda       ES 97,5% oficial de amanhã                             official_risk.csv
   sistemico   % do CVaR da carteira / peso                           risk_contribution.csv
   stress      perda média nos cenários históricos                    stress_tests.csv
   regime      percentil da vol 63d na própria história               sector_metrics.csv
@@ -19,7 +19,6 @@ Componentes (maior = mais risco):
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -29,7 +28,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (FEATURES, MODEL_RISK_LEVEL, MODEL_RISK_MULT,  # noqa: E402
                              MOMENTUM_DAYS, OFFICIAL_VAR_METHOD, SCORE_IMPACT, SCORE_PROBABILITY,
-                             SCORE_SENSITIVITY, SCORE_WEIGHTS, SECTORS, STRESS_PROXY_WEIGHT)
+                             SCORE_SENSITIVITY, SCORE_WEIGHTS, SECTORS, STRESS_ONLY_LOSSES,
+                             STRESS_PROXY_WEIGHT)
 from src.models.risk_metrics import quintile_score  # noqa: E402  (mesma regra 1–5 do mapa)
 
 COMPONENTS = ("cauda", "sistemico", "stress", "regime", "momento")
@@ -44,9 +44,14 @@ def percentile_norm(s: pd.Series) -> pd.Series:
     return (s.rank(method="average") - 1) / (len(s) - 1)
 
 
-def stress_loss(stress: pd.DataFrame, tickers: list[str], proxy_weight: float = STRESS_PROXY_WEIGHT) -> pd.Series:
-    """Média ponderada da perda por cenário: peso 1, ou `proxy_weight` quando a linha é proxy (β × SPY)."""
+def stress_loss(stress: pd.DataFrame, tickers: list[str], proxy_weight: float = STRESS_PROXY_WEIGHT,
+                only_losses: bool = STRESS_ONLY_LOSSES) -> pd.Series:
+    """Média ponderada da perda por cenário: peso 1, ou `proxy_weight` quando a linha é proxy (β × SPY).
+
+    Com `only_losses`, um cenário com ganho (perda < 0) conta como zero: não compensa as perdas dos outros."""
     s = stress[stress["serie"].isin(tickers)].copy()
+    if only_losses:
+        s["perda"] = s["perda"].clip(lower=0.0)
     s["w"] = np.where(s["proxy"].astype(bool), proxy_weight, 1.0)
     g = s.assign(wl=s["w"] * s["perda"]).groupby("serie")
     return (g["wl"].sum() / g["w"].sum()).reindex(tickers)
@@ -150,21 +155,7 @@ def main() -> Path:
     sc.rename_axis("setor").to_csv(out, float_format="%.6f")
     sens.to_csv(FEATURES / "scorecard_sensitivity.csv", index=False, float_format="%.4f")
 
-    # acrescenta ao JSON do mapa (o Repórter embebe-o no HTML)
-    mj = FEATURES / "risk_map_data.json"
-    payload = json.loads(mj.read_text())
-    payload["scorecard"] = {
-        "metodo": {"pesos": SCORE_WEIGHTS, "impacto": list(SCORE_IMPACT), "probabilidade": list(SCORE_PROBABILITY),
-                   "modelo_oficial": OFFICIAL_VAR_METHOD, "mult_risco_modelo": MODEL_RISK_MULT,
-                   "data_previsao": str(official["data_previsao"].iloc[0])},
-        "setores": {t: {k: (round(float(v), 6) if isinstance(v, (float, np.floating)) else
-                            bool(v) if isinstance(v, (bool, np.bool_)) else
-                            int(v) if isinstance(v, (int, np.integer)) else v)
-                        for k, v in row.items()} for t, row in sc.iterrows()},
-    }
-    mj.write_text(json.dumps(payload, ensure_ascii=False, indent=1))
-
-    print(f"[scorecard] {len(sc)} setores → {out.name} (+ scorecard no risk_map_data.json)")
+    print(f"[scorecard] {len(sc)} setores → {out.name}")
     cols = ["rank", *COMPONENTS, "score", "semaforo", "score_final", "impacto", "probabilidade"]
     print(sc[cols].round(3).to_string())
     print(sens.to_string(index=False))

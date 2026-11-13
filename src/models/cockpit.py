@@ -3,7 +3,7 @@
 Funções puras (sem Streamlit) para poderem ser testadas e reutilizadas:
   cvar             perda média nos piores (1 - alpha) dos dias, como número positivo
   downside_beta    cov(ativo, SPY) / var(SPY) só nos dias de pânico do SPY
-  tail_table       CVaR + Downside Beta + beta de juros para várias séries
+  tail_table       CVaR + Downside Beta + beta para várias séries
   mst              Minimum Spanning Tree sobre d = sqrt(2(1 - r))
   rate_regime      nível e variação do Treasury a 10 anos (FRED) → regime de juros
   rate_stress      CVaR com um choque de juros, pelo β medido de cada setor (só ligações significativas)
@@ -85,16 +85,7 @@ def downside_beta(r: pd.Series, mkt: pd.Series, panic_q: float) -> float:
     return float(np.cov(xm, mm)[0, 1] / var_m) if var_m > 0 else float("nan")
 
 
-def rate_beta(r: pd.Series, d_yield: pd.Series) -> float:
-    """Sensibilidade do retorno diário a +1 p.p. no Treasury 10Y (≈ -duração efetiva)."""
-    both = pd.concat([r, d_yield], axis=1, join="inner").dropna()
-    if len(both) < 30 or both.iloc[:, 1].var() == 0:
-        return float("nan")
-    return float(np.cov(both.iloc[:, 0], both.iloc[:, 1])[0, 1] / both.iloc[:, 1].var())
-
-
-def tail_table(rets: pd.DataFrame, mkt: pd.Series, alpha: float, panic_q: float,
-               d_yield: pd.Series | None = None) -> pd.DataFrame:
+def tail_table(rets: pd.DataFrame, mkt: pd.Series, alpha: float, panic_q: float) -> pd.DataFrame:
     rows = {}
     for t in rets.columns:
         rows[t] = {
@@ -102,8 +93,6 @@ def tail_table(rets: pd.DataFrame, mkt: pd.Series, alpha: float, panic_q: float,
             "downside_beta": downside_beta(rets[t], mkt, panic_q),
             "beta": float(np.cov(rets[t], mkt.reindex(rets.index))[0, 1] / mkt.reindex(rets.index).var()),
         }
-        if d_yield is not None:
-            rows[t]["beta_juros"] = rate_beta(rets[t], d_yield)
     return pd.DataFrame(rows).T
 
 

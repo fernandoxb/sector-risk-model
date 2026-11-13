@@ -14,9 +14,8 @@ Pontuações para o mapa (1-5):
   impacto       = quintil do CVaR entre os 11 setores (5 = cauda mais pesada)
   probabilidade = quintil do percentil de volatilidade atual (5 = regime mais tenso que 80% da história)
 
-Saídas: data/features/sector_metrics.csv e data/features/risk_map_data.json
+Saída: data/features/sector_metrics.csv
 """
-import json
 import sys
 import warnings
 from pathlib import Path
@@ -97,28 +96,10 @@ def main() -> Path:
     m["impacto"] = quintile_score(m["cvar"].astype(float))
     m["probabilidade"] = np.ceil(m["vol_pct"].astype(float) * 5).clip(1, 5).astype(int)
 
-    sec = list(SECTORS)
-    corr = rets[sec].iloc[-WIN_YEAR:].corr().round(3)
-
     FEATURES.mkdir(parents=True, exist_ok=True)
-    m.drop(columns="garch").to_csv(FEATURES / "sector_metrics.csv", float_format="%.6f")
+    out = FEATURES / "sector_metrics.csv"
+    m.drop(columns="garch").to_csv(out, float_format="%.6f")
     asof = str(prices.index.max().date())
-    payload = {
-        "asof": asof,
-        "metodo": {
-            "impacto": f"Quintil do CVaR {CVAR_LEVEL:.1%} a 1 dia ({CVAR_YEARS} anos) entre os 11 setores",
-            "cvar_level": CVAR_LEVEL,
-            "cvar_years": CVAR_YEARS,
-            "convencao": "VaR e CVaR em perda positiva, retornos simples",
-            "probabilidade": "Quintil do percentil da volatilidade de 63 dias face à história do próprio setor",
-        },
-        "sectors": {t: {k: (round(v, 6) if isinstance(v, float) else v) for k, v in r.items()}
-                    | {"impacto": int(m.loc[t, "impacto"]), "probabilidade": int(m.loc[t, "probabilidade"])}
-                    for t, r in rows.items()},
-        "corr": {"tickers": sec, "matrix": corr.values.tolist()},
-    }
-    out = FEATURES / "risk_map_data.json"
-    out.write_text(json.dumps(payload, ensure_ascii=False, indent=1))
     print(f"[modelador] métricas de {len(rows)} setores até {asof}")
     print(m[["vol_1y", "vol_garch", "vol_pct", "var99", "cvar", "max_dd", "beta", "impacto", "probabilidade"]]
           .astype(float).round(3).to_string())

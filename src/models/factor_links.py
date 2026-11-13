@@ -8,8 +8,6 @@ Funções puras (sem Streamlit, sem I/O) — o `main()` no fim é o único ponto
   hac_lags            nº de lags de Newey–West: floor(4 · (T/100)^(2/9))
   regress             OLS r_setor = a + b · Δfator com erros-padrão HAC (Newey–West)
   link_matrix         todas as regressões fator × setor, com sinal, aceitação e intensidade
-  contagion_links     arestas da MST entre setores (`cockpit.mst`) como ligações de contágio
-  links_payload       lista de ligações para o risk_map_data.json
 
 Sinal (a mesma convenção das ligações manuais do mapa):
   "+"  o movimento adverso do fator piora o setor   (adverso · beta < 0)
@@ -17,7 +15,6 @@ Sinal (a mesma convenção das ligações manuais do mapa):
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -28,7 +25,6 @@ import statsmodels.api as sm
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (CLEAN, CVAR_YEARS, FEATURES, LINK_FREQ, LINK_HAC_LAGS,  # noqa: E402
                              LINK_T_MIN, MACRO_FACTORS, SECTORS)
-from src.models import cockpit as ck  # noqa: E402
 
 PLUS, MINUS = "+", "-"
 
@@ -104,24 +100,6 @@ def link_matrix(rets: pd.DataFrame, changes: pd.DataFrame, factors: dict = MACRO
     return m
 
 
-def contagion_links(daily: pd.DataFrame) -> pd.DataFrame:
-    """Arestas da MST (`cockpit.mst`, a mesma do cockpit) com a correlação e intensidade por tercil."""
-    tree, _ = ck.mst(daily)
-    e = pd.DataFrame([{"a": a, "b": b, "corr": d["corr"]} for a, b, d in tree.edges(data=True)])
-    e["w"] = tercile(e["corr"])
-    return e
-
-
-def links_payload(m: pd.DataFrame, cont: pd.DataFrame) -> list[dict]:
-    """Ligações no formato do mapa: {from, to, sign, w, beta, t, r2, tipo} (ids em minúsculas)."""
-    out = [{"from": r.fator, "to": r.setor.lower(), "sign": r.sinal, "w": int(r.w),
-            "beta": round(r.beta, 6), "t": round(r.t, 3), "r2": round(r.r2, 4), "n": int(r.n),
-            "tipo": "medida"} for r in m[m["aceite"]].itertuples()]
-    out += [{"from": r.a.lower(), "to": r.b.lower(), "sign": None, "w": int(r.w), "beta": None, "t": None,
-             "r2": None, "corr": round(r.corr, 4), "tipo": "contágio"} for r in cont.itertuples()]
-    return out
-
-
 # ----------------------------------------------------------------------------- I/O
 def main() -> Path:
     prices = pd.read_parquet(CLEAN / "prices.parquet")[list(SECTORS)]
@@ -133,24 +111,12 @@ def main() -> Path:
     rets, chg = rets.loc[rets.index > start], chg.loc[chg.index > start]
 
     m = link_matrix(rets, chg)
-    daily = prices.loc[prices.index > start].pct_change().dropna()   # MST com retornos diários, como o cockpit
-    cont = contagion_links(daily)
 
     out = FEATURES / "factor_links.csv"
     m.to_csv(out, index=False, float_format="%.6f")
-    mj = FEATURES / "risk_map_data.json"
-    payload = json.loads(mj.read_text())
-    payload["links"] = links_payload(m, cont)
-    payload["links_metodo"] = {
-        "frequencia": "semanal (sexta a sexta)", "inicio": str(rets.index[0].date()), "fim": str(end.date()),
-        "t_min": LINK_T_MIN, "erros_padrao": "HAC Newey–West", "lags": int(m["lags"].iloc[0]),
-        "sinal": "+ = o movimento adverso do fator piora o setor",
-        "fatores": {k: {kk: v for kk, v in f.items()} for k, f in MACRO_FACTORS.items()},
-    }
-    mj.write_text(json.dumps(payload, ensure_ascii=False, indent=1))
 
     print(f"[ligações] {int(m['aceite'].sum())}/{len(m)} ligações fator → setor aceites (|t| ≥ {LINK_T_MIN}), "
-          f"{len(cont)} de contágio; semanas {rets.index[0].date()} → {end.date()} "
+          f"semanas {rets.index[0].date()} → {end.date()} "
           f"(n = {int(m['n'].min())}–{int(m['n'].max())}, {int(m['lags'].iloc[0])} lags HAC)")
     print(m.pivot(index="setor", columns="fator", values="t").round(2).to_string())
     return out

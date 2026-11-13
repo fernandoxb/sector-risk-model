@@ -64,12 +64,6 @@ def hist_forecast(r: pd.Series, levels: tuple[float, ...], window: int) -> pd.Da
     return pd.DataFrame(cols, index=r.index)
 
 
-def hist_var_forecast(r: pd.Series, level: float, window: int) -> pd.Series:
-    """Só o VaR histórico (atalho rápido, sem o ES)."""
-    r = r.dropna()
-    return -r.rolling(window, min_periods=window).quantile(1 - level).shift(1)
-
-
 # ----------------------------------------------------------------------------- GARCH
 def refit_positions(index: pd.DatetimeIndex, window: int, freq: str) -> list[int]:
     """Posições onde o GARCH é re-estimado: a 1.ª com `window` observações anteriores e depois
@@ -187,7 +181,9 @@ def garch_risk(g: pd.DataFrame, pools: dict[int, np.ndarray],
             gp = gpd_tail(z)
             p = 1 - lv
             out.loc[blk.index, f"var_evt_{lv}"] = _to_loss(mu, sig, -gpd_quantile(p, *gp))[:, 0]
-            grelha = -gpd_quantile(p * (np.arange(n_grid) + 0.5) / n_grid, *gp)      # cauda em fatias iguais
+            # shortcut: a média por fatias fica curta com ξ alto (cerca de 5% a ξ = 0,6; nos setores ξ mediano é 0,13);
+            # se aparecerem ξ > 0,6 com frequência, integrar a última fatia com a fórmula fechada.
+            grelha = -gpd_quantile(p * (np.arange(n_grid) + 0.5) / n_grid, *gp)
             out.loc[blk.index, f"es_evt_{lv}"] = _to_loss(mu, sig, grelha).mean(1)
     return out
 

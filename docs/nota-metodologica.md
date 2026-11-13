@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 4.4
+versao: 4.5
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -24,7 +24,7 @@ O VaR diz apenas a partir de que perda começam os piores (1−α) dias. O CVaR 
 $$\text{VaR}_\alpha = -Q_{1-\alpha}(r), \qquad \text{CVaR}_\alpha = \text{ES}_\alpha = -\,\mathbb{E}\left[\,r \mid r \le Q_{1-\alpha}(r)\,\right]$$
 em que $Q_{1-\alpha}$ é o quantil empírico dos retornos simples diários da janela, e as perdas vêm em número positivo.
 
-**Padrão do projeto:** α = 0,975 (o nível do Expected Shortfall no FRTB, Basileia III) e janela de 3 anos, definidos em `config/settings.py` (`CVAR_LEVEL`, `CVAR_YEARS`). O mapa de riscos e o cockpit usam a mesma função (`src/models/cockpit.py::cvar`), por isso dão o mesmo número com os mesmos parâmetros.
+**Padrão do projeto:** α = 0,975 (o nível do Expected Shortfall no FRTB, Basileia III) e janela de 3 anos, definidos em `config/settings.py` (`CVAR_LEVEL`, `CVAR_YEARS`). Todos os separadores do cockpit e os relatórios usam a mesma função (`src/models/cockpit.py::cvar`), por isso dão o mesmo número com os mesmos parâmetros.
 * **Aplicação visual:** o tamanho de cada nó do grafo é proporcional ao CVaR, já ajustado ao regime de juros (ver secção 4).
 
 ### B. Downside Beta (beta condicional de crise)
@@ -169,7 +169,7 @@ A FHS tem mais rejeições do que as 4,4 esperadas por acaso (os testes não sã
 **Validação:** `holm` é comparada com `statsmodels.stats.multitest.multipletests`; no teste dos períodos, a linha "total" é igual à do backtest sem divisão e as exceções dos dois períodos somam as do total.
 
 ### K. Modelo oficial e previsão para o próximo dia útil (Sprint 4a)
-O backtest escolhe o modelo oficial: `OFFICIAL_VAR_METHOD = "fhs"`. A 97,5%, o FHS passa o Kupiec em 11/11 setores, o Christoffersen em 10/11 e o Z2 em 10/11. O histórico só passa a independência em 1/11 e o GARCH-t passa o Kupiec em 1/11 e o Z2 em 0/11. A tabela completa está no comentário de `config/settings.py`.
+O backtest escolhe o modelo oficial. Até 2026-11-12 foi a FHS; desde 2026-11-13 é a EVT condicional (`OFFICIAL_VAR_METHOD = "evt"`, secção 15). Os números desta secção são os da FHS, que serviram a primeira escolha. A 97,5%, o FHS passa o Kupiec em 11/11 setores, o Christoffersen em 10/11 e o Z2 em 10/11. O histórico só passa a independência em 1/11 e o GARCH-t passa o Kupiec em 1/11 e o Z2 em 0/11. A tabela completa está no comentário de `config/settings.py`.
 
 Todos os dias, o pipeline grava em `data/features/official_risk.csv` o **VaR 99%, o VaR 97,5% e o ES 97,5% para o próximo dia útil** (`OFFICIAL_MEASURES`), com todos os dados disponíveis até hoje.
 
@@ -242,21 +242,21 @@ O utilizador escolhe **um** choque instantâneo, no SPY ou num fator macro, e o 
 ## 🎯 8. Scorecard de risco por setor, 0–100 (Sprint 4b)
 
 Código: `src/models/scorecard.py` · parâmetros: `config/settings.py` (`SCORE_*`, `STRESS_PROXY_WEIGHT`, `MOMENTUM_DAYS`, `MODEL_RISK_*`) · testes: `tests/test_scorecard.py`.
-Saídas: `data/features/scorecard.csv`, `scorecard_sensitivity.csv` e a chave `scorecard` em `risk_map_data.json`.
+Saídas: `data/features/scorecard.csv`, `scorecard_sensitivity.csv`.
 
 ### A. Componentes (maior = mais risco)
 | Componente | Valor em bruto | Fonte | Peso |
 |---|---|---|---|
-| cauda | ES 97,5% oficial (FHS) para o próximo dia útil | `official_risk.csv` | 0,30 |
+| cauda | ES 97,5% do modelo oficial (secção 15) para o próximo dia útil | `official_risk.csv` | 0,30 |
 | sistemico | % do CVaR da carteira ÷ peso (>1 = contribui mais do que pesa) | `risk_contribution.csv` | 0,20 |
-| stress | perda média nos 3 cenários históricos | `stress_tests.csv` | 0,20 |
+| stress | perda média nos 3 cenários históricos, só perdas | `stress_tests.csv` | 0,20 |
 | regime | percentil da vol 63d face à história do próprio setor | `sector_metrics.csv` | 0,15 |
 | momento | exceções ao VaR 97,5% oficial nos últimos 60 dias | `var_backtest_series.parquet` | 0,15 |
 
 **Normalização:** cada componente vai para $[0,1]$ pelo percentil entre os 11 setores, $c = (\text{posição} - 1)/(n-1)$, com empates na posição média. Assim, o setor com o valor mais baixo vale 0 e o mais alto vale 1. O *regime* já é um percentil em $[0,1]$ e não é re-normalizado.
 
 **Stress com proxy:** nos cenários em que o setor usa o proxy β × SPY (XLRE e XLC em 2008), a perda pesa `STRESS_PROXY_WEIGHT` = 0,5:
-$$\text{stress}_i = \frac{\sum_s \omega_s L_{i,s}}{\sum_s \omega_s},\qquad \omega_s = 0{,}5 \text{ se proxy, } 1 \text{ caso contrário}$$
+$$\text{stress}_i = \frac{\sum_s \omega_s \max(0, L_{i,s})}{\sum_s \omega_s},\qquad \omega_s = 0{,}5 \text{ se proxy, } 1 \text{ caso contrário}$$
 
 ### B. Score, risco de modelo e P × I
 $$\text{score}_i = 100 \sum_k w_k\, c_{i,k},\qquad \sum_k w_k = 1$$
@@ -274,14 +274,14 @@ $$\text{score}_i = 100 \sum_k w_k\, c_{i,k},\qquad \sum_k w_k = 1$$
 * **Topo:** o XLK é o 1.º com folga (score 91). Tem o maior ES previsto (9,5%), a maior contribuição para o CVaR por unidade de peso (1,42×) e a volatilidade no percentil 88%. Continua em 1.º em todas as variações de ±50% em qualquer peso.
 * **Logo abaixo:** XLE, XLY, XLI e XLF ficam num grupo apertado (score final entre 67 e 72). Por isso o 2.º e o 3.º lugares mudam com os pesos: em 5 das 10 variações o top 3 muda de composição.
 * **XLE:** é o único setor com o semáforo amarelo do modelo oficial. Sobe de 4.º para 2.º só por causa do ajuste de risco de modelo.
-* **Limitação do stress:** a *perda média* deixa os ganhos compensar as perdas. O XLE subiu 44,5% em 2022, por isso o seu componente de stress é o mais baixo (0), apesar de ter perdido 48% e 56% nos outros dois cenários. Uma alternativa a considerar é usar só as perdas, ou o pior cenário.
+* **Stress só com perdas (2026-11-13, `STRESS_ONLY_LOSSES`):** antes, a *perda média* deixava os ganhos compensar as perdas. O XLE subiu 44,5% em 2022 e ficava com o componente de stress mais baixo, apesar de ter perdido 48% e 56% nos outros dois cenários. Agora um ganho num cenário conta como perda zero: $\max(0, L_{i,s})$.
 
 ---
 
 ## 🔗 9. Ligações medidas entre fatores macro e setores (Sprint 4c)
 
 Código: `src/models/factor_links.py` e `src/collect/download_factors.py` · parâmetros: `MACRO_FACTORS`, `LINK_*` · testes: `tests/test_factor_links.py`.
-Saídas: `data/features/factor_links.csv` (as 66 regressões) e a chave `links` em `risk_map_data.json`.
+Saídas: `data/features/factor_links.csv` (as 66 regressões).
 
 ### A. Fatores
 | Nó no mapa | Série | Fonte | Variação semanal | Direção adversa |
@@ -333,12 +333,9 @@ São aceites **33 das 66** ligações. Por fator:
 * As regressões são **univariadas**: o VIX e os spreads estão muito correlacionados entre si, e cada beta capta também o efeito dos outros fatores.
 * O CSV público do FRED só tem **os últimos 3 anos** do spread high yield (licença do ICE). Chega para `CVAR_YEARS` = 3, mas não para janelas mais longas.
 
-### F. No mapa de riscos (Sprint 4d)
-* **Nós de setor:** P × I vem do scorecard (secção 8). O painel mostra o score final, o semáforo, a flag de risco de modelo, o ES 97,5% oficial e os 5 componentes em barras.
-* **Ligações medidas:** são desenhadas automaticamente entre os nós presentes no mapa: as ligações fator → setor a tracejado fino e as de contágio (MST) a pontilhado, sem seta. Ao clicar numa, o painel mostra β, t (HAC), R² e n. Podem ser escondidas com **Ligações medidas**. As ligações manuais não mudam e continuam guardadas no navegador.
-* **Exposição de um nó macro:** o número de setores que o fator agrava (+) e que atenua (−), e a soma ponderada dos scores a jusante, $\sum_{\text{ligações }+} (w/3)\cdot \text{score\_final}_{setor}$. Só contam as ligações "+", porque são as que transmitem o choque adverso.
-* **Cadeia de impacto:** percorre as ligações manuais e as medidas fator → setor, a jusante do nó selecionado. Também destaca as origens diretas desse nó e os seus vizinhos de contágio. As arestas da MST não entram na cadeia: não têm direção e, como ligam todos os setores, acenderiam o mapa inteiro.
-* `index.html#sel=xlk` abre o mapa com um risco já selecionado.
+### F. No cockpit
+* As ligações medidas aparecem no separador **Fatores macro** e na ficha de cada setor do **Mapa de risco** (secção 11).
+* O mapa HTML autónomo do Sprint 4d, que as desenhava com ligações manuais e cadeia de impacto, foi apagado em 2026-11-13: o mapa de risco passou a ser só o do cockpit.
 
 ---
 
@@ -355,7 +352,7 @@ O pipeline corre sozinho nos dias úteis às 22:30 (hora de Lisboa, depois do fe
   * **Fechos antecipados (13:00 em NY):** 3 de julho, o dia a seguir ao Thanksgiving e a véspera de Natal, quando são dias de sessão. Nesses dias a sessão conta como fechada às 14:00 de NY. A regra reproduz os fechos antecipados de 2023 a 2025 publicados pela bolsa, mas não se consegue validar com preços diários, e a do 3 de julho teve exceções históricas.
   * **No cockpit:** a barra lateral mostra a última sessão fechada, a próxima sessão, os 3 próximos feriados e o próximo fecho antecipado, e avisa se os resultados do pipeline estiverem atrás da última sessão.
   * **Onde se usa:** na sessão esperada (cache e alerta de dados atrasados), na data da previsão oficial (secção 6.K) e no dia do relatório semanal e da publicação.
-* **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Repórter → Sentinela → Relatório → Snapshot → Publicador.
+* **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Cauda → Sentinela → Relatório → Snapshot → Publicador.
 * **Publicador (`src/report/publicar.py`):** na última sessão de cada semana (normalmente sexta), depois do run, faz commit e push só de `app/cockpit/snapshot/`, para o cockpit do Streamlit Cloud acompanhar os dados. Só atua no ramo `main` e só se o snapshot mudou. Usa `git commit --only`, pelo que nunca leva outras alterações, mesmo que já estejam no índice. Se o push falhar, o commit fica local, o erro vai para o log e chega uma notificação; o resto do run não é afetado.
 * **Snapshot (Sprint 6):** copia para `app/cockpit/snapshot/` (versionado, cerca de 2,7 MB) os preços dos ETFs e das empresas do mapa de risco (5 anos, desde a secção 13), o Treasury 10Y e os resultados que o cockpit lê. Assim o cockpit corre sem rede, por exemplo no Streamlit Community Cloud. As séries do backtest são gravadas em float32, o que dá um erro relativo de cerca de $10^{-7}$, sem efeito nas exceções mostradas.
 * **Coletor:** 2 novas tentativas, 5 minutos entre elas, e cache pela **última sessão de Nova Iorque já fechada** (17:00 hora de NY, 1 h depois do fecho, `src/collect/sessao.py`). Dois runs que esperam a mesma sessão descarregam os dados uma só vez, e a cache só é usada se os preços já chegarem a essa sessão. Se o download correr mas os preços vierem atrasados, o Coletor repete-o até 3 vezes, com 10 minutos entre elas; se continuarem atrasados, o flow segue e o Sentinela alerta. A chave não pode ser a data do calendário: um run de madrugada em Lisboa ainda só tem a sessão da véspera e bloquearia o run das 22:30 desse dia (aconteceu a 2026-11-11).
@@ -367,8 +364,8 @@ Em cada run grava um estado compacto do dia em `data/state/estado_<data>.json`: 
 
 | Alerta | Regra | Severidade |
 | --- | --- | --- |
-| Semáforo | muda o semáforo de Basileia (VaR 99% FHS, 250 dias) | piora para vermelho: alta; piora para amarelo: média; melhoria: baixa |
-| Exceção | perda do dia > VaR 97,5% FHS previsto com dados até t−1 | média; alta se também > ES 97,5% |
+| Semáforo | muda o semáforo de Basileia (VaR 99% do modelo oficial, 250 dias) | piora para vermelho: alta; piora para amarelo: média; melhoria: baixa |
+| Exceção | perda do dia > VaR 97,5% oficial previsto com dados até t−1 | média; alta se também > ES 97,5% |
 | Nível P × I | muda o nível de P × I: baixo ≤ 4, moderado ≤ 9, elevado ≤ 16, crítico ≤ 25 | sobe para crítico: alta; outra subida: média; descida: baixa |
 | Ligação medida | uma ligação fator → setor passa a ser aceite (\|t\| ≥ 2) ou deixa de o ser | entra: média; sai: baixa |
 | Regime de juros | muda o regime do Treasury 10Y (variação em 63 dias úteis) | para subida: alta; outra mudança: média |
@@ -461,7 +458,7 @@ Separador **Minha carteira** do cockpit; cálculo em `src/models/carteira.py` (f
 Código: `src/models/backtest_empresas.py` · testes: `tests/test_backtest_empresas.py` · saídas: `company_backtest.csv` e `company_risk.csv`.
 
 ### A. O mesmo backtest, empresa a empresa
-* **Sem lógica nova:** corre-se `backtest.run` (secção 6) sobre as empresas do mapa: histórico, GJR-GARCH(1,1)-t e FHS, com previsões feitas só com dados até à véspera e os mesmos testes.
+* **Sem lógica nova:** corre-se `backtest.run` (secção 6) sobre as empresas do mapa: histórico, GJR-GARCH(1,1)-t, FHS e, desde a Fase B, EVT (secção 15), com previsões feitas só com dados até à véspera e os mesmos testes.
 * **Dados:** preços desde `COMPANY_START` = 2015, validados pelo Inspetor. Com a janela de 756 dias, as previsões começam em 2018 (mediana de 2 226 dias por empresa) e apanham a COVID-19 e 2022, mas não 2008.
 * **Sem modelo:** empresas com menos de `COMPANY_MIN_DAYS` = 816 dias de preços ficam só com o risco histórico (hoje, a GEV).
 
@@ -488,7 +485,7 @@ $$\text{ES}^{aj} = k \cdot \text{ES}, \qquad k = \min(1 - Z_2,\ \texttt{ES\_ADJ\
 **Cadência.** O backtest completo das empresas demora cerca de 3 minutos e 20 segundos, por isso só corre na última sessão de cada semana, ou quando as empresas mudam (`COMPANY_FULL_WEEKLY`). Nos outros dias refaz-se apenas a previsão para a sessão seguinte, com uma ou duas estimações do GARCH por empresa (6 segundos no total). O semáforo e as marcas ficam então com até uma semana de atraso.
 
 ### C. Previsão da carteira do utilizador
-* **Método:** aplica-se o modelo oficial aos retornos da própria carteira com os pesos atuais, $r_{p,t} = \sum_i w_i r_{i,t}$ em cada dia passado (FHS de carteira com pesos constantes). O GARCH é estimado sobre $r_p$ com a mesma janela e as mesmas regras (`backtest.next_day_forecast`).
+* **Método:** aplica-se o modelo oficial aos retornos da própria carteira com os pesos atuais, $r_{p,t} = \sum_i w_i r_{i,t}$ em cada dia passado (modelo oficial sobre a carteira com pesos constantes). O GARCH é estimado sobre $r_p$ com a mesma janela e as mesmas regras (`backtest.next_day_forecast`).
 * **Porquê assim:** o VaR e o ES não são aditivos; somar as previsões das posições ignoraria a diversificação. Modelar $r_p$ diretamente capta-a sem estimar correlações dinâmicas.
 * **Dados:** 5 anos de preços (`USER_FORECAST_YEARS`), nos dias em que todas as posições têm preço. Sem 756 dias + 1 mês em comum, não há previsão.
 * **Backtest da própria carteira:** o cockpit corre `backtest.run` sobre $r_p$ e mostra as exceções, os testes de Kupiec, Christoffersen e Z2, o semáforo e o gráfico. Se o Z2 rejeitar com $Z_2 < 0$, aplica-se a mesma correção $k = 1 - Z_2$ ao ES da carteira.

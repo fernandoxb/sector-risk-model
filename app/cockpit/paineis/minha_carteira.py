@@ -41,7 +41,11 @@ def render(g: dict) -> None:
         return f"{t} · {NOME_AT.get(t, t)}"
 
     if "cart_df" not in st.session_state:           # 1.ª vez: carteira do link (?carteira=AAPL:30,...) ou exemplo
-        ini = ca.parse_carteira(st.query_params.get("carteira"), set(UNIVERSO))
+        link = st.query_params.get("carteira") or ""
+        ini = ca.parse_carteira(link, set(UNIVERSO))
+        if ini and len([p for p in link.replace(";", ",").split(",") if p.strip()]) > len(ini):
+            st.warning("Algumas posições do link foram ignoradas. O formato é TICKER:peso, separado por vírgulas, "
+                       "com ponto nas décimas (AAPL:12.5).")
         if not ini:
             ini = {hold[hold["setor"] == s_].iloc[0]["ticker"]: 100 / USER_PORTFOLIO_DEFAULT
                    for s_ in setores[:USER_PORTFOLIO_DEFAULT]}

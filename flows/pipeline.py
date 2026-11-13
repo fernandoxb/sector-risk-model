@@ -1,6 +1,6 @@
 """Flow Prefect do pipeline diário: uma task por bot.
 
-Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Cauda → Repórter → Sentinela → Relatório →
+Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Cauda → Sentinela → Relatório →
 Snapshot → Publicador (às sextas: commit e push só de app/cockpit/snapshot/)
 - Coletor: retries=COLLECT_RETRIES (rede); se os preços vierem atrasados, repete o download até
   COLLECT_STALE_TRIES vezes. Cache pela última sessão de NY fechada, e só com os dados já completos.
@@ -33,7 +33,7 @@ from src.clean import validate  # noqa: E402
 from src.collect import download_factors, download_prices, empresas  # noqa: E402
 from src.collect.sessao import dados_completos, ultima_sessao, ultimo_fecho  # noqa: E402
 from src.models import backtest, backtest_empresas, cauda, factor_links, portfolio, risk_metrics, scorecard  # noqa: E402
-from src.report import alerts, build_map, publicar, snapshot, weekly  # noqa: E402
+from src.report import alerts, publicar, snapshot, weekly  # noqa: E402
 
 
 def _ultimo_fecho_raw() -> date:
@@ -114,15 +114,10 @@ def dependencia_cauda():
     cauda.main()
 
 
-@task(name="Repórter")
-def reporter():
-    build_map.main()
-
-
 @task(name="Snapshot")
-def snapshot_cockpit(offline: bool):
+def snapshot_cockpit(offline: bool, fichas: bool = False):
     """Atualiza app/cockpit/snapshot (o commit e o push ficam à escolha do utilizador)."""
-    snapshot.main(offline=offline)
+    snapshot.main(offline=offline, fichas=fichas)
 
 
 @task(name="Publicador")
@@ -165,10 +160,9 @@ def pipeline(offline: bool = False, semanal: bool = False, notificar: bool = Tru
     score()
     ligacoes()
     dependencia_cauda()
-    reporter()
     al = sentinela(notificar)
     rel = relatorio(semanal)
-    snapshot_cockpit(offline)              # depois do Sentinela: leva os alertas e o histórico do score de hoje
+    snapshot_cockpit(offline, publicar_snapshot)              # depois do Sentinela: leva os alertas e o histórico do score de hoje
     if not offline:
         publicador(publicar_snapshot, notificar)
     log.info(f"Fim: {len(al)} alertas" + (f"; relatório semanal em {rel}" if rel else ""))

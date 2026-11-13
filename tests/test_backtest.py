@@ -117,15 +117,6 @@ def test_excecao_e_perda_maior_que_var():
     assert h.tolist() == [1, 0, 0]          # perda igual ao VaR não é exceção; NaN fica de fora
 
 
-# ----------------------------------------------------------------------------- VaR histórico
-def test_var_historico_igual_ao_do_modelador(rets):
-    """O VaR previsto para o dia t é o hist_var de risk_metrics sobre t-window..t-1."""
-    v = bt.hist_var_forecast(rets, 0.99, WINDOW)
-    for t in [WINDOW, WINDOW + 17, len(rets) - 1]:
-        assert v.iloc[t] == pytest.approx(hist_var(rets.iloc[t - WINDOW:t], 0.99), rel=1e-12)
-    assert v.iloc[:WINDOW].isna().all()
-
-
 # ----------------------------------------------------------------------------- ES histórico
 def test_es_historico_usa_o_cvar_do_cockpit(rets):
     """ES previsto para o dia t = cockpit.cvar (fonte única) sobre t-window..t-1."""

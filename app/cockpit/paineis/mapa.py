@@ -3,6 +3,8 @@
 As ligações do mapa podem ser por quedas conjuntas (dependência de cauda, src/models/cauda.py) ou por correlação.
 Os dados do run chegam em `g` (as variáveis do app.py).
 """
+import html
+
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -452,8 +454,8 @@ def render(g: dict) -> None:
                 if not noticias:
                     st.caption("Sem notícias disponíveis.")
                 for n_ in noticias:
-                    st.markdown(f"[{n_['titulo']}]({n_['link']})  \n"
-                                f"<span style='color:{MUTED};font-size:0.85em'>{n_.get('fonte') or ''} · "
+                    st.markdown(f"[{html.escape(str(n_['titulo']))}]({n_['link']})  \n"
+                                f"<span style='color:{MUTED};font-size:0.85em'>{html.escape(str(n_.get('fonte') or ''))} · "
                                 f"{fm.data_curta(n_.get('data'))}</span>", unsafe_allow_html=True)
                 st.caption(f"Fonte: Yahoo Finance ({origem}). Títulos em inglês; as horas são UTC.")
     else:

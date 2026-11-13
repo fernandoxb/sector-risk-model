@@ -46,10 +46,8 @@ def render(g: dict) -> None:
                              "Christoffersen": "As exceções aparecem espalhadas (e não em grupos)?",
                              "Condicional": "Kupiec e Christoffersen ao mesmo tempo.",
                              "Z2 (ES)": "As perdas nos dias de exceção têm o tamanho que o ES previa?"}.items()})
-        st.caption("Só os dois métodos que juntam a volatilidade do GARCH à cauda dos resíduos passados (FHS e EVT) passam a "
-                   f"frequência, a independência e o teste do ES. O modelo oficial é o **{METODOS[OFFICIAL_VAR_METHOD]}**, "
-                   "escolhido pela validação abaixo. O histórico reage tarde às crises (exceções em grupos); o GARCH "
-                   "com t-Student tem a cauda demasiado fina.")
+        st.caption(f"O modelo oficial é o **{METODOS[OFFICIAL_VAR_METHOD]}**, escolhido pela validação abaixo. O histórico "
+                   "reage tarde às crises (exceções em grupos); o GARCH com t-Student tem a cauda demasiado fina.")
 
         if bt_split is not None:
             with st.expander(f"A escolha resiste a dados que não entraram nela? Validação antes e depois de {BT_SPLIT[:4]}"):

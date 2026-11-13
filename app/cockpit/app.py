@@ -190,11 +190,10 @@ except Exception as e:  # noqa: BLE001
 rets, mkt = rets_all[setores], rets_all[MARKET]
 grafo, corr = ck.mst(rets)
 
-regime, d_yield = None, None
+regime = None
 try:
     y = juros((rets.index[0] - pd.Timedelta(days=200)).date().isoformat())
     regime = ck.rate_regime(y, RATE_LOOKBACK, RATE_THRESHOLD_PP)
-    d_yield = y.diff().reindex(rets.index)
 except Exception:  # noqa: BLE001
     pass
 

@@ -6,7 +6,6 @@ clica primeiro no separador (st.tabs) cujo nome contém esse texto. A variável 
 JavaScript na página antes da captura (ex.: abrir um setor no mapa).
 Ex.:  .venv/bin/python -m scripts.capturas http://localhost:8501 docs/img/cockpit-backtest.png \\
           "Backtesting do VaR" 1440 1100 "Backtesting do VaR"
-      .venv/bin/python -m scripts.capturas "file://$PWD/app/risk-map/index.html#sel=xlk" docs/img/mapa-xlk.png "Score"
 """
 import asyncio
 import base64

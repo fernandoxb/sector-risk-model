@@ -11,7 +11,7 @@ O backtest completo corre na última sessão de cada semana; nos outros dias só
 Empresas com menos de COMPANY_MIN_DAYS de histórico ficam sem modelo (continuam com o risco descritivo).
 
 Funções puras: com_historico, resumo_metodos, validado, es_multiplier, flags, with_flags, daily_forecast,
-needs_full, portfolio_forecast, portfolio_backtest.
+needs_full, portfolio_backtest.
 """
 import sys
 import time
@@ -94,18 +94,6 @@ def needs_full(asof, tickers: list[str], anterior: pd.DataFrame | None, weekly: 
     if OFFICIAL_VAR_METHOD not in set(anterior["metodo"]):     # o modelo oficial mudou: o backtest guardado não o tem
         return True
     return ultima_sessao_da_semana(pd.Timestamp(asof).date())
-
-
-def portfolio_forecast(rets: pd.DataFrame, w: pd.Series, window: int = BT_WINDOW) -> dict | None:
-    """VaR e ES oficiais (FHS) da carteira para a próxima sessão.
-
-    Aplica o modelo aos retornos da carteira com os pesos atuais (r_p = Σ w_i r_i em cada dia passado), nos dias
-    em que todas as posições têm preço. Devolve None se não houver histórico para a janela + 1 mês.
-    """
-    r = (rets[list(w.index)].dropna() @ w).rename("carteira")
-    if len(r) < window + 25:
-        return None
-    return bt.next_day_forecast(r.tail(window + 45), window=window) | {"dias": len(r)}
 
 
 def portfolio_backtest(rets: pd.DataFrame, w: pd.Series, window: int = BT_WINDOW) -> dict | None:

@@ -12,13 +12,12 @@
 > 2019–2026 and on 109 single stocks, so it is the official model.
 > The project also covers portfolio risk (Ledoit-Wolf covariance, Euler risk contributions, 2008/2020/2022 stress tests),
 > a 0–100 risk scorecard, macro-factor → sector links estimated with HAC regressions, and an automated daily pipeline
-> (Prefect + launchd) with alerts and weekly reports. There are 163 tests and CI on GitHub Actions.
+> (Prefect + launchd) with alerts and weekly reports. Tested with pytest, with CI on GitHub Actions.
 
 Pipeline em Python que mede o risco de mercado dos 11 ETFs setoriais SPDR (XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLU,
-XLB, XLRE, XLC) face ao SPY, setor a setor e em carteira. Corre sozinho todos os dias úteis e publica os resultados em três
+XLB, XLRE, XLC) face ao SPY, setor a setor e em carteira. Corre sozinho todos os dias úteis e publica os resultados em dois
 sítios:
-* um **cockpit** Streamlit;
-* um **mapa de riscos** interativo;
+* um **cockpit** Streamlit, com o mapa de risco interativo;
 * notas no **Obsidian**, com alertas e um relatório semanal.
 
 ## Resultado principal: só os métodos com GARCH e cauda dos dados passam o backtest
@@ -73,10 +72,6 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 | Fatores macro | Regressões semanais setor ~ fator com erros HAC de Newey–West, para juros, inflação, spreads high yield, VIX, petróleo e dólar; contágio pela MST | `src/models/factor_links.py` |
 | Bots | Prefect (uma task por bot), launchd nos dias úteis às 22:30, alertas do Sentinela e relatório semanal no Obsidian | `flows/`, `src/report/` |
 
-| Mapa de riscos (setor selecionado) | Mapa de riscos (cadeia de impacto dos juros) |
-|---|---|
-| ![Mapa: XLK](docs/img/mapa-xlk.png) | ![Mapa: juros](docs/img/mapa-juros.png) |
-
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
 * **Mapa de risco:** a rede de contágio entre setores, ligados pelas quedas conjuntas (dependência de cauda) e não só pela correlação. Clicar num setor abre a ficha do setor (score, fatores macro, crises, risco previsto desde 2008) e as suas 10 maiores empresas; clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
@@ -123,7 +118,6 @@ flowchart LR
     I -. falha .-> X[flow pára]
     I --> M[Modelador · Backtester<br/>CVaR, GARCH, FHS<br/>Kupiec, Christoffersen, Z2]
     M --> P[Carteira · Scorecard · Ligações<br/>Ledoit-Wolf, Euler, stress<br/>score 0–100, OLS + HAC]
-    P --> MAP[Mapa de riscos]
     P --> CK[Cockpit Streamlit<br/>+ snapshot p/ Cloud]
     P --> SE[Sentinela] --> OB[Obsidian<br/>alertas · relatório semanal]
     SE -. severidade alta .-> N[Notificação macOS]
@@ -138,8 +132,7 @@ git clone https://github.com/fernandoxb/sector-risk-model && cd sector-risk-mode
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_pipeline.py            # coleta → validação → modelos → mapa (precisa de rede)
 .venv/bin/streamlit run app/cockpit/app.py  # cockpit em http://localhost:8501
-open app/risk-map/index.html                # mapa de riscos (sem servidor)
-.venv/bin/python -m pytest                  # 163 testes, sem rede
+.venv/bin/python -m pytest                  # sem rede
 ```
 * **Chave do FRED:** é opcional. Se definires `FRED_API_KEY` num `.env`, os dados vêm pela API; caso contrário usa-se o CSV público.
 * **Sem rede:** `run_pipeline.py --offline` reutiliza os dados de `data/raw/`.
@@ -197,10 +190,9 @@ src/clean/              Inspetor (pandera) + relatório de qualidade
 src/models/             métricas, backtest, carteira, scorecard, ligações macro
 src/report/             mapa, snapshot, Sentinela, relatório semanal
 flows/                  flow Prefect e agendamento launchd
-app/risk-map/           mapa de riscos (HTML autónomo)
 app/cockpit/            cockpit Streamlit: app.py (dados, barra lateral), paineis/ (um ficheiro por separador), snapshot/
 scripts/                capturas de ecrã e PDF da nota metodológica (Chrome headless)
-tests/                  163 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
+tests/                  testes (pytest), sem rede (inclui o cockpit em modo snapshot)
 docs/                   nota metodológica (.md e .pdf) e capturas
 ```
 

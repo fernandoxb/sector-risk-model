@@ -69,6 +69,7 @@ OFFICIAL_MEASURES = {"var99": ("var", 0.99), "var975": ("var", 0.975), "es975": 
 SCORE_WEIGHTS = {"cauda": 0.30, "sistemico": 0.20, "stress": 0.20, "regime": 0.15, "momento": 0.15}
 SCORE_IMPACT = ("cauda", "sistemico", "stress")      # → impacto 1–5 no mapa (P × I)
 SCORE_PROBABILITY = ("regime", "momento")            # → probabilidade 1–5 no mapa
+STRESS_ONLY_LOSSES = True      # um ganho num cenário (XLE em 2022: +44,5%) conta como perda zero, não compensa as outras
 STRESS_PROXY_WEIGHT = 0.5      # cenários com proxy β × SPY pesam metade na perda média de stress
 MOMENTUM_DAYS = 60             # janela de exceções ao VaR 97,5% oficial
 # Risco de modelo: semáforo de Basileia (definido a 99%) do método oficial → multiplicador do score.

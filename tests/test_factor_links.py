@@ -104,15 +104,3 @@ def test_semana_usa_o_ultimo_valor():
     w = fl.weekly_levels(d.to_frame("x"))
     assert w["x"].tolist() == [2.0, 4.0]          # sexta 06 e sexta 13
 
-
-# ----------------------------------------------------------------------------- contágio e formato
-def test_contagio_e_payload(dados):
-    r, f = dados
-    daily = pd.DataFrame(np.random.default_rng(2).normal(size=(300, 4)), columns=["XLA", "XLB", "XLC", "XLD"])
-    cont = fl.contagion_links(daily)
-    assert len(cont) == 3                         # MST com N nós tem N-1 arestas
-    links = fl.links_payload(fl.link_matrix(r, f, FAT, t_min=2), cont)
-    medidas = [x for x in links if x["tipo"] == "medida"]
-    assert {x["to"] for x in medidas} == {"pos", "neg"}
-    assert all(set(x) >= {"from", "to", "sign", "w", "beta", "t", "r2", "tipo"} for x in links)
-    assert sum(x["tipo"] == "contágio" for x in links) == 3

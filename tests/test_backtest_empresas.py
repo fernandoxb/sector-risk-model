@@ -28,25 +28,6 @@ def test_resumo_e_validado():
     assert v.to_dict() == {"A": True, "B": False}                 # B falha o Z2
 
 
-def test_previsao_da_carteira_e_o_modelo_sobre_os_retornos_da_carteira():
-    rng = np.random.default_rng(5)
-    n = W + 80
-    idx = pd.bdate_range("2023-01-02", periods=n)
-    rets = pd.DataFrame(rng.standard_t(6, (n, 2)) * 0.012, columns=["A", "B"], index=idx)
-    w = pd.Series({"A": 0.7, "B": 0.3})
-    prev = be.portfolio_forecast(rets, w, window=W)
-    direto = bt.next_day_forecast((rets @ w).tail(W + 45), window=W)
-    assert prev["es975"] == pytest.approx(direto["es975"]) and prev["var99"] == pytest.approx(direto["var99"])
-    assert prev["es975"] > prev["var975"] > 0 and prev["var99"] > prev["var975"] and prev["dias"] == n
-    # diversificação: o ES da carteira é menor do que a soma ponderada dos ES isolados
-    isolados = sum(w[c] * bt.next_day_forecast(rets[c].tail(W + 45), window=W)["es975"] for c in w.index)
-    assert prev["es975"] < isolados
-    # uma posição com pouco histórico tira dias comuns: sem janela, não há previsão
-    curta = rets.copy()
-    curta.loc[curta.index[:200], "B"] = np.nan
-    assert be.portfolio_forecast(curta, w, window=W) is None
-
-
 # ----------------------------------------------------------------------------- correção do ES
 def test_multiplicador_poe_o_z2_a_zero():
     rng = np.random.default_rng(9)
@@ -112,5 +93,4 @@ def test_backtest_da_carteira():
     assert int((-s["ret"] > s["var"]).sum()) == int(t.loc[0.975, "excecoes"])    # a série bate com a tabela
     pv = b["previsao"]
     assert pv["es975_aj"] == pytest.approx(pv["es975"] * pv["mult_es"]) and pv["mult_es"] >= 1
-    assert pv["es975"] == pytest.approx(be.portfolio_forecast(rets, w)["es975"], rel=0.01)
     assert be.portfolio_backtest(rets.tail(780), w) is None                     # sem 3 meses de previsões

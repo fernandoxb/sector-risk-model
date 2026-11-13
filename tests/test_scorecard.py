@@ -99,6 +99,19 @@ def test_proxy_pesa_metade():
     assert sc.stress_loss(stress, ["A"], 1.0)["A"] == pytest.approx(0.70 / 3)
 
 
+def test_stress_only_losses_truncates_gains():
+    """Um ganho num cenário (XLE em 2022) conta como zero: não anula as perdas dos outros cenários."""
+    stress = pd.DataFrame({
+        "serie": ["A"] * 3 + ["B"] * 3 + ["C"] * 3,
+        "perda": [0.50, 0.40, -0.445, 0.50, 0.40, 0.0, 0.50, 0.40, 0.10],
+        "proxy": False,
+    })
+    out = sc.stress_loss(stress, ["A", "B", "C"], 0.5, only_losses=True)
+    assert out["A"] == pytest.approx(out["B"]) == pytest.approx(0.30)
+    assert out["C"] > out["A"]                                              # mais perda, mais stress
+    assert sc.stress_loss(stress, ["A"], 0.5, only_losses=False)["A"] == pytest.approx(0.455 / 3)
+
+
 def test_momento_conta_so_os_ultimos_dias():
     d = pd.bdate_range("2026-01-01", periods=80)
     ret = np.zeros(80)

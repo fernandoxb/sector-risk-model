@@ -7,14 +7,9 @@ pyarrow
 pandera[pandas]
 arch
 statsmodels
-skfolio
-riskfolio-lib
-quantstats
-matplotlib
 plotly
 streamlit
 prefect
-jupyter
 networkx
 certifi
 pytest
