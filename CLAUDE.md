@@ -43,6 +43,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   conjuntas (padrão) ou correlação.
 - Modelos de fatores (Fase C, QRM 3.4): `factor_links.fit_multivariate_ridge` junta colunas `*_multi` ao `factor_links.csv`
   (as antigas não mudam; Sentinela e choques usam as antigas); `decomposicao.py` → `company_factors.csv`.
+- HRP (v5.0): `carteira.calcular_pesos_hrp` (distância = 1 − quedas conjuntas, risco de cada ramo = CVaR); expander no
+  separador Minha carteira.
 - `scripts/` — capturas de ecrã (`capturas.py`) e PDF da nota (`nota_pdf.py`), via Chrome headless.
 - Funções de cálculo são **puras** (sem Streamlit, sem I/O) para poderem ser testadas.
 - `data/`, `reference/`, `.venv/` não vão para o Git.

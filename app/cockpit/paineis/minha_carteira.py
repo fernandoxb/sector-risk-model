@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from config.settings import (BT_SIGNIF, BT_TL_DAYS, CVAR_LEVEL, MARKET, PANIC_Q, SECTORS, SHOCK_MARKET, USER_FORECAST_YEARS,
                              USER_PORTFOLIO_DEFAULT, USER_PORTFOLIO_MAX)
+from config.settings import HRP_MIN_DAYS
 from src.models import carteira as ca, cauda as cd, cockpit as ck
 from src.models.portfolio import shock_returns
 from src.report import formato as fm
@@ -272,6 +273,39 @@ def render(g: dict) -> None:
                         if any(f"[[{s_}]]" in a["texto"] for s_ in e_u.index)]
                 for a in al_u:
                     st.markdown(f"🔔 {a['texto'].replace('[[', '').replace(']]', '')}")
+
+            if len(w_u) >= 2:
+                with st.expander("🛡️ Sugestão defensiva: carteira HRP (dependência de cauda)"):
+                    w_h = ca.calcular_pesos_hrp(r_u[list(w_u.index)])
+                    if w_h is None:
+                        st.caption(f"Sem dados para calcular: são precisos {HRP_MIN_DAYS} dias em que todas as posições "
+                                   "tenham preço. Escolhe uma janela maior ou tira a posição mais recente.")
+                    else:
+                        _, res_h = ca.risco_carteira(r_u[list(w_u.index)], w_h, r_u[MARKET], CVAR_LEVEL, PANIC_Q)
+                        h1, h2, h3 = st.columns(3)
+                        metrica(h1, f"CVaR {N_CVAR} · 1 dia", fm.pct(res_h["cvar"], 2),
+                                f"atual {fm.pct(res_u['cvar'], 2)} ({fm.pct(res_h['cvar'] / res_u['cvar'] - 1, 0, sinal=True)})")
+                        metrica(h2, "Volatilidade anual", fm.pct(res_h["vol"]),
+                                f"atual {fm.pct(res_u['vol'])} ({fm.pct(res_h['vol'] / res_u['vol'] - 1, 0, sinal=True)})")
+                        metrica(h3, "Diversificação", fm.mult(res_h["racio_diversificacao_vol"]),
+                                f"atual {fm.mult(res_u['racio_diversificacao_vol'])}")
+                        st.dataframe(pd.DataFrame({
+                            "Ativo": [rot_ativo(t) for t in w_u.index],
+                            "Peso atual": w_u.map(lambda v: fm.pct(v, 1)).values,
+                            "Peso HRP": w_h.map(lambda v: fm.pct(v, 1)).values,
+                            "Diferença": (w_h - w_u).map(lambda v: fm.pp(100 * v, 1)).values,
+                        }), hide_index=True, width="stretch")
+                        if st.button("Usar estes pesos na tabela"):
+                            st.session_state["cart_df"] = pd.DataFrame({"Ativo": list(w_h.index),
+                                                                        "Peso (%)": [round(100 * v, 1) for v in w_h]})
+                            st.session_state["cart_v"] += 1
+                            st.rerun()
+                        st.caption("Hierarchical Risk Parity (López de Prado, 2016): junta os ativos que caem nos mesmos dias "
+                                   "(os 5% piores de cada um), ordena-os por essa proximidade e reparte o peso ao meio, vezes "
+                                   f"sem conta, dando mais ao lado com menos CVaR {N_CVAR}. Usa só os ativos que já tens e a "
+                                   f"mesma janela ({janela.lower()}). É um exercício com dados passados, calculado na mesma "
+                                   "amostra em que é avaliado, por isso a redução mostrada é otimista. Não considera retornos "
+                                   "esperados, custos nem impostos, e não é aconselhamento de investimento.")
 
             st.subheader("Stress da carteira")
             g1, g2 = st.columns(2)

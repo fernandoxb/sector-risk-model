@@ -232,6 +232,10 @@ COMPANY_TTL = 900               # segundos de cache da ficha e das notícias ao 
 USER_PORTFOLIO_MAX = 25         # máximo de posições
 USER_PORTFOLIO_DEFAULT = 6      # carteira de exemplo: a maior posição dos primeiros N setores, pesos iguais
 USER_MARKET_LABEL = "Mercado"   # "setor" do SPY na exposição setorial
+# Carteira alternativa por Hierarchical Risk Parity (López de Prado, 2016), com a distância das quedas conjuntas
+HRP_RISK_MEASURE = "cvar"       # risco de cada ramo: "cvar" (CVAR_LEVEL, histórico) ou "variance" (Ledoit-Wolf)
+HRP_MIN_DAYS = 252              # dias comuns mínimos para calcular
+HRP_LINKAGE = "single"          # método de agrupamento (scipy.cluster.hierarchy.linkage)
 
 # --- Modelo de risco por empresa (src/models/backtest_empresas.py) -----------
 # O mesmo backtest dos setores (histórico, GARCH-t, FHS) aplicado às empresas de holdings.csv, com preços

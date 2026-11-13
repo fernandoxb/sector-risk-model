@@ -7,6 +7,7 @@
   risco_carteira                     contribuições de Euler (portfolio.risk_contributions) + beta e downside beta
   stress_setorial                    perda aproximada nos cenários históricos, pelo setor de cada posição
   score_carteira                     média dos scores dos setores, ponderada pela exposição
+  calcular_pesos_hrp                 pesos por Hierarchical Risk Parity, agrupando pelos ativos que caem juntos
 O risco das empresas é histórico e descritivo (sem previsão FHS nem backtest), como no mapa de risco.
 """
 import sys
@@ -16,10 +17,14 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import (CVAR_LEVEL, MARKET, PANIC_Q, SECTORS, USER_MARKET_LABEL,  # noqa: E402
-                             USER_PORTFOLIO_MAX)
-from src.models.cockpit import downside_beta  # noqa: E402
-from src.models.portfolio import risk_contributions  # noqa: E402
+from scipy.cluster.hierarchy import leaves_list, linkage  # noqa: E402
+from scipy.spatial.distance import squareform  # noqa: E402
+
+from config.settings import (CVAR_LEVEL, HRP_LINKAGE, HRP_MIN_DAYS, HRP_RISK_MEASURE, MARKET, PANIC_Q,  # noqa: E402
+                             SECTORS, USER_MARKET_LABEL, USER_PORTFOLIO_MAX)
+from src.models.cauda import joint_crash  # noqa: E402
+from src.models.cockpit import cvar, downside_beta  # noqa: E402
+from src.models.portfolio import ledoit_wolf, risk_contributions  # noqa: E402
 
 
 def parse_carteira(texto: str | None, universo: set[str] | None = None) -> dict[str, float]:
@@ -102,3 +107,58 @@ def score_carteira(expo: pd.Series, scores: pd.Series) -> float:
     """Média dos scores dos setores ponderada pela exposição (só a parte investida em setores)."""
     e = expo.reindex(scores.index).fillna(0.0)
     return float((e * scores).sum() / e.sum()) if e.sum() > 0 else float("nan")
+
+
+# ----------------------------------------------------------------------------- Hierarchical Risk Parity
+def hrp_quasi_diag(link: np.ndarray) -> list[int]:
+    """Ordem das folhas da árvore: ativos que caem juntos ficam lado a lado (López de Prado, 2016, passo 2)."""
+    return [int(i) for i in leaves_list(link)]
+
+
+def _risco_ramo(rets: pd.DataFrame, cov: pd.DataFrame, ativos: list[str], risk_measure: str) -> float:
+    """Risco de um ramo, com pesos inversos à variância dentro dele: CVaR histórico ou variância (Ledoit-Wolf)."""
+    iv = 1 / np.diag(cov.loc[ativos, ativos])
+    w = iv / iv.sum()
+    if risk_measure == "variance":
+        return float(w @ cov.loc[ativos, ativos].to_numpy() @ w)
+    if risk_measure == "cvar":
+        return max(cvar(rets[ativos] @ w, CVAR_LEVEL), 1e-12)        # um ramo sem perdas na cauda não fica com tudo
+    raise ValueError(f"Medida de risco desconhecida: {risk_measure}")
+
+
+def hrp_recursive_bisection(rets: pd.DataFrame, ordem_ativos: list[str],
+                            risk_measure: str = HRP_RISK_MEASURE) -> pd.Series:
+    """Divide a lista ordenada ao meio, vezes sem conta; em cada corte, o ramo com menos risco recebe mais peso:
+    α₁ = 1 − R₁ / (R₁ + R₂), α₂ = 1 − α₁ (López de Prado, 2016, passo 3)."""
+    cov = pd.DataFrame(ledoit_wolf(rets[ordem_ativos].to_numpy())[0], index=ordem_ativos, columns=ordem_ativos)
+    w = pd.Series(1.0, index=ordem_ativos, name="peso")
+    ramos = [list(ordem_ativos)]
+    while ramos:
+        ramos = [metade for r in ramos if len(r) > 1 for metade in (r[:len(r) // 2], r[len(r) // 2:])]
+        for c1, c2 in zip(ramos[::2], ramos[1::2]):
+            r1, r2 = _risco_ramo(rets, cov, c1, risk_measure), _risco_ramo(rets, cov, c2, risk_measure)
+            a1 = 1 - r1 / (r1 + r2)
+            w[c1] *= a1
+            w[c2] *= 1 - a1
+    return w / w.sum()
+
+
+def calcular_pesos_hrp(retornos_ativos: pd.DataFrame, matriz_distancia: pd.DataFrame | None = None,
+                       risk_measure: str = HRP_RISK_MEASURE, min_days: int = HRP_MIN_DAYS) -> pd.Series | None:
+    """Pesos HRP (somam 1, todos >= 0), pela ordem das colunas. None se houver menos de `min_days` dias comuns.
+
+    Sem `matriz_distancia`, usa d = 1 − p_conj (`cauda.joint_crash`: frequência com que dois ativos estão juntos
+    nos piores dias), calculada nos próprios retornos, porque a carteira pode misturar empresas, ETFs e SPY."""
+    r = retornos_ativos.dropna()
+    cols = list(r.columns)
+    if len(cols) == 1:
+        return pd.Series({cols[0]: 1.0}, name="peso")
+    if len(r) < min_days:
+        return None
+    d = (1 - joint_crash(r)) if matriz_distancia is None else matriz_distancia.loc[cols, cols]
+    d = d.to_numpy(dtype=float)
+    d = np.nan_to_num((d + d.T) / 2, nan=1.0)                 # simétrica; par sem dados = sem ligação
+    np.fill_diagonal(d, 0.0)
+    ordem = [cols[i] for i in hrp_quasi_diag(linkage(squareform(d, checks=False), HRP_LINKAGE))]
+    return hrp_recursive_bisection(r, ordem, risk_measure).reindex(cols)
+

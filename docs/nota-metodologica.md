@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 4.6
+versao: 5.0
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -451,6 +451,22 @@ Separador **Minha carteira** do cockpit; cálculo em `src/models/carteira.py` (f
 * O universo são as 10 maiores posições de cada ETF; não há obrigações, ações fora dos EUA nem outras classes de ativos.
 * Pesos fixos: não há histórico de transações nem re-equilíbrio.
 
+### E. Carteira alternativa por Hierarchical Risk Parity (v5.0)
+Código: `src/models/carteira.py` (`calcular_pesos_hrp`, `hrp_quasi_diag`, `hrp_recursive_bisection`) · parâmetros: `HRP_RISK_MEASURE`, `HRP_MIN_DAYS`, `HRP_LINKAGE` · testes: `tests/test_carteira.py`.
+
+O separador **Minha carteira** propõe outros pesos para os mesmos ativos, pelo algoritmo de López de Prado (2016), com a distância da secção 14 em vez da correlação:
+
+1. **Distância:** $d_{AB} = 1 - \hat p_{AB}$, em que $\hat p_{AB}$ é a frequência com que A e B estão juntos nos 5% piores dias (`cauda.joint_crash`), calculada nos retornos da própria carteira, que pode misturar empresas, ETFs e SPY.
+2. **Árvore e ordem:** agrupamento hierárquico (`single linkage`) sobre $d$; a ordem das folhas põe lado a lado os ativos que caem juntos.
+3. **Bisseção recursiva:** a lista ordenada é cortada ao meio, vezes sem conta. Em cada corte, com $R_1$ e $R_2$ o risco de cada metade:
+$$\alpha_1 = 1 - \frac{R_1}{R_1 + R_2},\qquad \alpha_2 = 1 - \alpha_1$$
+   O risco de cada metade é o CVaR 97,5% histórico (`cockpit.cvar`) da sub-carteira com pesos inversos à variância (covariância de Ledoit-Wolf). Com `HRP_RISK_MEASURE = "variance"`, usa-se a variância dessa sub-carteira.
+
+* **Casos-limite:** um só ativo recebe peso 1; com menos de `HRP_MIN_DAYS` = 252 dias comuns não há sugestão.
+* **Validação:** os pesos somam 1 e são não negativos nas duas medidas; com dois ativos, o resultado é a paridade de risco pelo CVaR calculada à mão; com A e B a cair juntos em mais de 90% dos piores dias e C independente e calmo, $w_C > w_A + w_B$.
+* **Exemplo (NVDA 30%, MSFT 20%, JPM 20%, XOM 15%, XLU 15%; 3 anos até 2026-11-12):** o CVaR 97,5% desce de 3,47% para 2,29% (−34%) e a volatilidade anual de 19,5% para 12,9%.
+* **Limitações:** os pesos são calculados e avaliados na mesma amostra, por isso a redução é otimista; fora da amostra será menor. O método não usa retornos esperados, custos nem impostos, e o corte ao meio segue a ordem das folhas, não os ramos da árvore. É uma leitura de risco, não aconselhamento de investimento.
+
 ---
 
 ## 🏢 13. Modelo de risco por empresa e previsão da carteira
@@ -629,6 +645,7 @@ $$1 = \underbrace{\frac{b_m^2\,\mathrm{Var}(r_{SPY})}{\mathrm{Var}(r_i)}}_{\text
 ---
 
 ## 📚 Referências
+* López de Prado, M. (2016). *Building Diversified Portfolios that Outperform Out of Sample*. Journal of Portfolio Management, 42(4).
 * Acerbi, C. e Székely, B. (2014). *Backtesting Expected Shortfall*. Risk, dezembro de 2014.
 * Barone-Adesi, G., Giannopoulos, K. e Vosper, L. (1999). VaR without correlations for portfolios of derivative securities. *Journal of Futures Markets*, 19(5), 583–602.
 * Basel Committee on Banking Supervision (1996). *Supervisory framework for the use of "backtesting" in conjunction with the internal models approach to market risk capital requirements*.

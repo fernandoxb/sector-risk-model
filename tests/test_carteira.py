@@ -58,3 +58,49 @@ def test_stress_e_score():
     assert s.loc["Y", "perda"] == pytest.approx(0.5 * 0.3 - 0.3 * 0.1 + 0.2 * 0.2)
     assert s.loc["X", "maior_contribuinte"] == "XLK" and s.loc["X", "perda_mercado"] == 0.4
     assert ca.score_carteira(e, pd.Series({"XLK": 90.0, "XLU": 20.0})) == pytest.approx((0.5 * 90 + 0.3 * 20) / 0.8)
+
+
+# ----------------------------------------------------------------------------- HRP
+@pytest.fixture(scope="module")
+def tres_ativos():
+    """A e B voláteis e a cair juntos (o mesmo choque comum); C independente e calmo."""
+    rng = np.random.default_rng(21)
+    n = 800
+    comum = rng.standard_t(4, n) * 0.02
+    return pd.DataFrame({"A": comum + rng.normal(0, 0.0005, n), "B": comum + rng.normal(0, 0.0005, n),
+                         "C": rng.normal(0, 0.006, n)}, index=pd.bdate_range("2023-01-02", periods=n))
+
+
+@pytest.mark.parametrize("medida", ["cvar", "variance"])
+def test_hrp_weights_sum_to_one_and_non_negative(tres_ativos, medida):
+    rng = np.random.default_rng(22)
+    r = tres_ativos.assign(D=rng.normal(0, 0.01, 800), E=rng.normal(0, 0.015, 800))
+    w = ca.calcular_pesos_hrp(r, risk_measure=medida)
+    assert list(w.index) == list(r.columns)
+    assert w.sum() == pytest.approx(1.0, abs=1e-10) and (w >= 0).all()
+
+
+def test_hrp_penalizes_tail_correlated_cluster(tres_ativos):
+    from src.models.cauda import joint_crash
+    assert joint_crash(tres_ativos).loc["A", "B"] >= 0.9                 # A e B caem juntos
+    w = ca.calcular_pesos_hrp(tres_ativos)
+    assert w["C"] > w["A"] + w["B"]
+    # dois ativos: é a paridade de risco pelo CVaR, calculada à mão
+    par = ca.calcular_pesos_hrp(tres_ativos[["A", "C"]])
+    ca_, cc = ck_cvar(tres_ativos["A"]), ck_cvar(tres_ativos["C"])
+    assert par["A"] == pytest.approx(1 - ca_ / (ca_ + cc))
+
+
+def test_hrp_single_asset_edge_case(tres_ativos):
+    assert ca.calcular_pesos_hrp(tres_ativos[["A"]]).to_dict() == {"A": 1.0}
+    assert ca.calcular_pesos_hrp(tres_ativos.tail(100)) is None           # poucos dias comuns
+    d = pd.DataFrame(1.0, index=list("ABC"), columns=list("ABC"))         # distância dada de fora, com NaN
+    d.loc["A", "B"] = d.loc["B", "A"] = np.nan
+    assert ca.calcular_pesos_hrp(tres_ativos, matriz_distancia=d).sum() == pytest.approx(1.0)
+
+
+def ck_cvar(r):
+    from config.settings import CVAR_LEVEL
+    from src.models.cockpit import cvar
+    return cvar(r, CVAR_LEVEL)
+
