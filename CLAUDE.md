@@ -38,7 +38,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   que também serve os testes e só muda com `python -m src.report.snapshot --embutido` (fazê-lo quando o cockpit passa a
   ler um ficheiro novo);
   dependências do Cloud em `app/cockpit/requirements.txt`.
-- Mapa de risco = separador do cockpit (setor → 10 maiores empresas → ficha com bolsa e notícias); empresas em
+- Teia de risco = separador do cockpit (fatores → setores → 10 maiores empresas → ficha; simulador de choques; por baixo,
+  o score dos setores e os fatores macro, que deixaram de ser separadores); empresas em
   `data/features/holdings.csv` (`src/collect/empresas.py`). O mapa HTML antigo foi apagado.
 - Empresas: `backtest_empresas.py` reutiliza `backtest.run` (sem lógica nova) → `company_backtest.csv`, `company_risk.csv`
   (`validado`, `es_subestimado`). Carteira do utilizador: `carteira.py`; previsão = FHS sobre os retornos da carteira.

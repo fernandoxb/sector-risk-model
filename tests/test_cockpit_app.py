@@ -15,7 +15,7 @@ def test_cockpit_corre_em_modo_snapshot(monkeypatch):
     monkeypatch.setenv("COCKPIT_SNAPSHOT", "1")
     at = AppTest.from_file(str(APP), default_timeout=120).run()
     assert not at.exception, [e.value for e in at.exception]
-    assert [t.label for t in at.tabs][:9] == ["📋 Resumo", "🕸️ Mapa de risco", "💼 Minha carteira", "🎯 Setores", "📊 Análise ao vivo", "🔗 Fatores macro",
+    assert [t.label for t in at.tabs][:7] == ["📋 Resumo", "🕸️ Teia de risco", "💼 Minha carteira", "📊 Análise ao vivo",
                                               "🧪 Modelo", "🧩 Carteira-base", "📖 Glossário"]
     texto = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption)
     assert "Modo snapshot" in " ".join(i.value for i in at.info)
@@ -98,3 +98,18 @@ def test_cenario_na_teia(monkeypatch):
     assert not at.exception, [e.value for e in at.exception]
     assert any("O que o modelo espera para os outros fatores" in m.value for m in at.markdown)
     assert any("Testado em 2008, 2020 e 2022" in c.value for c in at.caption)
+
+
+def test_teia_mostra_score_fatores_e_a_carteira_no_cenario(monkeypatch):
+    """Sem setor aberto, por baixo da teia aparece o score dos setores (ou os fatores macro); com um choque, a carteira
+    da Minha carteira tem o seu resultado no cenário."""
+    monkeypatch.setenv("COCKPIT_SNAPSHOT", "1")
+    at = AppTest.from_file(str(APP), default_timeout=180).run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("Scorecard de risco por setor" in s.value for s in at.subheader)
+    at.session_state["teia_vista"] = "fatores"
+    at.session_state["cen_fatores"] = ["juros"]
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("Como os fatores macro mexem com cada setor" in s.value for s in at.subheader)
+    assert any("A tua carteira" in m.value for m in at.markdown)       # a carteira de exemplo da Minha carteira

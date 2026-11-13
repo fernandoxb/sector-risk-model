@@ -4,8 +4,8 @@ Correr a partir da raiz do projeto:
     .venv/bin/streamlit run app/cockpit/app.py
 Sem rede, ou com o Yahoo a limitar pedidos, usa o snapshot versionado em app/cockpit/snapshot/
 (COCKPIT_SNAPSHOT=1 força esse modo, como no Streamlit Community Cloud).
-Separadores: Resumo · Mapa de risco (setor → ficha do setor e empresas → ficha da empresa) · Minha carteira ·
-Setores · Análise ao vivo · Fatores macro · Modelo · Carteira-base · Glossário. Tema em .streamlit/config.toml.
+Separadores: Resumo · Teia de risco (fatores → setores → empresas, simulador de choques; por baixo, a ficha do setor, a
+da empresa, ou o score dos setores e os fatores macro) · Minha carteira · Análise ao vivo · Modelo · Carteira-base · Glossário. Tema em .streamlit/config.toml.
 Metodologia: docs/nota-metodologica.md
 """
 import json
@@ -41,13 +41,11 @@ from src.collect import empresas as emp, sessao as cal  # noqa: E402
 from src.models import backtest_empresas as be, cockpit as ck  # noqa: E402
 import paineis.ao_vivo  # noqa: E402
 import paineis.carteira_base  # noqa: E402
-import paineis.fatores  # noqa: E402
 import paineis.glossario  # noqa: E402
 import paineis.mapa  # noqa: E402
 import paineis.minha_carteira  # noqa: E402
 import paineis.modelo  # noqa: E402
 import paineis.resumo  # noqa: E402
-import paineis.setores  # noqa: E402
 from paineis.comum import OFICIAL  # noqa: E402
 
 st.set_page_config(page_title="Cockpit de Risco Setorial", page_icon="🛡️", layout="wide",
@@ -218,7 +216,7 @@ st.sidebar.title("🛡️ Risco Setorial")
 st.sidebar.caption("11 ETFs setoriais SPDR face ao SPY. Os parâmetros de cada análise estão no próprio separador.")
 JANELAS = {f"{a} Ano" + ("s" if a > 1 else ""): a for a in CAUDA_JANELAS}
 janela = st.sidebar.selectbox("📅 Janela histórica", list(JANELAS), index=list(JANELAS.values()).index(CVAR_YEARS),
-                              help="Muda o Mapa de risco (ligações e empresas), a Minha carteira e a Análise ao vivo. "
+                              help="Muda a Teia de risco (ligações e empresas), a Minha carteira e a Análise ao vivo. "
                                    f"O modelo oficial, o score e o backtest usam sempre {CVAR_YEARS} anos.")
 ANOS = JANELAS[janela]
 periodo = f"{ANOS}y"
@@ -285,15 +283,14 @@ if "snapshot" in FONTES:
     st.info(f"📦 Modo snapshot: preços e juros guardados no repositório (até {SNAP_META.get('dados_ate', '?')}), "
             f"porque {'COCKPIT_SNAPSHOT está ativo' if FORCAR_SNAPSHOT else 'o Yahoo não respondeu'}.")
 
-tabs = st.tabs(["📋 Resumo", "🕸️ Mapa de risco", "💼 Minha carteira", "🎯 Setores", "📊 Análise ao vivo", "🔗 Fatores macro",
-                "🧪 Modelo", "🧩 Carteira-base", "📖 Glossário"])
-T_RESUMO, T_MAPA, T_MINHA, T_SETORES, T_VIVO, T_FATORES, T_MODELO, T_CARTEIRA, T_GLOSSARIO = tabs
+tabs = st.tabs(["📋 Resumo", "🕸️ Teia de risco", "💼 Minha carteira", "📊 Análise ao vivo", "🧪 Modelo", "🧩 Carteira-base",
+                "📖 Glossário"])
+T_RESUMO, T_MAPA, T_MINHA, T_VIVO, T_MODELO, T_CARTEIRA, T_GLOSSARIO = tabs
 
 # Cada separador está em paineis/<nome>.py e recebe os dados deste run (as variáveis deste ficheiro).
 G = globals()
 for _tab, _painel in ((T_RESUMO, paineis.resumo), (T_MAPA, paineis.mapa), (T_MINHA, paineis.minha_carteira),
-                      (T_SETORES, paineis.setores), (T_VIVO, paineis.ao_vivo), (T_FATORES, paineis.fatores),
-                      (T_MODELO, paineis.modelo), (T_CARTEIRA, paineis.carteira_base),
+                      (T_VIVO, paineis.ao_vivo), (T_MODELO, paineis.modelo), (T_CARTEIRA, paineis.carteira_base),
                       (T_GLOSSARIO, paineis.glossario)):
     with _tab:
         _painel.render(G)

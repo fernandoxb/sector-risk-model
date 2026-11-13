@@ -95,26 +95,20 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
-* **Mapa de risco:** com janela de 1, 3, 5 ou 10 anos, a rede de contágio entre setores, ligados pelas quedas conjuntas (dependência de cauda) e não só pela correlação. Clicar num setor abre a ficha do setor (score, fatores macro, crises, risco previsto desde 2008) e as suas 10 maiores empresas; clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
-* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco histórico e o previsto (modelo oficial), quem mais pesa nele, a exposição por setor no mapa de contágio, o stress e uma carteira alternativa por Hierarchical Risk Parity. Guarda-se no link, sem conta.
-* **Setores:** scorecard e evolução do score.
+* **Teia de risco:** numa só vista, os fatores macro no centro, os 11 setores e as 10 maiores empresas de cada um, ligados pelo que mexe com quem e pelo que cai junto (janela de 1, 3, 5 ou 10 anos). Clicar num fator mostra o choque a correr pela cadeia; num setor, abre as empresas e a ficha do setor; numa empresa, a ficha com bolsa, risco e notícias. O simulador de choques pinta a teia com o efeito em cada setor e empresa e dá o resultado da tua carteira. Por baixo, o score dos 11 setores e todas as ligações aos fatores macro.
+* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco histórico e o previsto (modelo oficial), quem mais pesa nele, a exposição por setor na teia, o stress e uma carteira alternativa por Hierarchical Risk Parity. Guarda-se no link, sem conta.
 * **Análise ao vivo:** CVaR histórico, downside beta, regime de juros e exportação para o Obsidian.
-* **Fatores macro.**
 * **Modelo:** backtest.
 * **Carteira-base:** a carteira de referência dos 11 setores, com contribuições para o risco, stress históricos e um cenário de stress próprio.
 * **Glossário.**
 
-| Resumo | Fatores macro |
+| Teia de risco | Setor aberto |
 |---|---|
-| ![Cockpit: resumo](docs/img/cockpit-resumo.png) | ![Cockpit: fatores macro](docs/img/cockpit-fatores.png) |
+| ![Cockpit: teia de risco](docs/img/cockpit-teia.png) | ![Cockpit: setor aberto na teia](docs/img/cockpit-mapa.png) |
 
-| Mapa de risco: quem cai com quem |
-|---|
-| ![Cockpit: mapa por quedas conjuntas](docs/img/cockpit-cauda.png) |
-
-| Mapa de risco (setor aberto) | Ficha da empresa |
+| Resumo | Ficha da empresa |
 |---|---|
-| ![Cockpit: mapa de risco](docs/img/cockpit-mapa.png) | ![Cockpit: ficha da empresa](docs/img/cockpit-empresa.png) |
+| ![Cockpit: resumo](docs/img/cockpit-resumo.png) | ![Cockpit: ficha da empresa](docs/img/cockpit-empresa.png) |
 
 | Minha carteira |
 |---|
@@ -122,7 +116,7 @@ O cockpit está organizado em separadores:
 
 | Scorecard | Setor aberto no mapa |
 |---|---|
-| ![Cockpit: scorecard de risco por setor](docs/img/cockpit-scorecard.png) | ![Cockpit: setor aberto no mapa de risco](docs/img/cockpit-ficha.png) |
+| ![Cockpit: scorecard de risco por setor](docs/img/cockpit-scorecard.png) | ![Cockpit: ficha do setor](docs/img/cockpit-ficha.png) |
 
 **Outros números (dados até 2026-11-12):**
 * **Carteira com pesos iguais:** volatilidade de 12,1% e CVaR 97,5% de 2,21% a 1 dia. A diversificação vale 1,49× na volatilidade, mas só 1,39× no CVaR, porque nas quedas os setores caem juntos.

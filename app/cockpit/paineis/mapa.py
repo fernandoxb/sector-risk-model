@@ -1,23 +1,24 @@
-"""Mapa de risco: espinha de contágio → setor aberto (ficha do setor e empresas) → ficha da empresa.
+"""Teia de risco: fatores macro → setores → empresas (teia.py), o simulador de choques (cenario.py) e, por baixo, o
+setor aberto (ficha e empresas), a ficha da empresa ou, sem setor aberto, o score dos setores e os fatores macro.
 
-As ligações do mapa podem ser por quedas conjuntas (dependência de cauda, src/models/cauda.py) ou por correlação.
+As ligações entre setores podem ser por quedas conjuntas (dependência de cauda, src/models/cauda.py) ou por correlação.
 Os dados do run chegam em `g` (as variáveis do app.py).
 """
 import html
 
-import networkx as nx
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from config.settings import (BT_SIGNIF, BT_TL_DAYS, CVAR_LEVEL, CVAR_YEARS, MACRO_FACTORS, MARKET, MODEL_RISK_LEVEL,
                              OFFICIAL_VAR_METHOD, PANIC_Q, SECTORS, SECTOR_PROFILE, TRADING_DAYS)
-from src.models import cauda as cd
+from src.models import carteira as ca, cauda as cd
 from src.models import cockpit as ck
 from src.models.scorecard import COMPONENTS
 from src.report import formato as fm
 from src.report.alerts import pi_level
 from paineis import cenario, teia
+from paineis import fatores as fatores_p, setores as setores_p
 from paineis.comum import (CORES_C, GRID, MUTED, NOMES, N_CVAR, OFICIAL, RISCO, SEM, TXT, layout, metrica, modelo_txt, nome,
                            seletor_periodo)
 
@@ -43,12 +44,10 @@ def render(g: dict) -> None:
     off = g["off"]
     periodo = g["periodo"]
     precos = g["precos"]
-    rets = g["rets"]
     sc = g["sc"]
     setores = g["setores"]
     stt = g["stt"]
 
-    ESCALA_R = [[0, RISCO["verde"]], [0.5, RISCO["amarelo"]], [1, RISCO["vermelho"]]]
     # --- clique no gráfico (evento do run anterior) → estado, antes de desenhar os seletores
     if "mapa_setor" not in st.session_state:        # 1.ª vez: ligação direta, ex. ?setor=XLK&empresa=NVDA
         q_set = st.query_params.get("setor", "").upper()
@@ -56,24 +55,6 @@ def render(g: dict) -> None:
         st.session_state["mapa_empresa"] = st.query_params.get("empresa", "").upper() or None
     if st.session_state.pop("mapa_reset", False):
         st.session_state["mapa_setor"], st.session_state["mapa_empresa"] = None, None
-    ev = st.session_state.get("mapa_chart")
-    try:
-        pts = list(ev["selection"]["points"]) if ev else []
-    except (KeyError, TypeError):
-        pts = []
-    clicado = next((p.get("customdata") for p in pts if p.get("customdata")), None)
-    if isinstance(clicado, (list, tuple)):
-        clicado = clicado[0]
-    if clicado != st.session_state.get("mapa_ult_clique"):
-        st.session_state["mapa_ult_clique"] = clicado
-        if clicado in SECTORS:
-            st.session_state["mapa_setor"] = clicado
-            st.session_state["mapa_empresa"] = None
-        elif clicado:
-            st.session_state["mapa_empresa"] = clicado
-
-    st.caption("**Clica num setor** para o abrir nas suas maiores empresas; **clica numa empresa** para ver a ficha: "
-               "bolsa, risco e últimas notícias. Também podes escolher nas caixas abaixo.")
     Q_TXT = fm.pct(cauda_meta.get("q", 0.05), 0)
     MODOS = {"cauda": "Quedas conjuntas (cauda)", "corr": "Correlação"}
     modo = st.radio("Ligar por", list(MODOS), format_func=MODOS.get, horizontal=True, key="mapa_modo",
@@ -85,25 +66,22 @@ def render(g: dict) -> None:
     if por_cauda:                               # espinha de contágio pelas quedas conjuntas dos 11 setores
         grafo = cd.graph(cauda[cauda["grupo"] == cd.GRUPO_SETORES], by="p_conj")
 
-    def liga_txt(d: dict) -> str:
-        """Texto de uma ligação: quedas conjuntas (se houver) e correlação."""
-        if "p_conj" in d:
-            return (f"caem juntos em {fm.pct(d['p_conj'], 0)} dos piores dias (acaso: {Q_TXT})"
-                    f"<br>dependência de cauda λ = {fm.num(d['lam'])} · correlação {fm.num(d['corr'])}")
-        return f"correlação {fm.num(d['corr'])}"
-
     def liga_curta(d: dict) -> str:
         return f"{fm.pct(d['p_conj'], 0)} dos piores dias" if "p_conj" in d else f"r = {fm.num(d['corr'])}"
 
     def forca(d: dict) -> float:
         return d["p_conj"] if "p_conj" in d else d["corr"]
-    teia_on = st.toggle("✨ Teia nova (protótipo): fatores → setores → empresas", value=True, key="teia_on",
-                        help="Protótipo da Fase 2, em ECharts. Desliga para voltar ao mapa anterior e comparar.")
-    if teia_on:
+    if True:                                    # a teia: fatores → setores → empresas (ECharts)
         cen, chocados = (None, [])
+        cart = st.session_state.get("cart_df")                 # a carteira da Minha carteira (ou a do link)
+        p_cart = (dict(zip(cart["Ativo"], cart["Peso (%)"])) if cart is not None
+                  else ca.parse_carteira(st.query_params.get("carteira")))
+        p_cart = {t: v for t, v in p_cart.items() if isinstance(t, str) and v == v and v > 0}
+        pesos = ca.normalizar(p_cart) if p_cart else None
         if g["cen_sem"] is not None:
-            cen, chocados = cenario.render(g, str(g["cen_sem"]["data"].max()))
-        novo = teia.desenhar(g, st.session_state.get("mapa_setor"), Q_TXT, cen, chocados)
+            cen, chocados = cenario.render(g, str(g["cen_sem"]["data"].max()), pesos)
+        novo = teia.desenhar(g, st.session_state.get("mapa_setor"), Q_TXT, cen, chocados, "p_conj" if por_cauda else "corr",
+                             set(p_cart))
         if novo:
             if novo in MACRO_FACTORS:               # fator: mostra (ou esconde) a sua cadeia
                 st.session_state["teia_foco"] = None if st.session_state.get("teia_foco") == novo else novo
@@ -116,7 +94,8 @@ def render(g: dict) -> None:
         st.caption("**Centro:** fatores macro, ligados aos setores em que mexem mesmo com os outros fatores fixos "
                    "(vermelho cheio agrava, verde tracejado atenua). **Anel do meio:** setores, cor = score, tamanho = ES "
                    f"previsto, ligados pelos que mais caem juntos nos {Q_TXT} piores dias. **Anel de fora:** as 10 maiores "
-                   "empresas de cada setor. Clica num fator para ver o choque a correr pela cadeia; roda do rato para ampliar.")
+                   "empresas de cada setor (contorno branco: as que tens na Minha carteira). Clica num fator para ver o choque a "
+                   "correr pela cadeia, num setor para abrir as empresas e numa empresa para a ficha; roda do rato para ampliar.")
     m1, m2, m3 = st.columns([2, 2, 1], vertical_alignment="bottom")
     m_set = m1.selectbox("Setor aberto", [None] + setores, key="mapa_setor", placeholder="— todos os setores —",
                          format_func=lambda t: "— todos os setores —" if t is None else nome(t))
@@ -152,121 +131,7 @@ def render(g: dict) -> None:
             st.warning(f"Sem preços para as empresas de {m_set}: {e}")
             m_set, tick_set = None, []
 
-    # --- posições: sem setor aberto, a MST (Kamada-Kawai). Com um setor aberto, ele vai para o centro, as suas
-    # empresas ficam num anel interior e os outros setores num anel exterior, pela direção que tinham no mapa.
-    pos0 = nx.kamada_kawai_layout(grafo, weight="weight")
-    pos_s = {n: np.array(p, dtype=float) for n, p in pos0.items()}
-    pos_e = {}
-    R_EMP, R_SET = 1.0, 1.85
-    if m_set:
-        c = pos_s[m_set]
-        outros = sorted((n for n in pos_s if n != m_set),
-                        key=lambda n: np.arctan2(pos_s[n][1] - c[1], pos_s[n][0] - c[0]))
-        ang0 = np.arctan2(pos_s[outros[0]][1] - c[1], pos_s[outros[0]][0] - c[0])
-        pos_s = {m_set: np.zeros(2)} | {
-            n: R_SET * np.array([np.cos(ang0 + 2 * np.pi * j / len(outros)), np.sin(ang0 + 2 * np.pi * j / len(outros))])
-            for j, n in enumerate(outros)}
-        ordem_e = list(nx.dfs_preorder_nodes(g_emp, source=t_emp["peso"].idxmax()))   # vizinhos na MST ficam juntos
-        for j, t in enumerate(ordem_e):
-            ang = 2 * np.pi * j / len(ordem_e) + np.pi / 2
-            pos_e[t] = R_EMP * np.array([np.cos(ang), np.sin(ang)])
-    viz_set = set(grafo.neighbors(m_set)) if m_set else set()
-
-    fig_m = go.Figure()
-    # arestas entre setores
-    ex, ey, hx, hy, ht = [], [], [], [], []
-    for a, b, d in grafo.edges(data=True):
-        if m_set and m_set not in (a, b):
-            continue                            # com um setor aberto, só as suas ligações de contágio
-        if not m_set:
-            ex += [pos_s[a][0], pos_s[b][0], None]
-            ey += [pos_s[a][1], pos_s[b][1], None]
-        v_ = b if a == m_set else a
-        f_ = 0.8 if m_set else 0.5              # com setor aberto, a etiqueta fica perto do vizinho (anel exterior)
-        hx.append(pos_s[a][0] * (1 - f_) + pos_s[b][0] * f_ if not m_set else pos_s[v_][0] * f_)
-        hy.append(pos_s[a][1] * (1 - f_) + pos_s[b][1] * f_ if not m_set else pos_s[v_][1] * f_)
-        ht.append(f"{a} ↔ {b}<br>{liga_txt(d)}")
-    fig_m.add_trace(go.Scatter(x=ex, y=ey, mode="lines", hoverinfo="skip",
-                               line=dict(width=2, color="#475569"), showlegend=False))
-    if m_set:                                   # ligações de contágio do setor aberto, por cima
-        vx, vy = [], []
-        for v in viz_set:
-            d_ = pos_s[v] / np.linalg.norm(pos_s[v])
-            vx += [d_[0] * (R_EMP + 0.22), pos_s[v][0], None]
-            vy += [d_[1] * (R_EMP + 0.22), pos_s[v][1], None]
-        fig_m.add_trace(go.Scatter(x=vx, y=vy, mode="lines", hoverinfo="skip", showlegend=False,
-                                   line=dict(width=2.5, color="#64748b")))
-    fig_m.add_trace(go.Scatter(x=hx, y=hy, mode="markers", hoverinfo="text", hovertext=ht,
-                               marker=dict(size=14, color="rgba(0,0,0,0)"), showlegend=False))
-    if m_set:
-        # raios setor → empresa (espessura = peso no ETF) e MST entre as empresas (tracejado)
-        pmax = t_emp["peso"].max()
-        for t in tick_set:
-            fig_m.add_trace(go.Scatter(x=[pos_s[m_set][0], pos_e[t][0]], y=[pos_s[m_set][1], pos_e[t][1]], mode="lines",
-                                       hoverinfo="skip", showlegend=False,
-                                       line=dict(width=0.6 + 3.4 * t_emp.loc[t, "peso"] / pmax, color="#475569")))
-        # ligações da empresa escolhida às que mais se movem com ela (MST das correlações), em curva para não
-        # atravessarem o centro
-        viz_emp = set(g_emp.neighbors(m_emp)) if m_emp else set()
-        for v in viz_emp:
-            a_, b_ = pos_e[m_emp], pos_e[v]
-            meio = (a_ + b_) / 2
-            nm = np.linalg.norm(meio)
-            ctrl = meio / nm * 0.62 if nm > 0.15 else np.array([-a_[1], a_[0]]) * 0.62   # opostas: desvia de lado
-            tt = np.linspace(0, 1, 24)[:, None]
-            curva = (1 - tt) ** 2 * a_ + 2 * (1 - tt) * tt * ctrl + tt ** 2 * b_
-            fig_m.add_trace(go.Scatter(x=curva[:, 0], y=curva[:, 1], mode="lines", showlegend=False,
-                                       hoverinfo="text", hovertext=f"{m_emp} ↔ {v}<br>{liga_txt(g_emp[m_emp][v])}",
-                                       line=dict(width=2.2, color="#a5b4fc", dash="dot")))
-    # nós dos setores
-    nos_s = list(grafo.nodes)
-    sc_no = [float(sc.loc[n, "score_final"]) if sc is not None else 50.0 for n in nos_s]
-    cv = rets.apply(lambda r_: ck.cvar(r_, CVAR_LEVEL))
-    fig_m.add_trace(go.Scatter(
-        x=[pos_s[n][0] for n in nos_s], y=[pos_s[n][1] for n in nos_s], mode="markers+text", text=nos_s,
-        customdata=nos_s, textposition="middle center", textfont=dict(color="#0b1220", size=11, family="sans-serif"),
-        showlegend=False, hoverinfo="text",
-        marker=dict(size=[(34 + 30 * cv[n] / cv.max()) * (1.25 if n == m_set else 0.8 if m_set else 1) for n in nos_s],
-                    color=sc_no, colorscale=ESCALA_R, cmin=0, cmax=100,
-                    opacity=[1.0 if (not m_set or n == m_set or n in viz_set) else 0.4 for n in nos_s],
-                    line=dict(width=[4 if n == m_set else 1.5 for n in nos_s], color="#ffffff"),
-                    colorbar=dict(title="Score<br>do setor", thickness=10, len=0.5, x=1.0)),
-        hovertext=[f"<b>{nome(n)}</b><br>Score {fm.num(s_, 0)}/100 · CVaR {N_CVAR} {fm.pct(cv[n], 2)}"
-                   f"<br><i>clica para {'ver' if n != m_set else 'manter'} as empresas</i>" for n, s_ in zip(nos_s, sc_no)],
-        selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=0.9))))
-    if m_set:
-        fig_m.add_trace(go.Scatter(
-            x=[pos_e[t][0] for t in tick_set], y=[pos_e[t][1] for t in tick_set], mode="markers+text", text=tick_set,
-            customdata=tick_set, textposition="middle center", textfont=dict(color="#0b1220", size=10),
-            showlegend=False, hoverinfo="text",
-            marker=dict(size=[34 + 36 * t_emp.loc[t, "peso"] / pmax for t in tick_set],
-                        color=[float(np.clip(t_emp.loc[t, "racio"], 0.5, 2.5)) for t in tick_set],
-                        colorscale=ESCALA_R, cmin=0.5, cmax=2.5,
-                        line=dict(width=[4 if t == m_emp else 3 if t in viz_emp else 1 for t in tick_set],
-                                  color=["#ffffff" if t == m_emp else "#a5b4fc" if t in viz_emp else "#cbd5e1"
-                                         for t in tick_set])),
-            hovertext=[f"<b>{nomes_emp[t]} ({t})</b><br>Peso no {m_set}: {fm.pct(t_emp.loc[t, 'peso'])}"
-                       f"<br>CVaR {N_CVAR}: {fm.pct(t_emp.loc[t, 'cvar'], 2)} ({fm.mult(t_emp.loc[t, 'racio'])} o do ETF)"
-                       f"<br>Correlação com o {m_set}: {fm.num(t_emp.loc[t, 'corr_etf'])}<br><i>clica para abrir a ficha</i>"
-                       for t in tick_set],
-            selected=dict(marker=dict(opacity=1)), unselected=dict(marker=dict(opacity=1))))
-    lim = dict(range=[-2.25, 2.25]) if m_set else {}
-    layout(fig_m, 700 if m_set else 520, hovermode="closest", dragmode=False,
-           xaxis=dict(visible=False, **lim), yaxis=dict(visible=False, scaleanchor="x", **lim))
-    if not teia_on:
-        st.plotly_chart(fig_m, width="stretch", key="mapa_chart", on_select="rerun", selection_mode="points",
-                        config={"displayModeBar": False, "scrollZoom": False})
-    if m_set and not teia_on:
-        st.caption(f"**Setores:** cor = score de risco, tamanho = CVaR histórico. **Empresas do {m_set}:** tamanho = peso "
-                   f"no ETF, cor = CVaR da empresa face ao do ETF (verde ≤ 1×, vermelho ≥ 2,5×), linha = peso. "
-                   "Ao escolher uma empresa, as curvas tracejadas ligam-na às que mais caem (ou andam) com ela. No anel exterior ficam os outros "
-                   "setores; os ligados ao centro são os vizinhos de contágio. "
-                   f"As {len(tick_set)} maiores posições somam {fm.pct(h_set['peso'].sum(), 0)} do ETF.")
-    elif not teia_on:
-        st.caption("Cor = score de risco (verde baixo, vermelho alto); tamanho = CVaR histórico. As linhas ligam os setores "
-                   + (f"que mais caem juntos: passa o rato numa linha para ver em quantos dos {Q_TXT} piores dias de um "
-                      "o outro também caiu." if por_cauda else
-                      "pelas correlações mais fortes: setores vizinhos andam juntos em dias normais."))
+    if not m_set:
         if por_cauda:
             with st.expander("Todas as ligações: quedas conjuntas contra correlação"):
                 ps = cauda[cauda["grupo"] == cd.GRUPO_SETORES]
@@ -503,5 +368,8 @@ def render(g: dict) -> None:
                                 f"<span style='color:{MUTED};font-size:0.85em'>{html.escape(str(n_.get('fonte') or ''))} · "
                                 f"{fm.data_curta(n_.get('data'))}</span>", unsafe_allow_html=True)
                 st.caption(f"Fonte: Yahoo Finance ({origem}). Títulos em inglês; as horas são UTC.")
-    else:
-        st.info("Nenhum setor aberto. Clica num círculo do mapa para ver as suas empresas.")
+    else:                                       # sem setor aberto: o score dos setores e os fatores, por baixo da teia
+        VISTAS = {"setores": "🎯 Score dos 11 setores", "fatores": "🔗 Todas as ligações aos fatores macro"}
+        vista = st.segmented_control("Por baixo da teia", list(VISTAS), format_func=VISTAS.get, default="setores",
+                                     key="teia_vista") or "setores"
+        (setores_p if vista == "setores" else fatores_p).render(g)

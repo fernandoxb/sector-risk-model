@@ -68,7 +68,7 @@ def render(g: dict) -> None:
     else:
         c3.caption("FRED indisponível: regime de juros desligado.")
 
-    st.caption("A rede de contágio entre setores e as empresas de cada setor estão no separador **Mapa de risco**.")
+    st.caption("A rede de contágio entre setores e as empresas de cada setor estão no separador **Teia de risco**.")
 
     tabela = pd.DataFrame({
         "Ticker": tab.index,

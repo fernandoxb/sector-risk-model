@@ -57,3 +57,23 @@ def test_cadeia_de_um_fator(dados):
 def test_evento_do_clique():
     assert teia.evento({"chart_event": "XLK|123"}) == "XLK|123"
     assert teia.evento({}) is None and teia.evento(None) is None and teia.evento({"chart_event": 5}) is None
+
+
+def test_carteira_e_correlacao(dados):
+    sc, links, pares, hold = dados
+    op = teia.opcoes(sc, links, pares, hold, None, None, carteira={"XLK0", "XLE"}, por="corr")
+    nos = {n["id"]: n for n in op["series"][0]["data"]}
+    assert nos["XLK/XLK0"]["itemStyle"]["borderWidth"] == 2 and nos["XLK/XLK0"]["label"]["show"]
+    assert nos["XLK/XLK1"]["itemStyle"]["borderWidth"] == 0
+    assert nos["XLE"]["itemStyle"]["borderWidth"] == 3
+    cauda = [a for a in op["series"][0]["links"] if a["source"] in SET and a["target"] in SET]
+    assert len(cauda) == 10 and all("correlação" in a["dica"] for a in cauda)
+
+
+def test_carteira_no_cenario():
+    import numpy as np
+    from paineis.cenario import carteira_no_cenario
+    sims = pd.DataFrame({"A": [0.10, -0.10], "B": [0.0, 0.2], "mercado": [np.log(1.05), np.log(0.95)]})
+    r = carteira_no_cenario(sims, pd.Series({"A": 0.25, "SPY": 0.25, "FORA": 0.5}))
+    assert r.tolist() == pytest.approx([0.5 * 0.10 + 0.5 * 0.05, 0.5 * -0.10 + 0.5 * -0.05])   # FORA sai, pesos re-normalizados
+    assert carteira_no_cenario(sims, pd.Series({"FORA": 1.0})) is None

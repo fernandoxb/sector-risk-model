@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 5.6
+versao: 5.7
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -46,7 +46,7 @@ Entre 11 setores há 55 correlações possíveis, o que torna o grafo completo i
 ## 🔬 3. Duas camadas (setor → ativo)
 
 * **Camada macro:** os 11 ETFs SPDR (XLK, XLF, XLE, …).
-* **Camada micro:** as 10 maiores posições de cada ETF, no separador Mapa de risco (secção 11). O CVaR de cada empresa é comparado com o CVaR do ETF do setor **no mesmo período**, e as ligações entre empresas vêm da MST das suas correlações. O antigo "microscópio" de 4 ações por setor foi substituído por este nível.
+* **Camada micro:** as 10 maiores posições de cada ETF, no separador Teia de risco (secções 11 e 19). O CVaR de cada empresa é comparado com o CVaR do ETF do setor **no mesmo período**, e as ligações entre empresas vêm da MST das suas correlações. O antigo "microscópio" de 4 ações por setor foi substituído por este nível.
 
 ---
 
@@ -345,7 +345,7 @@ São aceites **33 das 66** ligações. Por fator:
 * **Spread de crédito:** o CSV público do FRED só tem os últimos 3 anos do spread high yield (licença da ICE). Para haver janelas de 5 e 10 anos, desde 2026-11-13 usa-se o spread Baa da Moody's (`BAA10Y`, desde 1986). Mede o crédito de qualidade média, não o especulativo, por isso reage menos nas crises.
 
 ### F. No cockpit
-* As ligações medidas aparecem no separador **Fatores macro** e na ficha de cada setor do **Mapa de risco** (secção 11).
+* As ligações medidas aparecem por baixo da **Teia de risco** e na ficha de cada setor (secção 11).
 * O mapa HTML autónomo do Sprint 4d, que as desenhava com ligações manuais e cadeia de impacto, foi apagado em 2026-11-13: o mapa de risco passou a ser só o do cockpit.
 
 ---
@@ -411,7 +411,7 @@ Em cada run grava um estado compacto do dia em `data/state/estado_<data>.json`: 
 
 ## 🕸️ 11. Mapa de risco: setor → empresas → ficha da empresa
 
-O mapa de risco é um só e vive no cockpit (separador **Mapa de risco**). Parte da espinha de contágio (MST das correlações entre setores, secção 2) e desce dois níveis.
+O mapa de risco é um só e vive no cockpit (separador **Teia de risco**, desde a Fase 4; a teia descrita na secção 19 substituiu o desenho em Plotly descrito aqui). Parte da espinha de contágio (MST das correlações entre setores, secção 2) e desce dois níveis.
 
 ### A. Empresas de cada setor
 * **Universo:** as `HOLDINGS_TOP` = 10 maiores posições de cada ETF, com o peso no ETF (Yahoo Finance, dados do fundo), num total de 110 empresas. Somam entre 37% (XLI) e 78% (XLE) do setor. Ficam em `data/features/holdings.csv` e são atualizadas pelo Coletor em cada run.
@@ -569,7 +569,7 @@ A correlação linear mede o andamento conjunto em dias normais. Para o contági
 * **A árvore deixa ligações de fora:** mostra as N − 1 mais fortes que ligam tudo; a matriz completa está no cockpit.
 
 ### G. Janelas de 1, 3, 5 e 10 anos (v5.5)
-O separador Mapa de risco deixa escolher a janela. `cauda.fit_windows` repete o ajuste para cada janela de `CAUDA_JANELAS`; a de 3 anos continua em `tail_dependence.csv` e as outras vão para `tail_dependence_janelas.csv` (coluna `anos`).
+A Teia de risco deixa escolher a janela. `cauda.fit_windows` repete o ajuste para cada janela de `CAUDA_JANELAS`; a de 3 anos continua em `tail_dependence.csv` e as outras vão para `tail_dependence_janelas.csv` (coluna `anos`).
 
 * **Quem entra:** uma série entra numa janela se tiver dados em pelo menos 80% dos dias (`CAUDA_MIN_COBERTURA`). As contas usam os dias em que todas têm preço: na janela de 10 anos os setores começam com o XLC, em junho de 2018 (2 112 dias).
 * **Cauda com 1 ano:** os 5% piores dias seriam cerca de 12, poucos demais; usa-se $q$ = 10% (25 dias), e o acaso passa a ser 10%.
@@ -766,6 +766,8 @@ O Mapa de risco passou a ter uma vista única em anéis: os seis fatores macro n
 * **Ligações entre setores:** a árvore das quedas conjuntas da janela escolhida (secção 14.G). Os setores que caem juntos ficam vizinhos no anel.
 * **Cliques:** um fator mostra a sua cadeia, com partículas a correr do fator para os setores e, com um atraso, para as empresas; um setor abre as empresas num leque, ligadas entre si pelas que caem juntas; uma empresa abre a ficha.
 * **Biblioteca:** ECharts, pelo componente `streamlit-echarts`, escolhido depois de um protótipo com os dados reais. O mapa anterior, em Plotly, continua disponível num interruptor.
+
+* **Um só separador (Fase 4):** a teia passou a ser o separador "Teia de risco". Os antigos separadores Setores (scorecard) e Fatores macro aparecem por baixo da teia quando nenhum setor está aberto, e o mapa anterior em Plotly foi apagado. As posições da Minha carteira têm contorno branco, e o simulador de choques dá o resultado da carteira: $\sum_i w_i r_i$ em cada cenário, nas posições que o modelo cobre (o SPY é o fator mercado), com os pesos re-normalizados.
 
 ### B. O motor de cenários
 Responde a "se este fator se mexer assim, o que acontece aos setores e às empresas?". Usa dados semanais dos últimos 10 anos (`CENARIO_ANOS`), com sete fatores: os seis macro e o mercado (retorno log do SPY), porque é pelo mercado que as crises chegam aos setores. Em cada um de 5 000 cenários de $h$ semanas:

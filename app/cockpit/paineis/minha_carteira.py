@@ -23,7 +23,7 @@ def render(g: dict) -> None:
     es_emp = g["es_emp"]
     grafo = g["grafo"]
     cauda = g["cauda"]
-    if cauda is not None:                    # espinha de contágio pelas quedas conjuntas, como no Mapa de risco
+    if cauda is not None:                    # espinha de contágio pelas quedas conjuntas, como na Teia de risco
         grafo = cd.graph(cauda[cauda["grupo"] == cd.GRUPO_SETORES], by="p_conj")
     hold = g["hold"]
     janela = g["janela"]

@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config.settings import CENARIO_HORIZONTES, MACRO_FACTORS, SHOCK_DIFF, SHOCK_LOGDIFF, SHOCK_MARKET
+from config.settings import CENARIO_HORIZONTES, MACRO_FACTORS, MARKET, SHOCK_DIFF, SHOCK_LOGDIFF, SHOCK_MARKET
 from src.models import cenarios as cn
 from src.report import formato as fm
 from paineis.comum import nome
@@ -18,6 +18,17 @@ def _modelo(versao: str, _dados: pd.DataFrame, _hold: pd.DataFrame) -> dict:
     return cn.ajustar(_dados.set_index("data").astype(float), _hold)
 
 
+def carteira_no_cenario(sims: pd.DataFrame, pesos: pd.Series) -> pd.Series | None:
+    """Retorno de cada cenário para a carteira: Σ w·r nas posições que o modelo cobre (o SPY é o fator mercado),
+    com os pesos re-normalizados. None se nenhuma estiver coberta."""
+    cols = {t: sims[t] for t in pesos.index if t in sims} | (
+        {MARKET: np.expm1(sims[cn.MERCADO])} if MARKET in pesos.index else {})
+    if not cols:
+        return None
+    w = pesos[list(cols)] / pesos[list(cols)].sum()
+    return pd.DataFrame(cols) @ w
+
+
 def _em_unidades(f: str, v: float) -> float:
     """Valor do slider → unidade da regressão: p.p. para os fatores em diferença, Δ log para os outros."""
     return v if f in MACRO_FACTORS and MACRO_FACTORS[f]["transf"] == "diff" else float(np.log1p(v / 100))
@@ -27,8 +38,9 @@ def _txt(f: str, x: float) -> str:
     return fm.pp(x, 2) if f in MACRO_FACTORS and MACRO_FACTORS[f]["transf"] == "diff" else fm.pct(np.expm1(x), 1, sinal=True)
 
 
-def render(g: dict, versao: str) -> tuple[pd.Series | None, list[str]]:
-    """Desenha os controlos e o resultado. Devolve (mediana por setor e empresa, fatores chocados) ou (None, [])."""
+def render(g: dict, versao: str, pesos: pd.Series | None = None) -> tuple[pd.Series | None, list[str]]:
+    """Desenha os controlos e o resultado (e o da carteira, com `pesos` por ticker a somar 1). Devolve (mediana por
+    setor e empresa, fatores chocados) ou (None, [])."""
     dados, val = g["cen_sem"], g["cen_val"]
     with st.expander("🎛️ Simular um choque: fatores → setores → empresas (Monte Carlo)",
                      expanded=bool(st.session_state.get("cen_fatores"))):
@@ -60,6 +72,14 @@ def render(g: dict, versao: str) -> tuple[pd.Series | None, list[str]]:
         outros = [f for f in cn.FAT if f not in choque]
         st.markdown("**O que o modelo espera para os outros fatores** (mediana): "
                     + " · ".join(f"{NOMES_F[f]} {_txt(f, sims[f].median())}" for f in outros))
+        if pesos is not None and len(pesos):
+            r_c = carteira_no_cenario(sims, pesos)
+            if r_c is not None:
+                fora = [t for t in pesos.index if t not in sims and t != MARKET]
+                st.markdown(f"**A tua carteira** ({len(pesos)} posições da Minha carteira): mediana "
+                            f"**{fm.pct(r_c.median(), 1, sinal=True)}** em {hz} · os 5% piores {fm.pct(r_c.quantile(0.05), 1, sinal=True)}"
+                            f" · probabilidade de perder {fm.pct((r_c < 0).mean(), 0)}"
+                            + (f" (sem modelo para {', '.join(fora)}: ficam de fora)" if fora else ""))
         rs = res.loc[mod["setores"]].sort_values("mediana")
         st.dataframe(pd.DataFrame({
             "Setor": [nome(s) for s in rs.index],
