@@ -99,10 +99,12 @@ MACRO_FACTORS = {
                  "nome": "Treasury 10Y", "curto": "Juros 10Y"},
     "inflacao": {"serie": "T10YIE",       "fonte": "fred",  "transf": "diff",    "adverso": +1,
                  "nome": "Breakeven de inflação 10Y", "curto": "Inflação implícita"},
-    # Spread Baa (Moody's) − Treasury 10Y, desde 1986. O spread high yield da ICE BofA (BAMLH0A0HYM2) foi usado até
-    # 2026-11-13, mas o FRED só o dá para os últimos 3 anos (licença da ICE), o que impedia janelas mais longas.
-    "spreads":  {"serie": "BAA10Y",       "fonte": "fred",  "transf": "diff",    "adverso": +1,
-                 "nome": "Spread de crédito Baa (Moody's)", "curto": "Spread de crédito"},
+    # O FRED só dá o spread high yield da ICE para os últimos 3 anos (licença): chega para as ligações (CVAR_YEARS).
+    # Onde é preciso mais história (simulador de choques, 10 anos, e o teste nas crises desde 2008) usa-se a série
+    # longa: o spread Baa (Moody's) − Treasury 10Y, desde 1986, na coluna "spreads_longo".
+    "spreads":  {"serie": "BAMLH0A0HYM2", "fonte": "fred",  "transf": "diff",    "adverso": +1,
+                 "nome": "Spread high yield (ICE BofA)", "curto": "Spread high yield",
+                 "serie_longa": "BAA10Y", "curto_longo": "Spread de crédito Baa"},
     "vix":      {"serie": "^VIX",         "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
                  "nome": "VIX", "curto": "VIX"},
     "petroleo": {"serie": "CL=F",         "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
@@ -286,10 +288,10 @@ HRP_OOS_PASSO = 63              # cerca de 3 meses
 
 # --- Modelo de risco por empresa (src/models/backtest_empresas.py) -----------
 # O mesmo backtest dos setores (histórico, GARCH-t, FHS) aplicado às empresas de holdings.csv, com preços
-# desde COMPANY_BT_START. Com a janela de BT_WINDOW dias, as previsões começam cerca de 3 anos depois. Os preços são
-# descarregados desde COMPANY_START, para as janelas longas do mapa; o backtest continua desde 2015 (resultados comparáveis).
+# desde COMPANY_BT_START (2005, como os setores; até 2026-11-13, 2015). Com a janela de BT_WINDOW dias, as previsões
+# começam cerca de 3 anos depois, em 2008. O backtest completo demora cerca de 8 minutos (só na última sessão da semana).
 COMPANY_START = START
-COMPANY_BT_START = "2015-01-01"
+COMPANY_BT_START = START
 COMPANY_MIN_DAYS = BT_WINDOW + 60    # histórico mínimo para ter modelo (senão a empresa fica só com risco descritivo)
 # Previsão FHS da carteira do utilizador no cockpit: GARCH sobre os retornos da carteira com os pesos atuais.
 USER_FORECAST_YEARS = 5              # anos de preços pedidos ao Yahoo (precisa de BT_WINDOW dias + 1 mês)

@@ -1,6 +1,7 @@
 """Motor de cenários: um choque nos fatores macro propaga-se aos outros fatores, aos setores e às empresas (Fase 3).
 
-Dados semanais (sexta a sexta), janela de CENARIO_ANOS anos. Fatores: os seis macro e o mercado (retorno log do SPY).
+Dados semanais (sexta a sexta), janela de CENARIO_ANOS anos. Fatores: os seis macro e o mercado (retorno log do SPY);
+onde há série longa (o spread: Baa em vez de high yield), usa-se a longa.
 Três camadas, simuladas por Monte Carlo:
   1. fatores   os fatores não chocados seguem a distribuição normal condicional ao choque (média e covariância
                da janela): E[x_u | x_s] = h·μ_u + Σ_us Σ_ss⁻¹ (x_s − h·μ_s), Cov = h·(Σ_uu − Σ_us Σ_ss⁻¹ Σ_su)
@@ -38,7 +39,8 @@ def semanal(etfs: pd.DataFrame, emp: pd.DataFrame | None, fatores: pd.DataFrame)
     fim = weekly_cut(etfs.index.max())
     precos = etfs if emp is None else etfs.join(emp[[c for c in emp.columns if c not in etfs.columns]], how="left")
     r = sector_returns(weekly_levels(precos.loc[:fim]))
-    x = factor_changes(weekly_levels(fatores.loc[:fim])).assign(**{MERCADO: r[MARKET]})
+    longos = {k: fatores[f"{k}_longo"] for k, f in MACRO_FACTORS.items() if f"{k}_longo" in fatores}
+    x = factor_changes(weekly_levels(fatores.assign(**longos).loc[:fim])).assign(**{MERCADO: r[MARKET]})
     return x.join(r.drop(columns=MARKET), how="inner").iloc[1:]
 
 

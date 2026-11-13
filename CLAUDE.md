@@ -46,6 +46,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 - Dependência de cauda (`src/models/cauda.py`, QRM cap. 5): `tail_dependence.csv` (3 anos) liga o mapa de risco por quedas
   conjuntas (padrão) ou correlação; as janelas 1/5/10 anos (`CAUDA_JANELAS`) vão para `tail_dependence_janelas.csv`, e a
   janela da barra lateral escolhe qual o mapa usa. Empresas e fatores desde 2005 (backtest das empresas desde `COMPANY_BT_START`).
+- Spread: high yield (BAMLH0A0HYM2, só 3 anos no FRED) nas ligações; a série longa BAA10Y fica em `spreads_longo` e é a
+  que o motor de cenários usa (MACRO_FACTORS["spreads"]["serie_longa"]).
 - Modelos de fatores (Fase C, QRM 3.4): `factor_links.fit_multivariate_ridge` junta colunas `*_multi` ao `factor_links.csv`
   (as antigas não mudam; Sentinela e choques usam as antigas); `decomposicao.py` → `company_factors.csv`.
 - Ações fora do mapa (Fase 5): `empresas.validar_ticker` + `YAHOO_SETOR_ETF`; ficam em `st.session_state["extras"]` e no link;

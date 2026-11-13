@@ -340,7 +340,7 @@ def render(g: dict) -> None:
                 metrica(f3_, f"Semáforo ({BT_TL_DAYS} dias)", SEM[cr["semaforo"]], "exceções ao VaR 99%")
                 metrica(f4_, "Backtest do modelo", modelo_txt(cr),
                         "previsão fiável" if cr["validado"] else "ler a previsão com cautela",
-                        ajuda=f"Validado: desde 2018, o {OFICIAL} passa nesta empresa os testes de Kupiec, Christoffersen "
+                        ajuda=f"Validado: desde 2008 (ou desde que a empresa existe), o {OFICIAL} passa nesta empresa os testes de Kupiec, Christoffersen "
                               f"e Z2 a {N_CVAR}. ES corrigido: no backtest as perdas nos dias maus foram maiores do que o "
                               "previsto (típico de ações com saltos em dias de resultados), por isso o ES mostrado já "
                               "vem multiplicado pelo fator que teria acertado no passado.")

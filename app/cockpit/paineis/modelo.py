@@ -84,7 +84,7 @@ def render(g: dict) -> None:
                 st.dataframe(rs[["Método", "Nível", *be.TESTES]], hide_index=True, width="stretch", column_config={
                     c: st.column_config.ProgressColumn(c, min_value=0, max_value=n_emp, format=f"%d / {n_emp}")
                     for c in be.TESTES})
-                st.caption(f"Previsões desde 2018 (preços desde 2015). O {METODOS[OFFICIAL_VAR_METHOD]} continua a ser o "
+                st.caption(f"Previsões desde 2008 (preços desde 2005). O {METODOS[OFFICIAL_VAR_METHOD]} continua a ser o "
                            f"melhor, mas com menos folga do que nos setores: passa os três testes a {N_CVAR} em "
                            f"{int(comp_risk['validado'].sum())} de {len(comp_risk)} empresas, e em "
                            f"{int(comp_risk['es_subestimado'].sum())} o ES fica subestimado. Uma ação isolada tem saltos "

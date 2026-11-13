@@ -11,7 +11,7 @@ from src.models.factor_links import sector_returns, weekly_levels
 from src.report import formato as fm
 from paineis.comum import nome
 
-NOMES_F = {f: MACRO_FACTORS[f]["curto"] for f in MACRO_FACTORS} | {cn.MERCADO: "Mercado (S&P 500)"}
+NOMES_F = {f: MACRO_FACTORS[f].get("curto_longo", MACRO_FACTORS[f]["curto"]) for f in MACRO_FACTORS} | {cn.MERCADO: "Mercado (S&P 500)"}
 
 
 @st.cache_resource(show_spinner=False)

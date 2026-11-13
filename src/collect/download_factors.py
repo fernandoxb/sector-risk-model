@@ -20,6 +20,8 @@ def download(start: str = FACTOR_START) -> pd.DataFrame:
     for k, f in MACRO_FACTORS.items():
         if f["fonte"] == "fred":
             cols[k] = fetch_rates(f["serie"], start)
+            if "serie_longa" in f:                       # série com mais história para as janelas longas
+                cols[f"{k}_longo"] = fetch_rates(f["serie_longa"], start)
     yahoo = {k: f["serie"] for k, f in MACRO_FACTORS.items() if f["fonte"] == "yahoo"}
     if yahoo:
         df = yf.download(list(yahoo.values()), start=start, auto_adjust=True, progress=False, threads=False)
@@ -27,7 +29,7 @@ def download(start: str = FACTOR_START) -> pd.DataFrame:
         close.index = pd.to_datetime(close.index).tz_localize(None)
         for k, s in yahoo.items():
             cols[k] = close[s]
-    out = pd.DataFrame(cols)[list(MACRO_FACTORS)].sort_index()
+    out = pd.DataFrame(cols)[[c for c in cols if c in MACRO_FACTORS or c.endswith("_longo")]].sort_index()
     out.index.name = "date"
     missing = [k for k in out if out[k].dropna().empty]
     if missing:

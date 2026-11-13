@@ -32,7 +32,8 @@ schema = pa.DataFrameSchema(
 
 factor_schema = pa.DataFrameSchema(
     {f: pa.Column(float, pa.Check(lambda s: np.isfinite(s.dropna()).all(), error="valor infinito"),
-                  nullable=True) for f in MACRO_FACTORS},
+                  nullable=True) for f in list(MACRO_FACTORS) + [f"{k}_longo" for k, m in MACRO_FACTORS.items()
+                                                                if "serie_longa" in m]},
     checks=[pa.Check(lambda df: isinstance(df.index, pd.DatetimeIndex), error="índice não é de datas"),
             pa.Check(lambda df: df.index.is_unique, error="datas repetidas"),
             pa.Check(lambda df: df.index.is_monotonic_increasing, error="datas fora de ordem")],

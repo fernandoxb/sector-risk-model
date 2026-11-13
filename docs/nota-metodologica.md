@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 5.9
+versao: 6.0
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -297,7 +297,7 @@ Saídas: `data/features/factor_links.csv` (as 66 regressões).
 |---|---|---|---|---|
 | juros | DGS10 (Treasury 10Y) | FRED | Δ em p.p. | subir |
 | inflacao | T10YIE (breakeven 10Y) | FRED | Δ em p.p. | subir |
-| spreads | BAA10Y (spread Baa da Moody's sobre o Treasury 10Y; até 2026-11-12, BAMLH0A0HYM2, high yield) | FRED | Δ em p.p. | subir |
+| spreads | BAMLH0A0HYM2 (spread high yield); nas janelas longas, BAA10Y (spread Baa da Moody's sobre o Treasury 10Y) | FRED | Δ em p.p. | subir |
 | vix | ^VIX | Yahoo | Δ log | subir |
 | petroleo | CL=F (WTI, futuro) | Yahoo | Δ log | subir |
 | dolar | DX-Y.NYB (DXY) | Yahoo | Δ log | subir |
@@ -322,7 +322,7 @@ com $\hat u_t = x_t \hat\varepsilon_t$, o núcleo de Bartlett e $L = \lfloor 4 (
 * Também são testados o corte da semana incompleta, as transformações (Δ e Δ log, com níveis ≤ 0 → sem valor), o último valor de cada semana e a MST com $N-1$ arestas.
 
 ### E. Resultados (semanas 2023-11-10 → 2026-11-06)
-> **Atualização de 2026-11-13:** o spread passou a ser o Baa da Moody's (ver F). A tabela abaixo é do spread high yield. Com o Baa são aceites **31 das 66** ligações; nos spreads ficam 6 (XLK $t$ = −3,7, XLY −3,2, XLF −3,0, XLC −2,6, XLI −2,5 e XLE −2,0), em vez de 9 com $t$ perto de −11. O spread Baa mexe menos por semana do que o high yield e liga-se menos ao VIX. Os outros cinco fatores não mudam.
+> **Nota:** entre 2026-11-13 e 2026-11-14 o spread destas ligações foi o Baa da Moody's; com ele eram aceites só 31 ligações e as dos spreads ficavam com $t$ até −3,7. Voltou-se ao high yield, que é o que mexe nas crises; o Baa ficou só onde é preciso história longa (ver F).
 
 São aceites **33 das 66** ligações. Por fator:
 
@@ -342,7 +342,7 @@ São aceites **33 das 66** ligações. Por fator:
 **Limitações:**
 * **Testes múltiplos:** com 66 testes a $|t| \ge 2$ (cerca de 5%), esperam-se ~3 ligações falsas mesmo sem relação nenhuma. As ligações com $|t|$ perto de 2 (dólar → XLRE, inflação → XLI) devem ser lidas com cautela.
 * As regressões são **univariadas**: o VIX e os spreads estão muito correlacionados entre si, e cada beta capta também o efeito dos outros fatores.
-* **Spread de crédito:** o CSV público do FRED só tem os últimos 3 anos do spread high yield (licença da ICE). Para haver janelas de 5 e 10 anos, desde 2026-11-13 usa-se o spread Baa da Moody's (`BAA10Y`, desde 1986). Mede o crédito de qualidade média, não o especulativo, por isso reage menos nas crises.
+* **Spread de crédito:** o CSV público do FRED só tem os últimos 3 anos do spread high yield (licença da ICE). Chega para as ligações (3 anos). O simulador de choques (10 anos) e o teste nas crises desde 2008 (secção 19) usam o spread Baa da Moody's (`BAA10Y`, desde 1986, coluna `spreads_longo`), que mede o crédito de qualidade média e reage menos do que o high yield.
 
 ### F. No cockpit
 * As ligações medidas aparecem por baixo da **Teia de risco** e na ficha de cada setor (secção 11).
@@ -431,7 +431,7 @@ O mapa de risco é um só e vive no cockpit (separador **Teia de risco**, desde 
 * **Ligação direta:** `?setor=XLK&empresa=NVDA` abre o mapa já nesse setor e nessa empresa.
 
 ### D. Limitações
-* As medidas da janela (CVaR histórico, betas, correlações) são descritivas. A previsão e o backtest por empresa estão na secção 13: o modelo oficial está validado em 61 de 109 empresas.
+* As medidas da janela (CVaR histórico, betas, correlações) são descritivas. A previsão e o backtest por empresa estão nas secções 13 e 15: o modelo oficial está validado em 76 de 109 empresas.
 * Com 10 empresas por setor, o mapa não cobre o setor todo, e a MST entre empresas só vê essas 10.
 * As posições e os pesos são os atuais: aplicá-los a 3 anos de preços ignora mudanças na composição dos ETFs.
 * A ficha e as notícias dependem do Yahoo Finance, sem garantia de serviço; os textos vêm em inglês.
@@ -585,7 +585,7 @@ A Teia de risco deixa escolher a janela. `cauda.fit_windows` repete o ajuste par
 
 * **Quem entra:** uma série entra numa janela se tiver dados em pelo menos 80% dos dias (`CAUDA_MIN_COBERTURA`). As contas usam os dias em que todas têm preço: na janela de 10 anos os setores começam com o XLC, em junho de 2018 (2 112 dias).
 * **Cauda com 1 ano:** os 5% piores dias seriam cerca de 12, poucos demais; usa-se $q$ = 10% (25 dias), e o acaso passa a ser 10%.
-* **Dados:** os preços das empresas e os fatores passaram a ser descarregados desde 2005. O backtest das empresas continua a começar em 2015 (`COMPANY_BT_START`), para os resultados da secção 13 não mudarem.
+* **Dados:** os preços das empresas e os fatores passaram a ser descarregados desde 2005, e o backtest das empresas também começa em 2005 (previsões desde 2008; ver secção 15).
 
 | Janela | $q$ | Dias comuns | Quedas conjuntas, média dos 55 pares | Par mais ligado |
 |---|---|---|---|---|
@@ -620,16 +620,18 @@ Séries que passam os três testes (Kupiec, Christoffersen e Z2) a 97,5%:
 
 | Método | Escolha 2008–2018 | Confirmação 2019–2026 | Amostra toda | Empresas (de 109) |
 |---|---|---|---|---|
-| **GARCH-EVT** | **9 de 9** | **10 de 11** | 9 de 11 | **75** |
-| GARCH-FHS | 6 de 9 | 9 de 11 | 9 de 11 | 61 |
-| GJR-GARCH(1,1)-t | 0 de 9 | 0 de 11 | 0 de 11 | 22 |
-| Histórico | 0 de 9 | 3 de 11 | 1 de 11 | 21 |
+| **GARCH-EVT** | **9 de 9** | **10 de 11** | 9 de 11 | **76** |
+| GARCH-FHS | 6 de 9 | 9 de 11 | 9 de 11 | 55 |
+| GJR-GARCH(1,1)-t | 0 de 9 | 0 de 11 | 0 de 11 | 26 |
+| Histórico | 0 de 9 | 3 de 11 | 1 de 11 | 8 |
+
+As colunas das empresas usam previsões desde 2008 (desde 2026-11-14; antes começavam em 2018 e davam EVT 75, FHS 61, GARCH-t 22 e histórico 21). Com 2008 e a COVID-19 dentro da amostra, o histórico afunda (reage tarde às crises) e a EVT fica igual.
 
 * **Decisão:** a regra `choose_method`, aplicada só a 2008–2018, escolhe a EVT; o período de confirmação e as empresas concordam. Por isso passou a modelo oficial.
 * **Setores:** na amostra toda a EVT e a FHS empatam (9 de 11). A EVT tem menos exceções a 97,5% (2,62% contra 2,75%, para 2,5% esperados) e corrige o XLE a 99% (51 exceções contra 64, para 47 esperadas), cujo semáforo passou de amarelo a verde.
-* **Empresas:** o ES subestimado desce de 40 para 25 empresas. Essas 25 mantêm a correção $k = 1 - Z_2$ (secção 13), em média ×1,30.
-* **O que não melhora:** o teste de McNeil–Frey rejeita a EVT em 9 empresas e a FHS em 4. A EVT acerta melhor a frequência, mas nessas empresas as perdas nas exceções continuam maiores do que o previsto.
-* **Testes múltiplos:** 8 rejeições em 88 nos setores (4,4 esperadas por acaso), nenhuma depois de Holm. Nas empresas, 99 em 872, das quais 2 sobrevivem a Holm (FHS: 146 e 0).
+* **Empresas:** o ES subestimado fica em 17 empresas (FHS: muitas mais). Essas 17 mantêm a correção $k = 1 - Z_2$ (secção 13), em média ×1,22.
+* **O que não melhora:** o teste de McNeil–Frey rejeita a EVT em 13 empresas e a FHS em 6. A EVT acerta melhor a frequência, mas nessas empresas as perdas nas exceções continuam maiores do que o previsto.
+* **Testes múltiplos:** 8 rejeições em 88 nos setores (4,4 esperadas por acaso), nenhuma depois de Holm. Nas empresas, 105 em 872 (43,6 esperadas), nenhuma depois de Holm (FHS: 213 e 0).
 
 ### D. Validação
 * `gpd_quantile` é igual a `scipy.stats.genpareto.ppf` (erro relativo < $10^{-12}$) e `gpd_es` à média numérica de 200 000 quantis da cauda.
@@ -659,11 +661,10 @@ As 66 regressões da secção 9 usam um fator de cada vez. Como o VIX e os sprea
 * **Leitura honesta do Ridge:** com cerca de 155 semanas, $\alpha = 1$ quase não encolhe os coeficientes ($Z^\top Z$ tem diagonal 154). Quem separa os fatores correlacionados é a regressão ser conjunta; o limiar de 0,05 sozinho aceitaria quase tudo, por isso exige-se também o teste $t$.
 * **Validação:** o coeficiente é igual ao de `sklearn.linear_model.Ridge` (erro relativo < 1e-9). Com dados simulados em que A causa o setor e B só anda com A ($r \approx 0{,}85$), a regressão de um fator aceita B por engano e a conjunta não.
 
-**Resultados (semanas 2023-11-17 → 2026-11-06, com o spread Baa):** 32 ligações resistem. Das 31 aceites uma a uma, 7 deixam de o ser e aparecem 8 novas.
+**Resultados (semanas 2023-11-17 → 2026-11-13):** 28 ligações resistem. Das 34 aceites uma a uma, 12 deixam de o ser e aparecem 6 novas.
 
-* **Somem:** os juros no XLE ($t$ de +2,8 para −0,2: o efeito era do petróleo e da inflação); a inflação implícita em XLK e XLE; os spreads em XLE e XLI; o VIX no XLP; o dólar no XLRE.
-* **Aparecem:** os juros a agravar XLV, XLY e XLB; a inflação em XLY e XLB; o VIX no XLE; o petróleo no XLI e no XLU. São efeitos que estavam escondidos por outros fatores.
-* Com o spread high yield (até 2026-11-12) resistiam 28 e somiam 12 das 34; a troca de série reduz a sobreposição entre o VIX e o crédito.
+* **Somem:** a inflação implícita em XLK, XLF, XLE e XLI; os juros no XLE ($t$ de +3,0 para +0,1: o efeito era do petróleo e da inflação); o VIX em XLV, XLP e XLRE; os spreads em XLE e XLV; o dólar em XLV e XLRE.
+* **Aparecem:** os juros a agravar XLV, XLY e XLB; a inflação no XLY; o petróleo no XLI e no XLU. São efeitos que estavam escondidos por outros fatores.
 * **O que não muda:** o Sentinela, o choque de juros e os cenários de stress continuam a usar o β de um fator de cada vez. Num choque de um só fator, esse β é o efeito total, incluindo o que costuma vir com ele; o conjunto responde a outra pergunta (o fator com tudo o resto parado).
 
 ### B. De onde vem o risco de cada empresa
