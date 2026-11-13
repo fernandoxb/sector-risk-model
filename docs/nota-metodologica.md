@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 4.3
+versao: 4.4
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -545,6 +545,52 @@ A correlação linear mede o andamento conjunto em dias normais. Para o contági
 
 ---
 
+## 🎯 15. EVT condicional e mudança do modelo oficial (Fase B)
+
+Código: `backtest.py` (`gpd_tail`, `gpd_quantile`, `gpd_es`, `mcneil_frey`) · parâmetros: `EVT_*`, `BT_MF_NBOOT` · segue McNeil e Frey (2000) e McNeil, Frey e Embrechts (2005), secções 7.2.3, 7.2.6 e 4.4.3.
+
+> **Desde 2026-11-13, o modelo oficial é a EVT condicional** (`OFFICIAL_VAR_METHOD = "evt"`). Onde as secções anteriores falam da FHS como modelo oficial, leia-se o modelo oficial em vigor; os números dessas secções são os da data indicada em cada uma.
+
+### A. Método
+Usa o mesmo GARCH da FHS (mesmos $\mu_t$ e $\sigma_t$). Muda só a cauda dos resíduos padronizados:
+* As perdas padronizadas $y = -\hat z$ acima de um limiar $u$ seguem uma distribuição de Pareto generalizada $G_{\xi,\beta}$, ajustada por máxima verosimilhança. O limiar deixa `EVT_TAIL_FRAC` = 10% da janela na cauda (cerca de 75 excessos em 756 dias; no livro, 100 em 1 000).
+* Quantil e expected shortfall da perda padronizada, com $\bar F(u)$ = fração na cauda e $p = 1 - \alpha$:
+  $$q_\alpha = u + \frac{\beta}{\xi}\left[\left(\frac{p}{\bar F(u)}\right)^{-\xi} - 1\right], \qquad \text{ES}_\alpha = \frac{q_\alpha}{1-\xi} + \frac{\beta - \xi u}{1-\xi}$$
+* $\text{VaR}_t = -(e^{\mu_t - \sigma_t q_\alpha} - 1)$. O ES em retorno simples é a média de $-(e^{\mu_t - \sigma_t q} - 1)$ sobre 400 quantis igualmente espaçados da cauda, como no GARCH-t.
+* **Porque ajuda:** a FHS estima o quantil de 2,5% com cerca de 19 resíduos; a Pareto usa os 75 piores e extrapola de forma suave, o que estabiliza o VaR e o ES extremos.
+
+### B. Teste de McNeil–Frey ao ES
+Nos dias de exceção, $R_t = (L_t - \text{ES}_t)/\text{ES}_t$ deve ter média zero. Testa-se $H_1$: média > 0 (ES subestimado) por bootstrap da estatística t com os resíduos centrados (2 000 reamostragens), coluna `p_mf`. Ao contrário do Z2, olha só para o **tamanho** das perdas nas exceções e não para a sua frequência. Fica como segundo teste do ES; a regra de escolha continua a usar o Z2.
+
+### C. Resultados (dados até 2026-11-12)
+Séries que passam os três testes (Kupiec, Christoffersen e Z2) a 97,5%:
+
+| Método | Escolha 2008–2018 | Confirmação 2019–2026 | Amostra toda | Empresas (de 109) |
+|---|---|---|---|---|
+| **GARCH-EVT** | **9 de 9** | **10 de 11** | 9 de 11 | **75** |
+| GARCH-FHS | 6 de 9 | 9 de 11 | 9 de 11 | 61 |
+| GJR-GARCH(1,1)-t | 0 de 9 | 0 de 11 | 0 de 11 | 22 |
+| Histórico | 0 de 9 | 3 de 11 | 1 de 11 | 21 |
+
+* **Decisão:** a regra `choose_method`, aplicada só a 2008–2018, escolhe a EVT; o período de confirmação e as empresas concordam. Por isso passou a modelo oficial.
+* **Setores:** na amostra toda a EVT e a FHS empatam (9 de 11). A EVT tem menos exceções a 97,5% (2,62% contra 2,75%, para 2,5% esperados) e corrige o XLE a 99% (51 exceções contra 64, para 47 esperadas), cujo semáforo passou de amarelo a verde.
+* **Empresas:** o ES subestimado desce de 40 para 25 empresas. Essas 25 mantêm a correção $k = 1 - Z_2$ (secção 13), em média ×1,30.
+* **O que não melhora:** o teste de McNeil–Frey rejeita a EVT em 9 empresas e a FHS em 4. A EVT acerta melhor a frequência, mas nessas empresas as perdas nas exceções continuam maiores do que o previsto.
+* **Testes múltiplos:** 8 rejeições em 88 nos setores (4,4 esperadas por acaso), nenhuma depois de Holm. Nas empresas, 99 em 872, das quais 2 sobrevivem a Holm (FHS: 146 e 0).
+
+### D. Validação
+* `gpd_quantile` é igual a `scipy.stats.genpareto.ppf` (erro relativo < $10^{-12}$) e `gpd_es` à média numérica de 200 000 quantis da cauda.
+* Com resíduos simulados de uma t(4), o ajuste recupera os quantis de 1% e 0,1% com erro inferior a 10%; com resíduos normais, $\hat\xi$ fica perto de zero.
+* Na simulação do Z2, a fração de cenários na cauda é a prevista (10%).
+* McNeil–Frey: com o ES certo não rejeita; com o ES 25% abaixo, $p < 1\%$; com o ES a mais não rejeita (teste unilateral).
+
+### E. Limitações
+* O limiar de 10% é fixo, como no livro; não foi otimizado nem testada a sensibilidade a outros valores.
+* $\hat\xi$ é limitado a 0,9, para o ES ser finito.
+* A mudança de modelo cria uma quebra nas séries do score e dos alertas a 2026-11-12: nesse dia, o alerta "XLE: semáforo amarelo → verde" vem da troca de método, não do mercado.
+
+---
+
 ## 📚 Referências
 * Acerbi, C. e Székely, B. (2014). *Backtesting Expected Shortfall*. Risk, dezembro de 2014.
 * Barone-Adesi, G., Giannopoulos, K. e Vosper, L. (1999). VaR without correlations for portfolios of derivative securities. *Journal of Futures Markets*, 19(5), 583–602.
@@ -555,6 +601,7 @@ A correlação linear mede o andamento conjunto em dias normais. Para o contági
 * Holm, S. (1979). A simple sequentially rejective multiple test procedure. *Scandinavian Journal of Statistics*, 6(2), 65–70.
 * Kupiec, P. (1995). Techniques for verifying the accuracy of risk measurement models. *Journal of Derivatives*, 3(2), 73–84.
 * Ledoit, O. e Wolf, M. (2004). A well-conditioned estimator for large-dimensional covariance matrices. *Journal of Multivariate Analysis*, 88(2), 365–411.
+* McNeil, A. e Frey, R. (2000). Estimation of tail-related risk measures for heteroscedastic financial time series: an extreme value approach. *Journal of Empirical Finance*, 7(3–4), 271–300.
 * McNeil, A., Frey, R. e Embrechts, P. (2005). *Quantitative Risk Management: Concepts, Techniques and Tools*. Princeton University Press.
 * Mantegna, R. (1999). Hierarchical structure in financial markets. *European Physical Journal B*, 11, 193–197.
 * Newey, W. e West, K. (1987). A simple, positive semi-definite, heteroskedasticity and autocorrelation consistent covariance matrix. *Econometrica*, 55(3), 703–708.

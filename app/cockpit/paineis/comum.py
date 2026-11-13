@@ -34,7 +34,7 @@ NOMES = {"cauda": "Cauda", "sistemico": "Sistémico", "stress": "Stress", "regim
 CORES_C = {"cauda": "#6366f1", "sistemico": "#0ea5e9", "stress": "#a855f7", "regime": "#14b8a6", "momento": "#ec4899"}
 
 
-METODOS = {"historico": "Histórico", "garch": "GJR-GARCH(1,1)-t", "fhs": "GARCH-FHS"}
+METODOS = {"historico": "Histórico", "garch": "GJR-GARCH(1,1)-t", "fhs": "GARCH-FHS", "evt": "GARCH-EVT"}
 
 
 OFICIAL = OFFICIAL_VAR_METHOD.upper()

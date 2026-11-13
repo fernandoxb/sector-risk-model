@@ -7,11 +7,12 @@
 > **In English.** An end-to-end market-risk model for the 11 SPDR sector ETFs against the S&P 500. It is built as a
 > portfolio project for a Master's in Risk Management. Daily VaR and Expected Shortfall come from three methods
 > (historical, GJR-GARCH-t and Filtered Historical Simulation) and are **backtested out of sample from 2008 to 2026**
-> with Kupiec, Christoffersen, Basel traffic lights and the Acerbi–Székely Z2 test. **FHS is the only method that passes
-> coverage, independence and the ES test at the same time**, so it is the official model.
+> with Kupiec, Christoffersen, Basel traffic lights and the Acerbi–Székely Z2 test. **Only the two methods that combine GARCH volatility with
+> the empirical tail (FHS and conditional EVT) pass**; conditional EVT is chosen on 2008–2018 data, confirmed on
+> 2019–2026 and on 109 single stocks, so it is the official model.
 > The project also covers portfolio risk (Ledoit-Wolf covariance, Euler risk contributions, 2008/2020/2022 stress tests),
 > a 0–100 risk scorecard, macro-factor → sector links estimated with HAC regressions, and an automated daily pipeline
-> (Prefect + launchd) with alerts and weekly reports. There are 157 tests and CI on GitHub Actions.
+> (Prefect + launchd) with alerts and weekly reports. There are 162 tests and CI on GitHub Actions.
 
 Pipeline em Python que mede o risco de mercado dos 11 ETFs setoriais SPDR (XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLU,
 XLB, XLRE, XLC) face ao SPY, setor a setor e em carteira. Corre sozinho todos os dias úteis e publica os resultados em três
@@ -20,40 +21,51 @@ sítios:
 * um **mapa de riscos** interativo;
 * notas no **Obsidian**, com alertas e um relatório semanal.
 
-## Resultado principal: só a FHS passa o backtest
-VaR e ES a 1 dia previstos **só com dados até à véspera**, em janela móvel de 3 anos, de 2008 a 2026: 46 064 previsões
+## Resultado principal: só os métodos com GARCH e cauda dos dados passam o backtest
+VaR e ES a 1 dia previstos **só com dados até à véspera**, em janela móvel de 3 anos, de 2008 a 2026: 46 075 previsões
 por nível, nos 11 setores. A tabela mostra em quantos setores (de 11) cada método **não é rejeitado** a 5%:
 
 | Método | Kupiec 97,5% | Christoffersen 97,5% | Condicional 97,5% | Z2 (ES) 97,5% | Kupiec 99% | Christoffersen 99% | Condicional 99% | Z2 (ES) 99% |
 |---|---|---|---|---|---|---|---|---|
-| **GARCH-FHS** | **11** | **10** | **10** | **11** | **10** | **8** | **8** | **10** |
+| **GARCH-EVT** (oficial) | **11** | **9** | **11** | **11** | **11** | **8** | **9** | **10** |
+| GARCH-FHS | 11 | 10 | 10 | 9 | 10 | 8 | 8 | 10 |
 | GJR-GARCH(1,1)-t | 1 | 10 | 2 | 0 | 1 | 11 | 1 | 0 |
 | Histórico | 7 | 1 | 1 | 3 | 5 | 1 | 1 | 2 |
 
 Cada método falha por uma razão diferente:
 * **Histórico:** acerta mais ou menos na frequência das exceções, mas reage tarde às crises e as exceções aparecem em grupos, por isso falha no Christoffersen.
 * **GARCH com t-Student:** acompanha a volatilidade, mas a cauda paramétrica é demasiado fina, por isso falha no Kupiec e no Z2.
-* **FHS:** junta a volatilidade do GARCH à cauda empírica dos resíduos, e só ela passa os três testes.
+* **FHS e EVT:** juntam a volatilidade do GARCH à cauda dos resíduos passados. A FHS usa os resíduos tal como são; a EVT ajusta-lhes uma distribuição de Pareto na cauda (McNeil e Frey, 2000), o que estabiliza os quantis extremos.
 
-**A escolha não depende dos dados em que foi avaliada.** Escolhendo o método só com as previsões de 2008–2018, a FHS é
-o único que passa os três testes (6 de 9 setores a 97,5%; os outros dois, zero). Em 2019–2026, que não entrou na
-escolha, passa em 9 de 11. Com a correção de Holm para os 88 testes de cada método, a FHS fica sem nenhuma rejeição
-(GARCH-t: 23; histórico: 42).
+**A escolha não depende dos dados em que foi avaliada.** O método é escolhido só com as previsões de 2008–2018 e
+confirmado com as de 2019–2026, que a escolha nunca viu. Setores que passam os três testes (Kupiec, Christoffersen e
+Z2) a 97,5%:
+
+| Método | Escolha 2008–2018 | Confirmação 2019–2026 | Empresas (de 109) |
+|---|---|---|---|
+| **GARCH-EVT** | **9 de 9** | **10 de 11** | **75** |
+| GARCH-FHS | 6 de 9 | 9 de 11 | 61 |
+| GJR-GARCH(1,1)-t | 0 de 9 | 0 de 11 | 22 |
+| Histórico | 0 de 9 | 3 de 11 | 21 |
+
+Na amostra toda, a EVT e a FHS empatam nos setores (9 de 11); a EVT ganha nos dois períodos em separado e nas empresas.
+Com a correção de Holm para os 88 testes de cada método, a EVT e a FHS ficam sem nenhuma rejeição (GARCH-t: 23;
+histórico: 40).
 
 Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% e o ES 97,5% da sessão seguinte (calendário da NYSE com feriados).
 
 ![Backtest no cockpit: o histórico é rejeitado e a FHS passa](docs/img/cockpit-backtest.png)
 
-**E empresa a empresa?** O mesmo backtest corre nas 109 maiores empresas dos 11 setores (previsões desde 2018). A FHS
-continua a ser o melhor método, mas com menos folga: passa os três testes a 97,5% em **61 de 109** empresas (GARCH-t: 22;
-histórico: 21), e em 40 o ES fica subestimado. Uma ação isolada tem saltos que um setor dilui. Nessas 40, o ES
-mostrado é corrigido pelo fator que teria acertado no backtest (k = 1 − Z2, em média ×1,31).
+**E empresa a empresa?** O mesmo backtest corre nas 109 maiores empresas dos 11 setores (previsões desde 2018). A EVT
+passa os três testes a 97,5% em **75 de 109** (FHS: 61; GARCH-t: 22; histórico: 21), e em 25 o ES ainda fica
+subestimado: uma ação isolada tem saltos que um setor dilui. Nessas 25, o ES mostrado é corrigido pelo fator que teria
+acertado no backtest (k = 1 − Z2, em média ×1,30).
 
 ## O que o projeto faz
 | Bloco | Métodos | Onde |
 |---|---|---|
 | Risco de cauda | CVaR/ES 97,5% (FRTB), downside beta nos 20% piores dias do SPY | `src/models/cockpit.py`, `risk_metrics.py` |
-| Previsão e backtest | Histórico, GJR-GARCH(1,1)-t, FHS; Kupiec, Christoffersen, Z2 de Acerbi–Székely (p-valor por simulação), semáforo de Basileia, regra por mesa do FRTB | `src/models/backtest.py` |
+| Previsão e backtest | Histórico, GJR-GARCH(1,1)-t, FHS e EVT condicional; Kupiec, Christoffersen, Z2 de Acerbi–Székely (p-valor por simulação), semáforo de Basileia, regra por mesa do FRTB | `src/models/backtest.py` |
 | Empresas e carteira própria | O mesmo backtest em 109 empresas; carteira do utilizador com contribuições de Euler, exposição por setor, stress e previsão FHS | `src/models/backtest_empresas.py`, `carteira.py` |
 | Carteira | Covariância de Ledoit-Wolf, contribuições de Euler para a volatilidade e o CVaR, stress tests de 2008, COVID-19 e 2022 | `src/models/portfolio.py` |
 | Scorecard 0–100 | 5 componentes normalizados por percentil, multiplicador de risco de modelo (semáforo), P × I, sensibilidade ±50% aos pesos | `src/models/scorecard.py` |
@@ -127,7 +139,7 @@ python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_pipeline.py            # coleta → validação → modelos → mapa (precisa de rede)
 .venv/bin/streamlit run app/cockpit/app.py  # cockpit em http://localhost:8501
 open app/risk-map/index.html                # mapa de riscos (sem servidor)
-.venv/bin/python -m pytest                  # 157 testes, sem rede
+.venv/bin/python -m pytest                  # 162 testes, sem rede
 ```
 * **Chave do FRED:** é opcional. Se definires `FRED_API_KEY` num `.env`, os dados vêm pela API; caso contrário usa-se o CSV público.
 * **Sem rede:** `run_pipeline.py --offline` reutiliza os dados de `data/raw/`.
@@ -166,12 +178,12 @@ Convenções:
 
 ## Limitações
 * **Universo:** são só ETFs setoriais dos EUA e as suas 10 maiores empresas; o resultado não se generaliza a outros mercados.
-* **Empresas:** o modelo oficial só está validado em 61 de 109 e subestima o ES em 40. O backtest das empresas começa em 2018, por isso não inclui 2008.
+* **Empresas:** o modelo oficial só está validado em 75 de 109 e subestima o ES em 25. O backtest das empresas começa em 2018, por isso não inclui 2008.
 * **Carteira do utilizador:** a previsão usa o modelo oficial sobre os retornos da carteira com os pesos atuais. O backtest de cada carteira tem só cerca de 2 anos de previsões, sem nenhuma crise.
 * **Correção do ES:** o fator é calibrado no mesmo backtest que o justifica; corrige o que o passado mostrou.
 * **Dados:** os preços vêm do Yahoo Finance (ajustados, sem garantia de serviço). Há séries do FRED com 1 dia de atraso, e o spread high yield (ICE BofA) só está disponível no FRED para os últimos 3 anos.
 * **Proxies em 2008:** o XLRE e o XLC ainda não existiam, por isso no stress de 2008 usam um proxy β × SPY com o β atual, que ignora o risco específico.
-* **FHS:** passa os testes, mas a 97,5% tem ligeiramente mais exceções do que as esperadas no agregado (1 267 contra 1 152, ou seja, 2,75% contra 2,5%). A 99%, o XLE está em amarelo no semáforo.
+* **Modelo oficial (EVT):** a 97,5% tem ligeiramente mais exceções do que as esperadas no agregado (1 208 contra 1 152, ou seja, 2,62% contra 2,5%). Na amostra toda só passa os três testes em 9 de 11 setores a 97,5% e em 7 de 11 a 99%.
 * **Ligações macro:** são regressões univariadas (não isolam efeitos conjuntos) e não há correção para testes múltiplos nas 66 regressões. Com |t| ≥ 2, é de esperar cerca de 3 falsos positivos.
 * **Dependência de cauda:** cada frequência de quedas conjuntas assenta em cerca de 38 dias (erro de uns 8 pontos), numa janela de 3 anos sem crise sistémica.
 * **Scorecard e P × I:** são relativos aos 11 setores (percentis e quintis). Um setor pode mudar de nível sem que o seu risco mude. Na média dos stress tests, ganhos compensam perdas (o XLE em 2022).
@@ -188,7 +200,7 @@ flows/                  flow Prefect e agendamento launchd
 app/risk-map/           mapa de riscos (HTML autónomo)
 app/cockpit/            cockpit Streamlit: app.py (dados, barra lateral), paineis/ (um ficheiro por separador), snapshot/
 scripts/                capturas de ecrã e PDF da nota metodológica (Chrome headless)
-tests/                  157 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
+tests/                  162 testes (pytest), sem rede (inclui o cockpit em modo snapshot)
 docs/                   nota metodológica (.md e .pdf) e capturas
 ```
 

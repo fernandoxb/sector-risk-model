@@ -32,12 +32,15 @@ import pandas as pd
 from arch import arch_model
 from arch.univariate import StudentsT
 from scipy.special import xlogy
-from scipy.stats import binom, chi2
+from functools import lru_cache
+
+from scipy.stats import binom, chi2, genpareto
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (BT_ES_GRID, BT_ES_NSIM, BT_FRTB_MAX, BT_LEVELS,  # noqa: E402
                              BT_METHODS, BT_REFIT_FREQ, BT_SEED, BT_SIGNIF, BT_TL_DAYS,
-                             BT_SPLIT, BT_SPLIT_MIN_DAYS, BT_TL_GREEN, BT_TL_RED, BT_WINDOW, CLEAN,
+                             BT_MF_NBOOT, BT_SPLIT, BT_SPLIT_MIN_DAYS, BT_TL_GREEN, BT_TL_RED, BT_WINDOW, CLEAN,
+                             EVT_TAIL_FRAC, EVT_XI_MAX,
                              CVAR_LEVEL, FEATURES, OFFICIAL_MEASURES, OFFICIAL_VAR_METHOD, SECTORS)
 from src.collect.sessao import proximo_dia_util  # noqa: E402
 from src.models.cockpit import cvar  # noqa: E402
@@ -118,6 +121,44 @@ def t_tail_grid(level: float, nu: float, n: int = BT_ES_GRID) -> np.ndarray:
     return T_DIST.ppf(p * (np.arange(n) + 0.5) / n, np.array([nu]))
 
 
+# ----------------------------------------------------------------------------- EVT: cauda de Pareto dos resíduos
+@lru_cache(maxsize=8192)
+def _gpd_fit(buf: bytes, frac: float, xi_max: float) -> tuple[float, float, float, float]:
+    y = np.sort(-np.frombuffer(buf, dtype=float))            # perdas padronizadas, por ordem crescente
+    k = max(int(np.floor(frac * len(y))), 10)
+    u = float(y[-k - 1])                                     # limiar: deixa k excessos acima
+    exc = y[-k:] - u
+    try:
+        xi, _, beta = genpareto.fit(exc, floc=0)
+        if not (np.isfinite(xi) and np.isfinite(beta) and beta > 0):
+            raise ValueError
+    except Exception:  # noqa: BLE001  ajuste falhou: cauda exponencial (ξ = 0) com a média dos excessos
+        xi, beta = 0.0, float(exc.mean())
+    return u, float(np.clip(xi, -0.5, xi_max)), float(beta), k / len(y)
+
+
+def gpd_tail(z: np.ndarray, frac: float = EVT_TAIL_FRAC, xi_max: float = EVT_XI_MAX) -> tuple[float, float, float, float]:
+    """Cauda das perdas padronizadas (−z) por máxima verosimilhança: (limiar u, ξ, β, fração na cauda).
+
+    Os excessos acima de u seguem uma Pareto generalizada G_{ξ,β} (QRM, teorema 7.20). Guardado em cache por
+    conjunto de resíduos, porque o mesmo ajuste serve a previsão e a simulação."""
+    return _gpd_fit(np.ascontiguousarray(z, dtype=float).tobytes(), frac, xi_max)
+
+
+def gpd_quantile(prob_cauda, u: float, xi: float, beta: float, frac: float) -> np.ndarray:
+    """Perda padronizada ultrapassada com probabilidade `prob_cauda` (<= frac), QRM eq. 7.18:
+    q = u + β/ξ · ((prob/frac)^(−ξ) − 1); no limite ξ → 0, u − β ln(prob/frac)."""
+    ratio = np.asarray(prob_cauda, dtype=float) / frac
+    if abs(xi) < 1e-9:
+        return u - beta * np.log(ratio)
+    return u + beta / xi * (ratio ** (-xi) - 1)
+
+
+def gpd_es(prob_cauda: float, u: float, xi: float, beta: float, frac: float) -> float:
+    """Expected shortfall da perda padronizada, QRM eq. 7.19: ES = q/(1 − ξ) + (β − ξu)/(1 − ξ), para ξ < 1."""
+    return float(gpd_quantile(prob_cauda, u, xi, beta, frac) / (1 - xi) + (beta - xi * u) / (1 - xi))
+
+
 def _to_loss(mu: np.ndarray, sig: np.ndarray, z: np.ndarray | float) -> np.ndarray:
     """Cenário log (%) μ + σz → perda simples positiva."""
     return -np.expm1((mu + sig * z) / 100)
@@ -129,8 +170,9 @@ def garch_risk(g: pd.DataFrame, pools: dict[int, np.ndarray],
 
     garch  quantil e cauda da t padronizada com o ν estimado
     fhs    quantil e cauda empíricos dos resíduos padronizados da janela de estimação
+    evt    quantil e cauda de uma Pareto generalizada ajustada aos piores resíduos (EVT condicional)
     """
-    cols = [f"{m}_{k}_{lv}" for k in ("garch", "fhs") for lv in levels for m in ("var", "es")]
+    cols = [f"{m}_{k}_{lv}" for k in ("garch", "fhs", "evt") for lv in levels for m in ("var", "es")]
     out = pd.DataFrame(np.nan, index=g.index, columns=cols)
     for i, blk in g.dropna().groupby("refit"):
         mu, sig = blk["mu"].to_numpy()[:, None], blk["sigma"].to_numpy()[:, None]
@@ -142,6 +184,11 @@ def garch_risk(g: pd.DataFrame, pools: dict[int, np.ndarray],
             out.loc[blk.index, f"es_garch_{lv}"] = _to_loss(mu, sig, t_tail_grid(lv, nu, n_grid)).mean(1)
             out.loc[blk.index, f"var_fhs_{lv}"] = _to_loss(mu, sig, q_e)[:, 0]
             out.loc[blk.index, f"es_fhs_{lv}"] = _to_loss(mu, sig, z[z <= q_e]).mean(1)
+            gp = gpd_tail(z)
+            p = 1 - lv
+            out.loc[blk.index, f"var_evt_{lv}"] = _to_loss(mu, sig, -gpd_quantile(p, *gp))[:, 0]
+            grelha = -gpd_quantile(p * (np.arange(n_grid) + 0.5) / n_grid, *gp)      # cauda em fatias iguais
+            out.loc[blk.index, f"es_evt_{lv}"] = _to_loss(mu, sig, grelha).mean(1)
     return out
 
 
@@ -235,6 +282,29 @@ def z2(loss: np.ndarray, var: np.ndarray, es: np.ndarray, p: float) -> np.ndarra
     return 1 - (np.where(hit, loss, 0.0) / es).sum(axis=-1) / (loss.shape[-1] * p)
 
 
+def mcneil_frey(loss: np.ndarray, var: np.ndarray, es: np.ndarray, n_boot: int = BT_MF_NBOOT,
+                seed: int = BT_SEED) -> dict:
+    """Teste do ES pelos resíduos das exceções (McNeil e Frey 2000; QRM 4.4.3, eq. 4.52).
+
+    Nos dias de exceção, R_t = (L_t − ES_t) / ES_t deve ter média zero se o ES estiver certo. H1: média > 0
+    (ES subestimado). P-valor por bootstrap da estatística t com os resíduos centrados (Efron e Tibshirani).
+    Ao contrário do Z2, olha só para o tamanho das perdas nas exceções, não para a sua frequência.
+    Devolve {"n", "media", "pvalue"}; sem pelo menos 5 exceções, pvalue = NaN.
+    """
+    loss, var, es = (np.asarray(a, dtype=float) for a in (loss, var, es))
+    hit = loss > var
+    res = (loss[hit] - es[hit]) / es[hit]
+    n = len(res)
+    if n < 5 or res.std(ddof=1) == 0:
+        return {"n": n, "media": float(res.mean()) if n else float("nan"), "pvalue": float("nan")}
+    t_obs = res.mean() / (res.std(ddof=1) / np.sqrt(n))
+    rng = np.random.default_rng(seed)
+    amostra = rng.choice(res - res.mean(), size=(n_boot, n))
+    with np.errstate(divide="ignore", invalid="ignore"):         # reamostra sem variação: t fica inf/NaN e não conta
+        t_boot = amostra.mean(1) / (amostra.std(1, ddof=1) / np.sqrt(n))
+    return {"n": n, "media": float(res.mean()), "pvalue": float((np.sum(t_boot >= t_obs) + 1) / (n_boot + 1))}
+
+
 def z2_pvalue(z_obs: float, z_sim: np.ndarray) -> float:
     """P-valor unilateral (ES subestimado): fração das simulações sob H0 com Z2 <= observado."""
     return float((np.sum(z_sim <= z_obs) + 1) / (len(z_sim) + 1))
@@ -247,6 +317,7 @@ def simulate_losses(method: str, r: pd.Series, aux: pd.DataFrame, pools: dict[in
     historico  reamostragem uniforme dos `window` retornos anteriores
     garch      μ + σ·z, z ~ t padronizada com o ν do dia
     fhs        μ + σ·z, z reamostrado dos resíduos padronizados da estimação em vigor
+    evt        como a FHS no corpo da distribuição; na cauda (fração EVT_TAIL_FRAC), z tirado da Pareto ajustada
     """
     T = len(aux)
     if method == "historico":
@@ -263,6 +334,17 @@ def simulate_losses(method: str, r: pd.Series, aux: pd.DataFrame, pools: dict[in
         for i in np.unique(refit):
             cols = np.flatnonzero(refit == i)
             z[:, cols] = rng.choice(pools[i], size=(n_sim, len(cols)))
+    elif method == "evt":
+        z = np.empty((n_sim, T))
+        refit = aux["refit"].to_numpy().astype(int)
+        for i in np.unique(refit):
+            cols = np.flatnonzero(refit == i)
+            u, xi, beta, frac = gpd_tail(pools[i])
+            corpo = pools[i][-pools[i] <= u]
+            zi = rng.choice(corpo, size=(n_sim, len(cols)))
+            na_cauda = rng.random((n_sim, len(cols))) < frac
+            zi[na_cauda] = -gpd_quantile(frac * rng.random(int(na_cauda.sum())), u, xi, beta, frac)
+            z[:, cols] = zi
     else:
         raise ValueError(f"Método desconhecido: {method}")
     return _to_loss(mu, sig, z)
@@ -312,7 +394,8 @@ def backtest_table(fc: pd.DataFrame, aux: pd.DataFrame, pools: dict, r: pd.Serie
             z_obs = float(z2(loss, var, es, 1 - lv))
             rows.append({"metodo": m, "nivel": lv}
                         | backtest_row(fc["ret"], fc[f"var_{m}_{lv}"], lv)
-                        | {"z2": z_obs, "p_z2": z2_pvalue(z_obs, z2(sims, var, es, 1 - lv))})
+                        | {"z2": z_obs, "p_z2": z2_pvalue(z_obs, z2(sims, var, es, 1 - lv)),
+                           "p_mf": mcneil_frey(loss, var, es, seed=seed)["pvalue"]})
     return pd.DataFrame(rows)
 
 

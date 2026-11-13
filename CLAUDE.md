@@ -16,7 +16,7 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 - Carteira / visão conjunta: retornos simples (agregação linear nos pesos), também para a volatilidade.
 - CVaR padrão: `CVAR_LEVEL = 0.975` (Expected Shortfall do FRTB, Basileia III), janela `CVAR_YEARS = 3`.
 - Pânico (downside beta): `PANIC_Q = 0.20` (20% piores dias do SPY).
-- Modelo oficial de VaR/ES (forward-looking): `OFFICIAL_VAR_METHOD = "fhs"`, escolhido pelo backtest;
+- Modelo oficial de VaR/ES (forward-looking): `OFFICIAL_VAR_METHOD = "evt"` (GARCH + cauda de Pareto), escolhido pelo backtest;
   previsão de amanhã em `data/features/official_risk.csv`. O CVaR histórico continua a ser o do mapa e do cockpit.
 - Rótulos na UI dizem sempre nível e janela (ex.: "CVaR 97,5% · 1 dia · 3 anos").
 - Números na UI em português, sempre via `src/report/formato.py` (vírgula decimal, "−" tipográfico); perdas de
@@ -64,3 +64,14 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 3. ✅ Sprint 3 — visão conjunta: Ledoit-Wolf, contribuição para o risco, stress tests (2008, 2020, 2022).
 4. ✅ Sprint 4 — bots com Prefect (agendamento launchd), alertas do Sentinela e relatório semanal no Obsidian.
 5. ✅ Sprint 5 — montra: README com resultados e capturas, nota metodológica em PDF, cockpit no Streamlit Cloud (modo snapshot).
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- When graphify-out/graph.json exists, run `graphify query "<question>"` before your first grep, search or source-file read for a codebase question, and put this rule in every subagent prompt that explores code. Read raw files only for lines the graph or an earlier read already located. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- A committed graphify-out/graph.json is rewritten whole on every build, so a large diff to it in a pull request is expected. Do not flag it as churn or suggest skipping the graph rebuild or its hooks.

@@ -51,6 +51,10 @@ async def chrome(w: int = 1440, h: int = 1250, scale: float = 2):
             yield cmd
     finally:
         proc.terminate()
+        try:                                   # sem isto, um Chrome que ignore o terminate fica a ocupar a porta
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 async def wait_for(cmd, js: str, timeout: float = 90) -> bool:

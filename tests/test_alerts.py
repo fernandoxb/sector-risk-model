@@ -7,6 +7,7 @@ import copy
 import pandas as pd
 import pytest
 
+from config.settings import OFFICIAL_VAR_METHOD as OF
 from src.report import alerts as al
 from src.report import weekly as wk
 
@@ -98,7 +99,7 @@ def test_build_state():
                        "impacto": [5, 1], "probabilidade": [4, 2]}, index=["XLK", "XLU"])
     series = pd.DataFrame({"data": pd.to_datetime(["2026-11-06", "2026-11-09", "2026-11-09"]),
                            "setor": ["XLK", "XLK", "XLU"], "ret": [-0.10, -0.03, 0.01],
-                           "var_fhs_0.975": [0.02, 0.02, 0.02], "es_fhs_0.975": [0.03, 0.025, 0.03]})
+                           f"var_{OF}_0.975": [0.02, 0.02, 0.02], f"es_{OF}_0.975": [0.03, 0.025, 0.03]})
     links = pd.DataFrame({"fator": ["vix", "juros"], "setor": ["XLK", "XLU"], "aceite": [True, False],
                           "sinal": ["+", None]})
     s = al.build_state("2026-11-09", sc, series, links, {"regime": "estável"})
@@ -142,7 +143,7 @@ def test_semana_e_excecoes_da_semana():
     assert wk.is_report_day("2026-11-13") and not wk.is_report_day("2026-11-12")
     series = pd.DataFrame({"data": pd.to_datetime(["2026-11-06", "2026-11-09", "2026-11-10", "2026-11-13"]),
                            "setor": "XLK", "ret": [-0.05, -0.03, -0.01, -0.05],
-                           "var_fhs_0.975": 0.02, "es_fhs_0.975": 0.04})
+                           f"var_{OF}_0.975": 0.02, f"es_{OF}_0.975": 0.04})
     exc = wk.week_exceptions(series, "2026-11-12")         # sexta anterior e dia 13 ficam de fora
     assert exc["data"].astype(str).tolist() == ["2026-11-09"] and not exc["acima_es"].any()
     assert wk.week_days(series, "2026-11-13") == 3

@@ -230,7 +230,7 @@ def test_frtb_por_mesa(n, lv, res):
 
 
 # ----------------------------------------------------------------------------- sem look-ahead
-@pytest.mark.parametrize("metodo", ["historico", "garch", "fhs"])
+@pytest.mark.parametrize("metodo", ["historico", "garch", "fhs", "evt"])
 def test_sem_look_ahead(rets, metodo):
     """Mudar o retorno do dia t (e de todos os seguintes) não pode alterar o VaR nem o ES de nenhum dia <= t."""
     fc0, _, _ = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
@@ -248,7 +248,7 @@ def test_sem_look_ahead(rets, metodo):
 def test_tabela_tem_todas_as_combinacoes(rets):
     fc, aux, pools = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
     tab = bt.backtest_table(fc, aux, pools, rets, (0.99, 0.975), window=WINDOW, n_sim=200)
-    assert len(tab) == 6 and set(tab["semaforo"]) <= {"verde", "amarelo", "vermelho"}
+    assert len(tab) == 2 * len(bt.BT_METHODS) and set(tab["semaforo"]) <= {"verde", "amarelo", "vermelho"}
     assert (tab["dias"] == len(fc)).all() and tab["p_z2"].between(0, 1).all()
 
 
@@ -332,3 +332,62 @@ def test_periodos_usam_as_mesmas_previsoes(rets):
     assert set(res.periodo) == {"total", "selecao", "confirmacao"}
     curto, _, _ = bt.run(simple, ["X"], split=meio, min_days=10_000)          # períodos curtos demais ficam de fora
     assert set(curto.periodo) == {"total"}
+
+
+# ----------------------------------------------------------------------------- EVT condicional (cauda de Pareto)
+def test_formulas_da_cauda_iguais_ao_scipy():
+    from scipy.stats import genpareto
+    u, xi, beta, frac = 1.3, 0.2, 0.6, 0.10
+    for p in (0.05, 0.025, 0.01, 0.001):
+        ref = u + genpareto.ppf(1 - p / frac, xi, scale=beta)        # P(X > x) = frac · (1 − G(x − u))
+        assert bt.gpd_quantile(p, u, xi, beta, frac) == pytest.approx(ref, rel=1e-12)
+    # ES = média dos quantis da cauda (integração numérica fina) = fórmula fechada 7.19
+    grelha = bt.gpd_quantile(0.025 * (np.arange(200_000) + 0.5) / 200_000, u, xi, beta, frac)
+    assert bt.gpd_es(0.025, u, xi, beta, frac) == pytest.approx(grelha.mean(), rel=1e-3)
+    assert bt.gpd_quantile(0.01, u, 0.0, beta, frac) == pytest.approx(u - beta * np.log(0.1))   # limite exponencial
+    assert bt.gpd_quantile(frac, u, xi, beta, frac) == pytest.approx(u)                           # no limiar
+
+
+def test_ajuste_da_cauda_recupera_quantis_extremos():
+    from scipy.stats import t as t_dist
+    rng = np.random.default_rng(12)
+    z = rng.standard_t(4, 20_000)                                    # perdas = −z, cauda pesada (ξ teórico = 1/4)
+    u, xi, beta, frac = bt.gpd_tail(z)
+    assert frac == pytest.approx(0.10, abs=1e-4) and 0.05 < xi < 0.45 and beta > 0
+    for p in (0.01, 0.001):                                          # extrapola para lá do que a amostra mostra bem
+        assert bt.gpd_quantile(p, u, xi, beta, frac) == pytest.approx(t_dist.ppf(1 - p, 4), rel=0.10)
+    _, xi_n, _, _ = bt.gpd_tail(rng.normal(size=20_000))             # cauda leve: ξ perto de zero ou negativo
+    assert xi_n < 0.08 < xi
+    assert bt.gpd_tail(z) == bt.gpd_tail(z.copy())                   # mesmo conjunto de resíduos: mesmo ajuste (cache)
+
+
+def test_evt_na_previsao_e_na_simulacao(rets):
+    fc, aux, pools = bt.sector_forecasts(rets, (0.99, 0.975), WINDOW, "M")
+    i = int(aux["refit"].iloc[-1])
+    gp = bt.gpd_tail(pools[i])
+    mu, sig = aux["mu"].iloc[-1], aux["sigma"].iloc[-1]
+    assert fc["var_evt_0.99"].iloc[-1] == pytest.approx(float(bt._to_loss(mu, sig, -bt.gpd_quantile(0.01, *gp))))
+    assert (fc["es_evt_0.975"] > fc["var_evt_0.975"]).all() and (fc["var_evt_0.99"] > fc["var_evt_0.975"]).all()
+    # o corpo da distribuição é o da FHS: abaixo do limiar os dois VaR ficam próximos
+    assert fc["var_evt_0.975"].corr(fc["var_fhs_0.975"]) > 0.95
+    sim = bt.simulate_losses("evt", rets, aux, pools, WINDOW, 400, np.random.default_rng(0))
+    assert sim.shape == (400, len(aux))
+    limiar = bt._to_loss(aux["mu"].to_numpy(), aux["sigma"].to_numpy(), -gp[0])
+    ultimos = aux["refit"].to_numpy() == i
+    assert (sim[:, ultimos] > limiar[ultimos]).mean() == pytest.approx(gp[3], abs=0.02)   # fração na cauda
+
+
+# ----------------------------------------------------------------------------- teste de McNeil–Frey ao ES
+def test_mcneil_frey_deteta_es_subestimado():
+    rng = np.random.default_rng(31)
+    n, p = 6000, 0.025
+    from scipy.stats import t as t_dist
+    loss = rng.standard_t(5, n) * 0.01
+    var = np.full(n, t_dist.ppf(1 - p, 5) * 0.01)
+    es_certo = np.full(n, loss[loss > var[0]].mean())
+    ok = bt.mcneil_frey(loss, var, es_certo)
+    assert ok["n"] == int((loss > var).sum()) and abs(ok["media"]) < 1e-12 and ok["pvalue"] > 0.3
+    mau = bt.mcneil_frey(loss, var, es_certo * 0.75)                 # ES 25% abaixo do real
+    assert mau["media"] > 0.2 and mau["pvalue"] < 0.01
+    assert bt.mcneil_frey(loss, var, es_certo * 1.3)["pvalue"] > 0.9  # ES a mais não é rejeitado (teste unilateral)
+    assert np.isnan(bt.mcneil_frey(loss[:50], var[:50], es_certo[:50])["pvalue"])   # poucas exceções

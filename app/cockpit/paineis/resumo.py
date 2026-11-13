@@ -66,7 +66,7 @@ def render(g: dict) -> None:
             "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d")})
         st.caption(f"**VaR 99%**: a perda de um dia só deve ultrapassar este valor em 1 dia em cada 100. "
                    f"**ES {N_CVAR}**: a perda média nos 2,5% piores dias. Prevê-se com dados até {PIPE_ASOF} "
-                   "(volatilidade do GARCH + cauda empírica dos resíduos).")
+                   "(volatilidade do GARCH + cauda dos resíduos passados).")
         with st.expander("Porque é que o ES previsto é diferente do CVaR histórico da Análise ao vivo?"):
             st.markdown(
                 f"São duas perguntas diferentes, ambas a {N_CVAR}:\n"

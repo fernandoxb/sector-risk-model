@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from config.settings import OFFICIAL_VAR_METHOD as OF
 from src.models import backtest as bt
 from src.models import backtest_empresas as be
 
@@ -17,11 +18,11 @@ def test_empresas_com_historico():
 
 def test_resumo_e_validado():
     res = pd.DataFrame({
-        "empresa": ["A", "B", "A", "B"], "metodo": ["fhs", "fhs", "historico", "historico"], "nivel": 0.975,
+        "empresa": ["A", "B", "A", "B"], "metodo": [OF, OF, "historico", "historico"], "nivel": 0.975,
         "p_kupiec": [0.5, 0.5, 0.5, 0.01], "p_christoffersen": [0.5, 0.2, 0.01, 0.01], "p_cc": [0.5, 0.3, 0.01, 0.01],
         "p_z2": [0.5, 0.01, 0.5, 0.5], "z2": [0.0, -0.4, 0.1, 0.1]})
     r = be.resumo_metodos(res).set_index("metodo")
-    assert r.loc["fhs", ["Kupiec", "Christoffersen", "Z2 (ES)", "series"]].tolist() == [2, 2, 1, 2]
+    assert r.loc[OF, ["Kupiec", "Christoffersen", "Z2 (ES)", "series"]].tolist() == [2, 2, 1, 2]
     assert r.loc["historico", ["Kupiec", "Christoffersen", "Z2 (ES)"]].tolist() == [1, 0, 2]
     v = be.validado(res, 0.975)
     assert v.to_dict() == {"A": True, "B": False}                 # B falha o Z2
@@ -65,7 +66,7 @@ def test_multiplicador_poe_o_z2_a_zero():
 
 def test_marcas_e_es_corrigido():
     res = pd.DataFrame({
-        "empresa": ["A", "B"] * 2, "metodo": "fhs", "nivel": [0.975, 0.975, 0.99, 0.99],
+        "empresa": ["A", "B"] * 2, "metodo": OF, "nivel": [0.975, 0.975, 0.99, 0.99],
         "p_kupiec": 0.5, "p_christoffersen": 0.5, "p_z2": [0.5, 0.01, 0.5, 0.5], "z2": [0.0, -0.3, 0.0, 0.0],
         "semaforo": ["verde", "verde", "verde", "amarelo"]})
     fl = be.flags(res)

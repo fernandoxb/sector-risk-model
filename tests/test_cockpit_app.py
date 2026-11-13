@@ -19,7 +19,7 @@ def test_cockpit_corre_em_modo_snapshot(monkeypatch):
                                               "🧪 Modelo", "🧩 Carteira-base", "📖 Glossário"]
     texto = " ".join(m.value for m in at.markdown) + " ".join(c.value for c in at.caption)
     assert "Modo snapshot" in " ".join(i.value for i in at.info)
-    assert "97,5%" in texto and "FHS" in texto
+    assert "97,5%" in texto and "EVT" in texto
 
 
 def test_mapa_de_risco_abre_setor_e_empresa(monkeypatch):

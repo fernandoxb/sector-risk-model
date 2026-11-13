@@ -32,7 +32,13 @@ MAX_ABS_RET = 0.25      # retornos diários acima disto vão para revisão
 BT_LEVELS = (0.99, 0.975)            # 99% = VaR regulamentar (Basileia); 97,5% = nível do ES no FRTB
 BT_WINDOW = CVAR_YEARS * TRADING_DAYS
 # histórico, GJR-GARCH(1,1)-t e Filtered Historical Simulation (mesmo GARCH, quantil empírico dos resíduos)
-BT_METHODS = ("historico", "garch", "fhs")
+BT_METHODS = ("historico", "garch", "fhs", "evt")
+# EVT condicional (McNeil e Frey 2000; QRM 7.2.6): o mesmo GARCH, com uma distribuição de Pareto generalizada
+# ajustada à cauda dos resíduos. O limiar é o resíduo que deixa EVT_TAIL_FRAC da amostra na cauda (no livro,
+# 100 em 1000); com a janela de 756 dias são cerca de 75 excessos.
+EVT_TAIL_FRAC = 0.10
+EVT_XI_MAX = 0.9                     # ξ estimado é limitado (ξ >= 1 daria ES infinito)
+BT_MF_NBOOT = 2000                   # reamostragens do teste de McNeil–Frey aos resíduos das exceções
 BT_ES_GRID = 400                     # pontos da quadratura do ES da t-Student (por dia)
 BT_ES_NSIM = 1000                    # simulações sob H0 para o p-valor do teste Z2 de Acerbi–Székely
 BT_SEED = 42                         # semente das simulações (resultados reprodutíveis)
@@ -45,14 +51,15 @@ BT_SPLIT = "2019-01-01"
 BT_SPLIT_MIN_DAYS = 500
 
 # --- Modelo oficial de VaR/ES (previsão para o próximo dia útil) -------------
-# Escolhido pelo backtest de 2008–2026 (data/features/var_backtest.csv, p >= 5%, setores que passam em 11;
-# dados até 2026-11-10):
-#              97,5%: Kupiec  Christoffersen  condicional  Z2  |  99%: Kupiec  Christoffersen  condicional  Z2
-#   fhs                 11         10             10       11  |         10         8              8       10
-#   garch (t)            1         10              2        0  |          1        11              1        0
-#   historico            7          1              1        3  |          5         1              1        2
-# O FHS é o único que passa a cobertura, a independência e o teste do ES ao mesmo tempo.
-OFFICIAL_VAR_METHOD = "fhs"
+# Escolhido pela regra backtest.choose_method com as previsões de 2008–2018 e confirmado em 2019–2026 e nas
+# empresas (setores que passam Kupiec, Christoffersen e Z2 a 97,5%; dados até 2026-11-11):
+#              escolha 2008–2018   confirmação 2019–2026   empresas (de 109)
+#   evt             9 de 9              10 de 11                 75
+#   fhs             6 de 9               9 de 11                 61
+#   garch (t)       0 de 9               0 de 11                 22
+#   historico       0 de 9               3 de 11                 21
+# Até 2026-11-12 o oficial era "fhs" (ver docs/nota-metodologica.md, secção 15).
+OFFICIAL_VAR_METHOD = "evt"
 # Colunas de data/features/official_risk.csv: nome → (medida, nível)
 OFFICIAL_MEASURES = {"var99": ("var", 0.99), "var975": ("var", 0.975), "es975": ("es", 0.975)}
 
