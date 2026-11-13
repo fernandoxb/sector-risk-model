@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 5.1
+versao: 5.2
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -352,6 +352,7 @@ O pipeline corre sozinho nos dias úteis às 22:30 (hora de Lisboa, depois do fe
   * **Fechos antecipados (13:00 em NY):** 3 de julho, o dia a seguir ao Thanksgiving e a véspera de Natal, quando são dias de sessão. Nesses dias a sessão conta como fechada às 14:00 de NY. A regra reproduz os fechos antecipados de 2023 a 2025 publicados pela bolsa, mas não se consegue validar com preços diários, e a do 3 de julho teve exceções históricas.
   * **No cockpit:** a barra lateral mostra a última sessão fechada, a próxima sessão, os 3 próximos feriados e o próximo fecho antecipado, e avisa se os resultados do pipeline estiverem atrás da última sessão.
   * **Onde se usa:** na sessão esperada (cache e alerta de dados atrasados), na data da previsão oficial (secção 6.K) e no dia do relatório semanal e da publicação.
+* **Horizontes (Fase E):** a task Backtester corre também `horizonte.main()`: previsão todos os dias, backtest dos horizontes só na última sessão da semana.
 * **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Cauda → Sentinela → Relatório → Snapshot → Publicador.
 * **Publicador (`src/report/publicar.py`):** na última sessão de cada semana (normalmente sexta), depois do run, faz commit e push só de `app/cockpit/snapshot/`, para o cockpit do Streamlit Cloud acompanhar os dados. Só atua no ramo `main` e só se o snapshot mudou. Usa `git commit --only`, pelo que nunca leva outras alterações, mesmo que já estejam no índice. Se o push falhar, o commit fica local, o erro vai para o log e chega uma notificação; o resto do run não é afetado.
 * **Snapshot (Sprint 6):** copia para `app/cockpit/snapshot/` (versionado, cerca de 2,7 MB) os preços dos ETFs e das empresas do mapa de risco (5 anos, desde a secção 13), o Treasury 10Y e os resultados que o cockpit lê. Assim o cockpit corre sem rede, por exemplo no Streamlit Community Cloud. As séries do backtest são gravadas em float32, o que dá um erro relativo de cerca de $10^{-7}$, sem efeito nas exceções mostradas.
@@ -680,6 +681,48 @@ Por isso o cockpit mostra primeiro o observado e depois a simulação, e não us
 * O observado assenta em cerca de 38 dias por cenário (erro-padrão de uns 7 pontos percentuais em cada probabilidade).
 * A simulação subestima as quedas conjuntas em cerca de 5 pontos percentuais; uma cópula com cauda inferior mais pesada (por exemplo, t assimétrica ou Clayton) seria o passo seguinte.
 * Os cenários são de um dia e sem a volatilidade de hoje: dizem o que acontece num dia mau típico da janela, não num dia mau de amanhã.
+
+---
+
+## 📆 18. Horizontes de 10 dias e de 1 mês (Fase E)
+
+Código: `src/models/horizonte.py` · parâmetros: `HORIZONS`, `HORIZON_NSIM`, `HORIZON_BT_NSIM` · testes: `tests/test_horizonte.py`.
+Saídas: `data/features/horizon_risk.csv` (previsão de hoje) e `horizon_backtest.csv`. Referência: QRM, secção 2.3.4; McNeil e Frey (2000).
+
+### A. Método
+A regra da raiz do tempo, $\mathrm{VaR}_h = \sqrt{h}\,\mathrm{VaR}_1$, só vale para retornos independentes com a mesma distribuição. Com GARCH, a volatilidade de hoje regressa à média ao longo do horizonte. Por isso simula-se dia a dia, a partir do GJR-GARCH do modelo oficial:
+
+$$r_d = \mu + \sigma_d z_d,\qquad \sigma_{d+1}^2 = \omega + (\alpha + \gamma\,\mathbb{1}[\varepsilon_d < 0])\,\varepsilon_d^2 + \beta\,\sigma_d^2,\qquad \varepsilon_d = \sigma_d z_d$$
+
+* **Resíduos $z_d$:** sorteados como no modelo oficial (EVT: reamostragem no corpo, Pareto na cauda).
+* **Perda a $h$ dias:** $L_h = -(e^{\sum_d r_d} - 1)$, em retorno simples. O VaR e o ES são o quantil e a média da cauda de 20 000 trajetórias.
+* **Horizontes:** 10 dias úteis (o horizonte regulamentar de Basileia) e 21 (um mês).
+
+### B. Validação
+* A recursão da variância é igual a um cálculo à mão com o resíduo fixo.
+* Com volatilidade constante e resíduos normais, o VaR a 10 dias é $\sqrt{10}$ vezes o de 1 dia (erro < 3%).
+* A 1 dia, o VaR e o ES simulados batem com os do modelo oficial, calculados por fórmula fechada (erro < 4%).
+* Com a volatilidade de hoje a 3 vezes a de longo prazo, o VaR a 10 dias fica abaixo de 90% da raiz do tempo.
+
+### C. Backtest (blocos sem sobreposição, 2008–2026)
+Em cada bloco de $h$ dias, o VaR previsto na véspera é comparado com a perda do bloco. Exceções somadas nos 11 setores:
+
+| Horizonte | Nível | Blocos | Esperadas | Simulação | Raiz do tempo |
+|---|---|---|---|---|---|
+| 10 dias | 97,5% | 4 604 | 115 | 121 | 122 |
+| 10 dias | 99% | 4 604 | 46 | 50 | 48 |
+| 21 dias | 97,5% | 2 185 | 55 | 43 | 40 |
+| 21 dias | 99% | 2 185 | 22 | 20 | 24 |
+
+* **A simulação não é rejeitada:** o teste de Kupiec passa nos 11 setores a 10 dias e em 10 ou 11 a 21 dias.
+* **Leitura honesta:** na frequência de exceções, a simulação e a raiz do tempo ficam quase iguais. A diferença está no dia a dia: quando a volatilidade está alta, a simulação prevê menos do que a raiz do tempo, e quando está baixa prevê mais.
+* **Previsão de 2026-11-13 (ES 97,5%):** XLK 8,2% a 1 dia, 24,9% a 10 dias (raiz do tempo: 25,9%) e 33,4% a 21 dias (37,5%). No XLE, 10,9% a 10 dias contra 13,3% pela raiz do tempo.
+
+### D. Limitações
+* Com cerca de 420 blocos de 10 dias por setor, esperam-se 10 exceções a 97,5% e 4 a 99%: o teste tem pouca força para distinguir os dois métodos.
+* Só a frequência de exceções é testada; o ES a 10 e 21 dias não tem backtest.
+* Os parâmetros do GARCH ficam fixos durante o horizonte, e a média diária $\mu$ estimada em 3 anos é somada todos os dias.
+* Os horizontes existem só para os 11 setores; as empresas e a carteira do utilizador continuam a 1 dia.
 
 ---
 

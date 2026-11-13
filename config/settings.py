@@ -60,6 +60,13 @@ BT_SPLIT_MIN_DAYS = 500
 #   historico       0 de 9               3 de 11                 21
 # Até 2026-11-12 o oficial era "fhs" (ver docs/nota-metodologica.md, secção 15).
 OFFICIAL_VAR_METHOD = "evt"
+# --- Horizontes mais longos (src/models/horizonte.py, Fase E) -----------------
+# VaR e ES a h dias úteis por simulação de trajetórias do GARCH (QRM 2.3.4 e McNeil–Frey 2000): 10 dias = horizonte
+# regulamentar de Basileia; 21 dias = um mês.
+HORIZONS = (10, 21)
+HORIZON_NSIM = 20_000            # trajetórias da previsão de hoje
+HORIZON_BT_NSIM = 2_000          # trajetórias por bloco no backtest (blocos de h dias sem sobreposição)
+
 # Colunas de data/features/official_risk.csv: nome → (medida, nível)
 OFFICIAL_MEASURES = {"var99": ("var", 0.99), "var975": ("var", 0.975), "es975": ("es", 0.975)}
 
@@ -180,7 +187,8 @@ SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "
                      "alerts.json", "sector_metrics.csv", "score_history.csv", "holdings.csv",
                      "company_backtest.csv", "company_risk.csv", "var_backtest_split.csv",
                      "var_backtest_multiple.csv", "tail_dependence.csv", "tail_meta.json",
-                     "company_factors.csv", "tail_scenarios.csv")
+                     "company_factors.csv", "tail_scenarios.csv",
+                     "horizon_risk.csv", "horizon_backtest.csv")
 
 # --- Cenário de stress próprio (cockpit, separador Carteira e stress) --------
 # Choque instantâneo propagado pelos betas: mercado pelo beta diário de 3 anos (sector_metrics.csv) e cada

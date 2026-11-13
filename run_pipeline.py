@@ -7,7 +7,8 @@ import sys
 
 from src.clean import validate
 from src.collect import download_factors, download_prices, empresas
-from src.models import backtest, backtest_empresas, cauda, decomposicao, factor_links, portfolio, risk_metrics, scorecard
+from src.models import (backtest, backtest_empresas, cauda, decomposicao, factor_links, horizonte, portfolio,
+                        risk_metrics, scorecard)
 
 if __name__ == "__main__":
     if "--offline" not in sys.argv:
@@ -18,6 +19,7 @@ if __name__ == "__main__":
     validate.main()
     risk_metrics.main()
     backtest.main()
+    horizonte.main()
     backtest_empresas.main()
     portfolio.main()
     scorecard.main()

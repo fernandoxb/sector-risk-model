@@ -141,6 +141,8 @@ bt_split = feat_csv("var_backtest_split.csv")
 bt_multi = feat_csv("var_backtest_multiple.csv")
 cauda = feat_csv("tail_dependence.csv")
 cenarios = feat_csv("tail_scenarios.csv")
+horiz = feat_csv("horizon_risk.csv")
+horiz_bt = feat_csv("horizon_backtest.csv")
 cauda_meta = json.loads((FEAT / "tail_meta.json").read_text()) if (FEAT / "tail_meta.json").exists() else {}
 comp_bt = feat_csv("company_backtest.csv")
 comp_risk = feat_csv("company_risk.csv", index_col="empresa")

@@ -72,6 +72,9 @@ def refit_positions(index: pd.DatetimeIndex, window: int, freq: str) -> list[int
     return [i for i in range(window, len(index)) if i == window or per[i] != per[i - 1]]
 
 
+GARCH_PARAMS = ["omega", "alpha[1]", "gamma[1]", "beta[1]"]
+
+
 def garch_filter(r: pd.Series, window: int,
                  refit_freq: str = BT_REFIT_FREQ) -> tuple[pd.DataFrame, dict[int, np.ndarray]]:
     """GJR-GARCH(1,1) com inovações t-Student em janela móvel, sem look-ahead.
@@ -80,14 +83,14 @@ def garch_filter(r: pd.Series, window: int,
     re-estimação seguinte ficam fixos e σ é atualizada dia a dia pela recursão: a previsão
     para o dia t usa dados até t-1.
 
-    Devolve (por dia: mu, sigma em % log, nu, refit = posição da estimação usada) e
+    Devolve (por dia: mu, sigma em % log, nu, refit = posição da estimação usada, e os parâmetros ω, α, γ, β) e
     {refit: resíduos padronizados da janela de estimação} para a FHS.
     """
     r = r.dropna()
     x = np.log1p(r) * 100
     am = arch_model(x, mean="Constant", vol="GARCH", p=1, o=1, q=1, dist="t")
     pos = refit_positions(x.index, window, refit_freq)
-    out = np.full((len(x), 4), np.nan)
+    out = np.full((len(x), 8), np.nan)
     pools: dict[int, np.ndarray] = {}
     start_vals = None
     for k, i in enumerate(pos):
@@ -101,8 +104,9 @@ def garch_filter(r: pd.Series, window: int,
         out[i:end, 1] = np.sqrt(f.variance.iloc[: end - i, 0].to_numpy())
         out[i:end, 2] = res.params["nu"]
         out[i:end, 3] = i
+        out[i:end, 4:] = res.params[GARCH_PARAMS].to_numpy()       # para simular trajetórias (horizonte.py)
         pools[i] = res.std_resid.dropna().to_numpy()
-    g = pd.DataFrame(out, index=r.index, columns=["mu", "sigma", "nu", "refit"])
+    g = pd.DataFrame(out, index=r.index, columns=["mu", "sigma", "nu", "refit", "omega", "alpha", "gamma", "beta"])
     return g, pools
 
 
@@ -151,6 +155,15 @@ def gpd_quantile(prob_cauda, u: float, xi: float, beta: float, frac: float) -> n
 def gpd_es(prob_cauda: float, u: float, xi: float, beta: float, frac: float) -> float:
     """Expected shortfall da perda padronizada, QRM eq. 7.19: ES = q/(1 − ξ) + (β − ξu)/(1 − ξ), para ξ < 1."""
     return float(gpd_quantile(prob_cauda, u, xi, beta, frac) / (1 - xi) + (beta - xi * u) / (1 - xi))
+
+
+def evt_draws(pool: np.ndarray, size, rng: np.random.Generator) -> np.ndarray:
+    """Resíduos sorteados: reamostragem no corpo e, na cauda (fração EVT_TAIL_FRAC), da Pareto ajustada."""
+    u, xi, beta, frac = gpd_tail(pool)
+    z = rng.choice(pool[-pool <= u], size=size)
+    na_cauda = rng.random(size) < frac
+    z[na_cauda] = -gpd_quantile(frac * rng.random(int(na_cauda.sum())), u, xi, beta, frac)
+    return z
 
 
 def _to_loss(mu: np.ndarray, sig: np.ndarray, z: np.ndarray | float) -> np.ndarray:
@@ -335,12 +348,7 @@ def simulate_losses(method: str, r: pd.Series, aux: pd.DataFrame, pools: dict[in
         refit = aux["refit"].to_numpy().astype(int)
         for i in np.unique(refit):
             cols = np.flatnonzero(refit == i)
-            u, xi, beta, frac = gpd_tail(pools[i])
-            corpo = pools[i][-pools[i] <= u]
-            zi = rng.choice(corpo, size=(n_sim, len(cols)))
-            na_cauda = rng.random((n_sim, len(cols))) < frac
-            zi[na_cauda] = -gpd_quantile(frac * rng.random(int(na_cauda.sum())), u, xi, beta, frac)
-            z[:, cols] = zi
+            z[:, cols] = evt_draws(pools[i], (n_sim, len(cols)), rng)
     else:
         raise ValueError(f"Método desconhecido: {method}")
     return _to_loss(mu, sig, z)

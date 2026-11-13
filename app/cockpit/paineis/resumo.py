@@ -4,7 +4,7 @@ Gerado a partir do antigo app.py: o código do separador é o mesmo; os dados do
 """
 import pandas as pd
 import streamlit as st
-from config.settings import CVAR_YEARS
+from config.settings import CVAR_LEVEL, CVAR_YEARS
 from src.report import formato as fm
 from src.report.alerts import pi_level
 from paineis.comum import N_CVAR, OFICIAL, SEM, SEV, metrica, nome
@@ -15,6 +15,7 @@ def render(g: dict) -> None:
     PREV_DATA = g["PREV_DATA"]
     alertas = g["alertas"]
     off = g["off"]
+    horiz, horiz_bt = g["horiz"], g["horiz_bt"]
     rc = g["rc"]
     sc = g["sc"]
     stt = g["stt"]
@@ -67,6 +68,28 @@ def render(g: dict) -> None:
         st.caption(f"**VaR 99%**: a perda de um dia só deve ultrapassar este valor em 1 dia em cada 100. "
                    f"**ES {N_CVAR}**: a perda média nos 2,5% piores dias. Prevê-se com dados até {PIPE_ASOF} "
                    "(volatilidade do GARCH + cauda dos resíduos passados).")
+        if horiz is not None:
+            with st.expander("E a 10 dias e a 1 mês? Perdas previstas em horizontes mais longos"):
+                hs = sorted(horiz["horizonte"].unique())
+                tab_h = {"Setor": [nome(t) for t in sc.index], f"ES {N_CVAR} · 1 dia": prev["es975"].map(fm.pct).values}
+                for h in hs:
+                    hh = horiz[horiz["horizonte"] == h].set_index("setor").reindex(sc.index)
+                    tab_h[f"ES {N_CVAR} · {h} dias"] = hh["es975"].map(fm.pct).values
+                    tab_h[f"Raiz do tempo · {h} dias"] = hh["es975_raiz"].map(fm.pct).values
+                st.dataframe(pd.DataFrame(tab_h), hide_index=True, width="stretch")
+                txt_h = ("Perda acumulada em 10 e 21 dias úteis, por simulação de 20 mil trajetórias do GARCH: a volatilidade "
+                         "de hoje vai regressando à média, por isso um setor agitado fica abaixo da regra da raiz do tempo "
+                         "(perda de 1 dia × √dias) e um setor calmo fica acima.")
+                if horiz_bt is not None:
+                    tot_h = horiz_bt[horiz_bt["nivel"] == CVAR_LEVEL].groupby(["horizonte", "metodo"])[
+                        ["excecoes", "esperadas"]].sum()
+                    txt_h += (" Backtest em blocos sem sobreposição desde 2008, exceções ao VaR "
+                              f"{N_CVAR} nos 11 setores: "
+                              + "; ".join(f"{h} dias, {int(tot_h.loc[(h, 'simulacao'), 'excecoes'])} com a simulação e "
+                                          f"{int(tot_h.loc[(h, 'raiz'), 'excecoes'])} com a raiz do tempo, para "
+                                          f"{fm.num(tot_h.loc[(h, 'simulacao'), 'esperadas'], 0)} esperadas" for h in hs)
+                              + ". Na frequência de exceções os dois métodos ficam quase iguais.")
+                st.caption(txt_h)
         with st.expander("Porque é que o ES previsto é diferente do CVaR histórico da Análise ao vivo?"):
             st.markdown(
                 f"São duas perguntas diferentes, ambas a {N_CVAR}:\n"
