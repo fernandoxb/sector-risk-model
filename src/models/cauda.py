@@ -33,7 +33,7 @@ from arch import arch_model
 from scipy import optimize, stats
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import (BT_SEED, CAUDA_JANELAS, CAUDA_MIN_COBERTURA, CAUDA_NSIM, CAUDA_NU_BOUNDS, CAUDA_Q, CLEAN, CVAR_YEARS, FEATURES,  # noqa: E402
+from config.settings import (BT_SEED, CAUDA_GAMA_GRELHA, CAUDA_GAMA_NSIM, CAUDA_JANELAS, CAUDA_MIN_COBERTURA, CAUDA_NSIM, CAUDA_NU_BOUNDS, CAUDA_Q, CLEAN, CVAR_YEARS, FEATURES,  # noqa: E402
                              SECTORS)
 from src.collect.empresas import load_holdings  # noqa: E402
 
@@ -120,18 +120,48 @@ def simulate_t_copula(p: np.ndarray, nu: float, n: int = CAUDA_NSIM, seed: int =
     return stats.t.cdf(z / np.sqrt(rng.chisquare(nu, (n, 1)) / nu), nu)
 
 
+def simulate_skewt_copula(p: np.ndarray, nu: float, gama: float, n: int = CAUDA_NSIM, seed: int = BT_SEED) -> np.ndarray:
+    """`n` dias da cópula t assimétrica, em uniformes: X = γW + √W·Z, com Z ~ N(0, ρ) e W = ν/χ²_ν (inversa gama).
+    As margens de X não têm fórmula simples, por isso os uniformes são as ordens de cada coluna na própria simulação.
+    Com γ = 0 é a cópula t."""
+    rng = np.random.default_rng(seed)
+    z = rng.standard_normal((n, len(p))) @ np.linalg.cholesky(p).T
+    w = nu / rng.chisquare(nu, (n, 1))
+    return (stats.rankdata(gama * w + np.sqrt(w) * z, axis=0) - 0.5) / n
+
+
+def _media_conjunta(u: np.ndarray, q: float) -> float:
+    """Média, nos pares diferentes, de P(B nos q piores | A nos q piores)."""
+    t = (u <= q).astype(float)
+    m = t.T @ t / t.sum(axis=0)
+    return float(m[~np.eye(len(m), dtype=bool)].mean())
+
+
+def ajustar_gama(rets: pd.DataFrame, p: np.ndarray, nu: float, q: float = CAUDA_Q,
+                 grelha: tuple[float, ...] = CAUDA_GAMA_GRELHA, n: int = CAUDA_GAMA_NSIM, seed: int = BT_SEED) -> float:
+    """γ da grelha que mais aproxima as médias simuladas das observadas, para as quedas e para as subidas conjuntas
+    ao mesmo tempo (método dos momentos: 1 parâmetro, 2 momentos)."""
+    obs = np.array([_media_conjunta(rets.rank(pct=True).to_numpy(), q), _media_conjunta(1 - rets.rank(pct=True).to_numpy() + 1e-12, q)])
+    erro = []
+    for g in grelha:
+        u = simulate_skewt_copula(np.asarray(p, dtype=float), nu, g, n, seed)
+        erro.append(float(((np.array([_media_conjunta(u, q), _media_conjunta(1 - u, q)]) - obs) ** 2).sum()))
+    return float(grelha[int(np.argmin(erro))])
+
+
 def scenarios(rets: pd.DataFrame, p: np.ndarray, nu: float, q: float = CAUDA_Q, n: int = CAUDA_NSIM,
-              seed: int = BT_SEED) -> pd.DataFrame:
+              seed: int = BT_SEED, gama: float = 0.0) -> pd.DataFrame:
     """"Se A tiver um dia mau (nos seus q piores), o que acontece a B?" Uma linha por par ordenado (cenario, serie).
 
-    Os uniformes da cópula passam a retornos pelos quantis observados de cada série (margens empíricas).
+    Os uniformes da cópula t assimétrica (`gama`; 0 = cópula t) passam a retornos pelos quantis observados de cada
+    série (margens empíricas).
       p_cauda      P(B também nos seus q piores dias | A nos seus q piores)
       perda_media  perda média de B nesses dias (positiva = perda); na linha cenario == serie, a do próprio A
       perda_normal perda média de B em todos os dias simulados, para comparar
       p_obs, perda_obs  as mesmas duas medidas contadas nos dias reais (poucos: q × nº de dias), para confrontar
     """
     cols = list(rets.columns)
-    u = simulate_t_copula(np.asarray(p, dtype=float), nu, n, seed)
+    u = simulate_skewt_copula(np.asarray(p, dtype=float), nu, gama, n, seed)
     x = np.column_stack([np.quantile(rets[c].to_numpy(), u[:, j]) for j, c in enumerate(cols)])
     jc = joint_crash(rets, q)
     real = (rets.rank(axis=0, method="first") <= np.floor(q * len(rets))).to_numpy()
@@ -222,8 +252,13 @@ def main() -> Path:
             "janelas": {str(a): {"q": CAUDA_JANELAS[a], "grupos": resumo(fs)} for a, fs in por_janela.items()}}
     (FEATURES / "tail_meta.json").write_text(json.dumps(meta, indent=1))
     s = fits[GRUPO_SETORES]
-    scenarios(s["rets"], s["rho_t"].to_numpy(), s["nu"]).to_csv(FEATURES / "tail_scenarios.csv", index=False,
-                                                                  float_format="%.6f")
+    # cenários: cópula ajustada aos retornos (com os períodos agitados), e assimétrica (γ pelo método dos momentos)
+    sr = fit_group(s["rets"], s["rets"])
+    gama = ajustar_gama(s["rets"], sr["rho_t"].to_numpy(), sr["nu"])
+    scenarios(s["rets"], sr["rho_t"].to_numpy(), sr["nu"], gama=gama).to_csv(FEATURES / "tail_scenarios.csv", index=False,
+                                                                              float_format="%.6f")
+    meta["cenarios"] = {"nu": round(sr["nu"], 2), "gama": gama}
+    (FEATURES / "tail_meta.json").write_text(json.dumps(meta, indent=1))
     top6 = pairs_table(s, GRUPO_SETORES).sort_values("p_conj", ascending=False)
     print(f"[cauda] {len(fits)} grupos; setores: ν = {s['nu']:.1f}, {s['n']} dias; quedas conjuntas (q = {CAUDA_Q:.0%}):")
     print(top6.head(6)[["a", "b", "corr", "lam", "p_conj"]].round(3).to_string(index=False))

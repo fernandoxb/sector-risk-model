@@ -314,4 +314,9 @@ CAUDA_NU_BOUNDS = (2.1, 60.0)   # limites dos graus de liberdade ν da cópula t
 # Uma série entra numa janela se tiver dados em pelo menos CAUDA_MIN_COBERTURA dos dias (o XLC só existe desde 2018).
 CAUDA_JANELAS = {1: 0.10, 3: CAUDA_Q, 5: CAUDA_Q, 10: CAUDA_Q}
 CAUDA_MIN_COBERTURA = 0.8
+# Cenários conjuntos: cópula t assimétrica (skewed t, QRM 5.1.? e McNeil, Frey e Embrechts 2005, secção 3.2.3),
+# X = γW + √W·Z, com W ~ IG(ν/2, ν/2). γ < 0 dá mais quedas conjuntas do que subidas conjuntas. γ é escolhido nesta
+# grelha para a simulação acertar ao mesmo tempo as médias observadas de quedas e de subidas conjuntas.
+CAUDA_GAMA_GRELHA = tuple(round(-0.025 * k, 3) for k in range(25))       # 0 a −0,6
+CAUDA_GAMA_NSIM = 50_000                                                  # dias simulados por valor da grelha
 CAUDA_NSIM = 200_000            # dias simulados da cópula t para os cenários conjuntos (cerca de 10 000 por cenário)

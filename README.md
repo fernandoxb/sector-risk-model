@@ -34,7 +34,7 @@ Cockpit ao vivo: **[sector-risk-model.streamlit.app](https://sector-risk-model.s
 | E se um fator se mexer? | Um choque nos fatores propaga-se aos setores e às empresas por Monte Carlo. Testado em 2008, 2020 e 2022: com o mercado conhecido a mediana acerta (desvio de 0,5 e 3,6 pontos em 2008 e 2020); só com os fatores macro subestima as crises em cerca de 15 pontos. | nota, secção 19 |
 | E a 10 dias? | O VaR a 10 dias por simulação do GARCH passa o Kupiec nos 11 setores; na contagem de exceções fica igual à regra da raiz do tempo (121 contra 122, para 115 esperadas). | nota, secção 18 |
 
-**O que não funcionou, e está dito:** o ES fica subestimado em 17 das 109 empresas (é corrigido pelo fator que teria acertado no passado); a simulação pela cópula t dá menos quedas conjuntas do que as observadas (23% contra 28%), por isso o cockpit mostra primeiro o observado; a 10 dias a simulação não bate a raiz do tempo no backtest.
+**O que não funcionou, e está dito:** o ES fica subestimado em 17 das 109 empresas (é corrigido pelo fator que teria acertado no passado); a simulação pela cópula t assimétrica ainda dá um pouco menos de quedas conjuntas do que as observadas (26,8% contra 27,9%), por isso o cockpit mostra primeiro o observado; a 10 dias a simulação não bate a raiz do tempo no backtest.
 
 ## Resultado principal: só os métodos com GARCH e cauda dos dados passam o backtest
 VaR e ES a 1 dia previstos **só com dados até à véspera**, em janela móvel de 3 anos, de 2008 a 2026: 46 086 previsões
@@ -196,7 +196,7 @@ Convenções:
 * **Dependência de cauda:** na janela de 3 anos, cada frequência de quedas conjuntas assenta em cerca de 38 dias (erro de uns 8 pontos). O mapa deixa escolher 1, 5 ou 10 anos; com 1 ano a cauda passa a 10% dos dias.
 * **Scorecard e P × I:** 70% do peso do score é relativo aos 11 setores (só a cauda, em metade, e o regime se comparam com a história do próprio setor). O intervalo da posição mede a incerteza dos pesos, não a dos dados.
 * **Cenários e horizontes:** a simulação da cópula t subestima as quedas conjuntas; o ES a 10 e 21 dias não tem backtest (só o VaR), e os horizontes longos existem só para os setores.
-* **Motor de cenários:** só com os fatores macro subestima as perdas das crises (em média 15 pontos) e os intervalos são estreitos demais (32% dos setores dentro do intervalo de 90%). Mostra direções e diferenças entre setores, não a dimensão exata de uma crise.
+* **Motor de cenários:** só com os fatores macro subestima as perdas das crises (em média 15 pontos); com o mercado conhecido acerta a mediana, mas os intervalos continuam estreitos (42% dos setores dentro do intervalo de 90%).
 * **Carteira HRP:** na mesma amostra a redução de risco é otimista; o cockpit mostra também o teste fora da amostra (pesos recalculados de 3 em 3 meses só com o passado), que cobre apenas cerca de 3 anos.
 * **Âmbito:** é um projeto académico e não é aconselhamento de investimento.
 

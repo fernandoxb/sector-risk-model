@@ -80,3 +80,22 @@ def test_acao_sem_setor_liga_se_ao_mercado(dados):
     assert mod["setor_de"]["OURO"] == cn.MERCADO and mod["beta"][k] == pytest.approx(0.3, abs=0.02)
     s = cn.simular(mod, {"mercado": np.log(0.9)}, h=1, n=5000, seed=3)
     assert np.log1p(s["OURO"]).median() == pytest.approx(mod["alfa"][k] + 0.3 * np.log(0.9), abs=0.004)
+
+
+def test_residuos_alargam_quando_o_choque_e_intenso():
+    """Resíduos com dispersão proporcional ao movimento do mercado: um choque grande alarga o intervalo; sem choque, não."""
+    rng = np.random.default_rng(12)
+    n = 1500
+    idx = pd.date_range("1995-01-06", periods=n, freq="W-FRI")
+    x = pd.DataFrame(rng.normal(0, 0.1, (n, len(F))), columns=F, index=idx)
+    x["mercado"] = rng.standard_t(4, n) * 0.02
+    d = x.assign(XLU=0.5 * x["mercado"] + rng.normal(0, 1, n) * (0.002 + 0.3 * x["mercado"].abs()))
+    mod = cn.ajustar(d, d.iloc[:0, :0].assign(setor=[], ticker=[], nome=[], peso=[]), setores=["XLU"])
+    sem = cn.simular(mod, {}, h=1, n=20_000, seed=1)
+    assert cn.fator_escala(mod, sem[F].to_numpy(), 1) == 1.0
+    grande = {"mercado": -0.15}
+    k = cn.fator_escala(mod, cn.simular(mod, grande, h=1, n=2000, seed=2)[F].to_numpy(), 1)
+    assert k > 2
+    largo = cn.resumo(cn.simular(mod, grande, h=1, seed=3), ["XLU"]).iloc[0]
+    estreito = cn.resumo(cn.simular(mod, grande, h=1, seed=3, escalar=False), ["XLU"]).iloc[0]
+    assert (largo.q95 - largo.q05) == pytest.approx(k * (estreito.q95 - estreito.q05), rel=0.05)

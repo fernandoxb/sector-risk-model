@@ -56,11 +56,13 @@ def ordem_setores(pares_setores: pd.DataFrame, por: str = "p_conj") -> list[str]
 def opcoes(sc: pd.DataFrame, links: pd.DataFrame | None, pares: pd.DataFrame | None, hold: pd.DataFrame,
            comp_risk: pd.DataFrame | None, comp_fat: pd.DataFrame | None, aberto: str | None = None,
            foco: str | None = None, q_txt: str = "5%", cenario: pd.Series | None = None, por: str = "p_conj",
-           carteira: set[str] | None = None) -> dict:
+           carteira: set[str] | None = None, diretos: dict | None = None) -> dict:
     """Dicionário do ECharts. `pares`: quedas conjuntas da janela (todos os grupos); `aberto`: setor com as empresas
     em destaque; `foco`: fator ou setor cuja cadeia se anima; `cenario`: retorno mediano de um choque por setor e
     empresa (ticker), que passa a dar a cor (vermelho perde, verde ganha) e entra nas dicas; `por`: ligar os setores
-    pelas quedas conjuntas ("p_conj") ou pela correlação ("corr"); `carteira`: tickers a destacar (contorno branco)."""
+    pelas quedas conjuntas ("p_conj") ou pela correlação ("corr"); `carteira`: tickers a destacar (contorno branco);
+    `diretos`: {(fator, setor): retorno} do canal direto do fator no cenário, escrito na ligação."""
+    diretos = diretos or {}
     carteira = carteira or set()
     # escala da cor = o maior efeito entre os setores (as empresas mais extremas ficam no tom máximo)
     esc = max(float(cenario.reindex(list(SECTORS)).abs().max()), 0.005) if cenario is not None and len(cenario) else None
@@ -166,15 +168,18 @@ def opcoes(sc: pd.DataFrame, links: pd.DataFrame | None, pares: pd.DataFrame | N
                         "symbolSize": float((9 if abre else 5) + (8 if abre else 5) * x),
                         "itemStyle": {"color": cor_cen(r.ticker, _cor(x)), "borderColor": TXT,
                                       "borderWidth": 2 if r.ticker in carteira else 0, "opacity": opac(i, 1.0 if abre or aceso else 0.75) if not aberto or abre else 0.2},
-                        "label": {"show": abre or r.ticker in carteira or (aceso is not None and i in aceso and foco in SECTORS),
+                        "label": {"show": abre or r.ticker in carteira or (aceso is not None and i in aceso
+                                                                            and (foco in SECTORS or esc is not None)),
+                                  **({"formatter": f"{r.ticker} {fm.pct(cenario[r.ticker], 1, sinal=True)}"}
+                                     if esc and r.ticker in cenario.index else {}),
                                   "color": TXT, "fontSize": 10, "position": "left" if esq else "right",
                                   "rotate": graus - 180 if esq else graus, "opacity": opac(i)},
                         "dica": f"<b>{r.ticker}</b> · {r.nome}<br/>" + (f"{fm.pct(r.peso)} do {s}" if r.peso else f"setor {s}")
                                 + (f"<br/>ES 97,5% previsto {fm.pct(es_e[r.ticker])}" if r.ticker in es_e else "")
                                 + (f"<br/>Risco próprio {fm.pct(proprio, 0)}" if proprio is not None and proprio == proprio else "")
                                 + txt_cen(r.ticker)
-                                + ("<br/><i>fora do mapa (acrescentada na Minha carteira)</i>" if r.peso == 0
-                                   else "<br/><i>clica para abrir a ficha</i>")})
+                                + ("<br/>fora do mapa (acrescentada na Minha carteira)" if r.peso == 0 else "")
+                                + "<br/><i>clica para abrir a ficha</i>"})
             arestas.append({"source": s, "target": i,
                             "lineStyle": {"color": COR_FIO, "width": 0.8 if abre else 0.5,
                                           "opacity": opac(i, 0.7 if abre else 0.35), "curveness": 0}})
@@ -193,7 +198,11 @@ def opcoes(sc: pd.DataFrame, links: pd.DataFrame | None, pares: pd.DataFrame | N
     for r in lf.itertuples():
         ag = r.sinal == "+"
         liga = aceso is None or {r.fator, r.setor} <= aceso
+        d_ = diretos.get((r.fator, r.setor))
         arestas.append({"source": r.fator, "target": r.setor,
+                        **({"label": {"show": True, "formatter": fm.pct(d_, 1, sinal=True), "color": TXT, "fontSize": 10,
+                                      "backgroundColor": "#0b1220", "padding": [1, 3], "borderRadius": 3}}
+                           if d_ is not None and liga else {}),
                         "dica": f"{MACRO_FACTORS[r.fator]['curto']} a subir {'agrava' if ag else 'atenua'} o {r.setor}"
                                 f"<br/>β padronizado {fm.num(r.beta, 2, sinal=True)} · t {fm.num(r.t, 1, sinal=True)}",
                         "lineStyle": {"color": RISCO["vermelho"] if ag else RISCO["verde"], "type": "solid" if ag else "dashed",
@@ -266,13 +275,13 @@ def evento(valor) -> str | None:
 
 def desenhar(g: dict, aberto: str | None, q_txt: str, cenario: pd.Series | None = None,
              chocados: list[str] | None = None, por: str = "p_conj", carteira: set[str] | None = None,
-             hold: pd.DataFrame | None = None) -> str | None:
+             hold: pd.DataFrame | None = None, diretos: dict | None = None) -> str | None:
     """Desenha a teia e devolve o clique novo (id do nó), ou None. Com um cenário, a cadeia animada é a do 1.º fator
     macro chocado."""
     from streamlit_echarts import JsCode, st_echarts
     foco = next((f for f in (chocados or []) if f in MACRO_FACTORS), None) if cenario is not None else None
     op = opcoes(g["sc"], g["links"], g["cauda"], g["hold"] if hold is None else hold, g["comp_risk"], g["comp_fat"], aberto,
-                foco or st.session_state.get("teia_foco"), q_txt, cenario, por, carteira)
+                foco or st.session_state.get("teia_foco"), q_txt, cenario, por, carteira, diretos)
     op["tooltip"]["formatter"] = JsCode(JS_DICA)
     res = st_echarts(op, events={"click": JS_CLIQUE}, height=f"{ALTURA}px", key="teia_chart", theme="dark")
     clique = evento(res)

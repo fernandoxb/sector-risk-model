@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 6.0
+versao: 6.1
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -469,7 +469,7 @@ A carteira aceita qualquer ticker do Yahoo Finance, não só as 110 empresas do 
 * **Valida-o no Yahoo** (`empresas.validar_ticker`): tenta o ticker tal como foi escrito, porque o sufixo da bolsa usa um ponto (SAP.DE), e depois no formato norte-americano (BRK.B → BRK-B).
 * **Atribui-lhe um setor:** o ETF da classificação do Yahoo (`YAHOO_SETOR_ETF`; ASML → XLK). Sem classificação (um ETF de ouro, por exemplo) fica ligado ao mercado.
 * **Calcula ao vivo:** o risco da carteira usa os preços do Yahoo, como antes. No simulador de choques (secção 19), estima-se o beta semanal da ação ao seu ETF (ou ao mercado) em 10 anos e sorteiam-se os seus resíduos nas mesmas semanas que os outros. Exemplo: ASML β = 1,17 ao XLK, SAP.DE 0,58, GLD 0,18 ao mercado.
-* **Na teia:** aparece no anel do seu setor, com contorno branco.
+* **Na teia:** aparece no anel do seu setor, com contorno branco, e entra na lista das empresas desse setor ("fora do ETF"); um clique abre a ficha com bolsa e notícias, como as do mapa (sem previsão nem backtest, que só existem para as do pipeline).
 * **No pipeline diário:** só as que estiverem em `EXTRA_TICKERS` (`config/settings.py`). Entram em `holdings.csv` com peso 0 e passam a ter preços, modelo, backtest e quedas conjuntas, como as do mapa.
 
 Limitações: uma ação cotada noutra moeda (SAP.DE em euros) traz o risco cambial dentro dos retornos; sem rede (modo snapshot) as ações fora do mapa não têm preços e ficam de fora.
@@ -692,35 +692,36 @@ Código: `src/models/cauda.py` (`simulate_t_copula`, `scenarios`) · parâmetros
 Saída: `data/features/tail_scenarios.csv` (um par ordenado cenário → setor por linha). Referência: QRM, secção 5.1 e algoritmo 5.10.
 
 ### A. Método
-1. **Simulação:** 200 000 dias da cópula t da secção 14 (a mesma matriz $\rho$ e o mesmo $\nu$): $X = Z/\sqrt{W/\nu}$, com $Z \sim N(0, \rho)$ e $W \sim \chi^2_\nu$; $U = t_\nu(X)$.
+1. **Simulação:** 200 000 dias de uma cópula t assimétrica (skewed t; McNeil, Frey e Embrechts, 2005), $X = \gamma W + \sqrt{W}\,Z$, com $Z \sim N(0, \rho)$ e $W = \nu/\chi^2_\nu$. $\rho$ (pelo tau de Kendall) e $\nu$ (máxima verosimilhança) são ajustados aos **retornos** de 3 anos, com os seus períodos agitados; as margens de $X$ não têm fórmula simples, por isso os uniformes são as ordens de cada coluna na própria simulação. Com $\gamma = 0$ é a cópula t.
 2. **Margens:** cada uniforme passa a retorno pelo quantil observado do setor na janela de 3 anos (margens empíricas).
 3. **Cenário:** para cada setor A, ficam os dias simulados em que A está nos seus 5% piores (cerca de 10 000). Em cada outro setor B mede-se:
    * `p_cauda`: a fração desses dias em que B também está nos seus 5% piores;
    * `perda_media`: a perda média de B nesses dias.
-4. **Confronto:** as colunas `p_obs` e `perda_obs` são as mesmas medidas contadas nos dias reais da janela (cerca de 38 por cenário).
+4. **Assimetria (desde 2026-11-14):** $\gamma < 0$ dá mais quedas conjuntas do que subidas conjuntas. Escolhe-se $\gamma$ numa grelha de 0 a −0,6 para a simulação acertar ao mesmo tempo as duas médias observadas: quedas conjuntas 27,9% e subidas conjuntas 24,2% (método dos momentos, um parâmetro para dois momentos). Resultado: $\gamma = -0{,}15$, $\nu = 7{,}6$.
+5. **Confronto:** as colunas `p_obs` e `perda_obs` são as mesmas medidas contadas nos dias reais da janela (cerca de 38 por cenário).
 
 ### B. Validação
 * As margens simuladas são uniformes e o tau de Kendall devolve o $\rho$ pedido.
 * Com $\nu$ muito alto, `p_cauda` é igual à probabilidade da normal bivariada do `scipy` (diferença < 0,01).
 * Com $\nu = 3$ há mais quedas conjuntas do que com Gauss, e a 1% o valor simulado fica acima do limite $\lambda$ da secção 14.
+* Com $\gamma = 0$ as quedas e as subidas conjuntas simuladas são iguais; com $\gamma = -0{,}4$ há pelo menos 5 pontos mais de quedas; dados gerados com $\gamma = -0{,}3$ devolvem um $\gamma$ entre −0,45 e −0,15.
 
-### C. Resultados (dados até 2026-11-12)
+### C. Resultados (dados até 2026-11-13)
 | Cenário: dia mau do XLK (perda média 3,8%) | Cai junto, observado | Cai junto, simulado | Perda média, observada | Perda média, simulada |
 |---|---|---|---|---|
-| XLI | 46% | 33% | 1,6% | 1,2% |
-| XLY | 41% | 34% | 1,9% | 1,6% |
-| XLC | 41% | 27% | 1,5% | 1,0% |
+| XLI | 46% | 37% | 1,6% | 1,3% |
+| XLY | 41% | 38% | 1,9% | 1,7% |
+| XLC | 41% | 31% | 1,5% | 1,2% |
 
-**A simulação fica abaixo do observado.** Na média dos 110 pares ordenados, a probabilidade de queda conjunta simulada é 22,9% contra 27,9% observados, e a perda média condicional 0,80% contra 1,03%. Duas razões:
+Na média dos 110 pares ordenados, a probabilidade de cair junto simulada é **26,8%** contra 27,9% observados, e a perda média do outro setor 0,93% contra 1,03%.
 
-* a cópula t é simétrica: trata as quedas conjuntas como as subidas conjuntas, e nos mercados as quedas andam mais juntas;
-* a cópula foi ajustada aos resíduos do GARCH, que não têm os períodos de volatilidade alta comuns a todos os setores. Ajustada diretamente aos retornos, a média sobe só para 23,9%.
+**Antes desta versão** (cópula t simétrica ajustada aos resíduos do GARCH) a simulação dava 22,9% e 0,80%. Duas razões: a cópula era simétrica, quando nos mercados as quedas andam mais juntas do que as subidas (27,9% contra 24,2%), e os resíduos do GARCH não têm os períodos de volatilidade alta comuns a todos os setores. Passar aos retornos sobe a média para 23,9%; a assimetria leva-a a 26,8%. Uma mistura de duas cópulas t (dias calmos e agitados) também foi testada: chega a cerca de 25%, mas continua simétrica.
 
-Por isso o cockpit mostra primeiro o observado e depois a simulação, e não usa a simulação para alertas nem para o score.
+O cockpit continua a mostrar primeiro o observado e depois a simulação, e não usa a simulação para alertas nem para o score.
 
 ### D. Limitações
 * O observado assenta em cerca de 38 dias por cenário (erro-padrão de uns 7 pontos percentuais em cada probabilidade).
-* A simulação subestima as quedas conjuntas em cerca de 5 pontos percentuais; uma cópula com cauda inferior mais pesada (por exemplo, t assimétrica ou Clayton) seria o passo seguinte.
+* A simulação ainda fica cerca de 1 ponto abaixo do observado na média, e mais nalguns pares (XLK–XLC: 31% contra 41%); com um só $\gamma$ para todos os setores, a assimetria é igual em todos os pares. (Antes: t assimétrica ou Clayton) seria o passo seguinte.
 * Os cenários são de um dia e sem a volatilidade de hoje: dizem o que acontece num dia mau típico da janela, não num dia mau de amanhã.
 
 ---
@@ -787,10 +788,12 @@ Responde a "se este fator se mexer assim, o que acontece aos setores e às empre
 
 1. **Fatores:** os escolhidos ficam com a variação pedida; os outros seguem a normal condicional, com a média e a covariância semanais da janela, escaladas por $h$:
 $$\mathbb{E}[x_u \mid x_s] = h\mu_u + \Sigma_{us}\Sigma_{ss}^{-1}(x_s - h\mu_s),\qquad \mathrm{Cov}[x_u \mid x_s] = h\,(\Sigma_{uu} - \Sigma_{us}\Sigma_{ss}^{-1}\Sigma_{su})$$
-2. **Setores:** $r_s = h\,a_s + B_s x + \sum_{k=1}^{h}\varepsilon_{s,t_k}$. $B$ vem da regressão de cada setor nos sete fatores ao mesmo tempo (OLS); os resíduos são semanas inteiras sorteadas do passado, o que guarda as caudas e a dependência entre setores.
+2. **Setores:** $r_s = h\,a_s + B_s x + k\sum_{j=1}^{h}\varepsilon_{s,t_j}$. $B$ vem da regressão de cada setor nos sete fatores ao mesmo tempo (OLS); os resíduos são semanas inteiras sorteadas do passado, o que guarda as caudas e a dependência entre setores.
 3. **Empresas:** $r_i = h\,\alpha_i + \beta_i r_s + \sum_k e_{i,t_k}$, com $\beta_i$ da regressão semanal na do seu ETF e os resíduos sorteados nas mesmas semanas que os dos setores.
 
-Os retornos log somados passam a simples ($e^r - 1$). O painel mostra a mediana, os 5% piores e melhores e a probabilidade de perder, e a teia passa a ter a cor da mediana (vermelho perde, verde ganha). Estimar e simular demora cerca de 0,05 s, por isso corre ao vivo.
+**Alargamento nas crises (desde 2026-11-14):** nas semanas agitadas os setores afastam-se mais do que os fatores explicam. Estima-se, na janela, a dispersão dos resíduos de cada semana em função da intensidade do movimento dos fatores (distância de Mahalanobis à média), $s(I) = a + bI$, e os resíduos do cenário são multiplicados por $k = \max\{1,\ s(I^*)/s(\tilde I)\}$, em que $I^*$ é a intensidade do choque por semana e $\tilde I$ a de uma semana típica. Num choque normal $k = 1$; na COVID-19, $k \approx 1{,}5$. Sortear só as semanas mais parecidas com o choque, ou estimar $B$ só nelas, foi testado e não melhorou.
+
+Os retornos log somados passam a simples ($e^r - 1$). O painel mostra a mediana, os 5% piores e melhores e a probabilidade de perder, e a teia passa a ter a cor da mediana (vermelho perde, verde ganha). Os setores e as empresas da cadeia do fator chocado mostram a sua percentagem; cada ligação desse fator a um setor mostra o efeito direto, $e^{B_{s,f}\,x_f} - 1$, que é só o canal desse fator. A diferença para o número do setor é o que chega pelos outros fatores, sobretudo pelo mercado. Estimar e simular demora cerca de 0,05 s, por isso corre ao vivo.
 
 **Validação:** o coeficiente $B$ é recuperado em dados simulados; a média condicional bate com a fórmula; sem choque, a dispersão simulada dos fatores é a da janela; o teste dos episódios não usa nenhuma semana depois do início da crise.
 
@@ -800,9 +803,9 @@ Para cada crise, o modelo é estimado só com as semanas anteriores e recebe as 
 | Crise (semanas) | Fatores impostos | Setores dentro do intervalo de 90% | Correlação previsto × real | Erro médio | Desvio médio |
 |---|---|---|---|---|---|
 | Lehman, 2008 (10) | só macro | 1 de 9 | 0,24 | 21,2 p.p. | +18,1 p.p. |
-| | macro + mercado | 2 de 9 | 0,52 | 10,4 p.p. | +0,5 p.p. |
+| | macro + mercado | 3 de 9 | 0,52 | 10,4 p.p. | +0,5 p.p. |
 | COVID-19, 2020 (4) | só macro | 0 de 11 | 0,77 | 16,8 p.p. | +16,8 p.p. |
-| | macro + mercado | 4 de 11 | 0,71 | 5,2 p.p. | +3,6 p.p. |
+| | macro + mercado | 6 de 11 | 0,71 | 5,2 p.p. | +3,6 p.p. |
 | Juros, 2022 (24) | só macro | 4 de 11 | 0,17 | 17,4 p.p. | +9,6 p.p. |
 | | macro + mercado | 4 de 11 | 0,35 | 12,9 p.p. | −7,8 p.p. |
 
@@ -810,7 +813,7 @@ Desvio positivo = o modelo previu perdas menores do que as reais.
 
 * **Só com os fatores macro, o modelo subestima as crises:** a perda prevista ficou em média 15 pontos abaixo da real. A relação entre os fatores e o mercado estimada em tempos calmos é linear e não capta o pânico.
 * **Com o mercado real, a mediana acerta bem** em 2008 e 2020 (desvio de 0,5 e 3,6 pontos). Em 2022 os setores dividiram-se mais do que o modelo prevê (energia +34%, comunicações −31%).
-* **Os intervalos são estreitos demais:** só 32% dos setores ficaram dentro do intervalo de 90%. Nas crises, a parte própria de cada setor varia muito mais do que em média. Sortear blocos de semanas seguidas em vez de semanas soltas não ajudou (testado).
+* **Os intervalos continuam estreitos:** com o alargamento, 42% dos setores ficaram dentro do intervalo de 90% quando o mercado é conhecido (antes 32%); só com os fatores macro, 16%, porque aí o que falha é a mediana, não a largura.
 * **Leitura:** o motor serve para ver para onde um choque empurra cada setor e quais sofrem mais do que outros. Não serve para dar a dimensão exata de uma crise; o painel diz isto ao lado dos resultados.
 
 ### D. Limitações

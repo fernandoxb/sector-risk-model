@@ -58,9 +58,9 @@ def _txt(f: str, x: float) -> str:
     return fm.pp(x, 2) if f in MACRO_FACTORS and MACRO_FACTORS[f]["transf"] == "diff" else fm.pct(np.expm1(x), 1, sinal=True)
 
 
-def render(g: dict, versao: str, pesos: pd.Series | None = None) -> tuple[pd.Series | None, list[str]]:
+def render(g: dict, versao: str, pesos: pd.Series | None = None) -> tuple[pd.Series | None, list[str], dict]:
     """Desenha os controlos e o resultado (e o da carteira, com `pesos` por ticker a somar 1). Devolve (mediana por
-    setor e empresa, fatores chocados) ou (None, [])."""
+    setor e empresa, fatores chocados, efeito direto de cada fator chocado em cada setor) ou (None, [], {})."""
     dados, val = g["cen_sem"], g["cen_val"]
     with st.expander("🎛️ Simular um choque: fatores → setores → empresas (Monte Carlo)",
                      expanded=bool(st.session_state.get("cen_fatores"))):
@@ -85,7 +85,7 @@ def render(g: dict, versao: str, pesos: pd.Series | None = None) -> tuple[pd.Ser
             st.caption("Escolhe um fator e a variação no horizonte. Os outros fatores reagem como reagiram em média nos "
                        "últimos 10 anos, os setores pela sua sensibilidade aos fatores e as empresas pela sensibilidade "
                        "ao seu setor. A teia passa a mostrar o efeito.")
-            return None, []
+            return None, [], {}
         extras = st.session_state.get("extras", {})
         d_m, h_m, sem_px = com_extras(dados, g["hold"], extras, g["precos"])
         mod = _modelo(versao + "|" + ",".join(sorted(extras)), d_m, h_m)
@@ -123,4 +123,6 @@ def render(g: dict, versao: str, pesos: pd.Series | None = None) -> tuple[pd.Ser
                    f"({mod['inicio'].date()} → {mod['fim'].date()}). O mercado é um fator: se não o escolheres, cai ou "
                    "sobe com o que costuma acompanhar o choque." + txt_v + " Na teia, a cor dos setores e das empresas "
                    "passa a ser a mediana do cenário (vermelho perde, verde ganha).")
-        return res["mediana"].drop(cn.FAT), list(choque)
+        diretos = {(f, s): float(np.expm1(mod["B"][k, cn.FAT.index(f)] * v))     # só o canal desse fator
+                   for f, v in choque.items() for k, s in enumerate(mod["setores"])}
+        return res["mediana"].drop(cn.FAT), list(choque), diretos

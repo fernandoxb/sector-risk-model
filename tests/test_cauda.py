@@ -144,3 +144,21 @@ def test_janelas_usam_os_anos_pedidos_e_a_cobertura():
     f1 = cd._fit(p, list("ABCD"), anos=1, q=0.10)
     assert list(f1["corr"].columns) == list("ABCD") and 250 < f1["n"] < 265
     assert f1["p_conj"].loc["A", "B"] > 0.3                           # A e B partilham o choque comum
+
+
+# ----------------------------------------------------------------------------- cópula t assimétrica
+def test_copula_assimetrica_cai_mais_junta_do_que_sobe():
+    p = np.array([[1.0, 0.5], [0.5, 1.0]])
+    u0 = cd.simulate_skewt_copula(p, 6.0, 0.0, n=100_000, seed=1)
+    u = cd.simulate_skewt_copula(p, 6.0, -0.4, n=100_000, seed=1)
+    assert u.min() > 0 and u.max() < 1 and abs(u.mean() - 0.5) < 1e-3          # margens uniformes pela ordem
+    assert abs(cd._media_conjunta(u0, 0.05) - cd._media_conjunta(1 - u0, 0.05)) < 0.02   # γ = 0: simétrica
+    assert cd._media_conjunta(u, 0.05) > cd._media_conjunta(1 - u, 0.05) + 0.05
+
+
+def test_gama_recuperado_pelo_metodo_dos_momentos():
+    p = np.full((4, 4), 0.5) + 0.5 * np.eye(4)
+    dados = pd.DataFrame(cd.simulate_skewt_copula(p, 6.0, -0.3, n=4000, seed=7))
+    g = cd.ajustar_gama(dados, p, 6.0, n=30_000, seed=8)
+    assert -0.45 <= g <= -0.15
+    assert cd.ajustar_gama(pd.DataFrame(cd.simulate_skewt_copula(p, 6.0, 0.0, n=4000, seed=9)), p, 6.0, n=30_000) >= -0.1

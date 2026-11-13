@@ -28,6 +28,18 @@ def tickers_do_link(link: str) -> list[str]:
     return [p.partition(":")[0].strip().upper() for p in link.replace(";", ",").split(",") if ":" in p]
 
 
+def extras_do_link(base: set[str]) -> dict:
+    """As ações fora do mapa da sessão, com as do link (?carteira=) já validadas no Yahoo. A teia corre antes deste
+    separador, por isso as duas chamam isto no início."""
+    extras = st.session_state.setdefault("extras", {})
+    if not st.session_state.get("extras_link_lido"):
+        st.session_state["extras_link_lido"] = True
+        for t_ in tickers_do_link(st.query_params.get("carteira") or ""):
+            if t_ not in base and t_ not in extras and (ficha := _validar(t_)):
+                extras[ficha["ticker"]] = ficha
+    return extras
+
+
 def render(g: dict) -> None:
     alertas = g["alertas"]
     backtest_carteira = g["backtest_carteira"]
@@ -45,12 +57,8 @@ def render(g: dict) -> None:
     setores = g["setores"]
     stt = g["stt"]
 
-    extras = st.session_state.setdefault("extras", {})     # ações fora do mapa: ticker → {nome, setor}
     base = list(dict.fromkeys(hold["ticker"])) + setores + [MARKET]
-    if "cart_df" not in st.session_state:                   # 1.ª vez: as ações do link que não estão no mapa
-        for t_ in tickers_do_link(st.query_params.get("carteira") or ""):
-            if t_ not in base and t_ not in extras and (ficha := _validar(t_)):
-                extras[ficha["ticker"]] = ficha
+    extras = extras_do_link(set(base))                      # ações fora do mapa: ticker → {nome, setor}
     SET_DE = ca.mapa_setores(hold) | {t: (x["setor"] or USER_MARKET_LABEL) for t, x in extras.items()}
     UNIVERSO = base + [t for t in extras if t not in base]
     NOME_AT = (dict(zip(hold["ticker"], hold["nome"])) | {s_: f"ETF {SECTORS[s_]}" for s_ in setores}

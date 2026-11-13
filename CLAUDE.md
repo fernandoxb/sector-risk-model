@@ -52,7 +52,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   (as antigas não mudam; Sentinela e choques usam as antigas); `decomposicao.py` → `company_factors.csv`.
 - Ações fora do mapa (Fase 5): `empresas.validar_ticker` + `YAHOO_SETOR_ETF`; ficam em `st.session_state["extras"]` e no link;
   no simulador entram por `paineis/cenario.com_extras` (preços ao vivo; sem setor → `cenarios.MERCADO`); para o pipeline
-  diário, `EXTRA_TICKERS` (peso 0 em `holdings.csv`).
+  diário, `EXTRA_TICKERS` (peso 0 em `holdings.csv`). `minha_carteira.extras_do_link` lê-as do link e é chamado pela teia e pela
+  carteira (a teia corre primeiro).
 - Carteira (Fase 6): horizontes 10/21 dias via `horizonte.forecast` sobre r_p; HRP fora da amostra em
   `carteira.hrp_fora_da_amostra` (`HRP_OOS_JANELA`, `HRP_OOS_PASSO`); ambos em cache no `app.py`.
 - HRP (v5.0): `carteira.calcular_pesos_hrp` (distância = 1 − quedas conjuntas, risco de cada ramo = CVaR); expander no

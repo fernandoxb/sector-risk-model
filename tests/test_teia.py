@@ -89,3 +89,17 @@ def test_acao_fora_do_mapa_na_teia(dados):
 def test_tickers_do_link():
     from paineis.minha_carteira import tickers_do_link
     assert tickers_do_link("aapl:30, ASML.AS:10;brk-b:5,lixo") == ["AAPL", "ASML.AS", "BRK-B"]
+
+
+def test_numeros_do_cenario_na_teia(dados):
+    """Com um cenário: o setor e as empresas da cadeia mostram a percentagem; a ligação do fator chocado, o efeito direto."""
+    sc, links, pares, hold = dados
+    cen = pd.Series({"XLU": -0.05, "XLE": 0.03, "XLU/0": 0.0} | {f"XLU{k}": -0.06 for k in range(3)})
+    op = teia.opcoes(sc, links, pares, hold, None, None, foco="juros", cenario=cen,
+                     diretos={("juros", "XLU"): -0.04, ("juros", "XLE"): 0.02})
+    nos = {n["id"]: n for n in op["series"][0]["data"]}
+    assert "−5,0%" in nos["XLU"]["label"]["formatter"]
+    assert nos["XLU/XLU0"]["label"]["show"] and nos["XLU/XLU0"]["label"]["formatter"] == "XLU0 −6,0%"
+    assert not nos["XLK/XLK0"]["label"]["show"]                                   # fora da cadeia: sem rótulo
+    lig = {(a["source"], a["target"]): a for a in op["series"][0]["links"]}
+    assert lig[("juros", "XLU")]["label"]["formatter"] == "−4,0%" and "label" not in lig[("XLU", "XLU/XLU0")]

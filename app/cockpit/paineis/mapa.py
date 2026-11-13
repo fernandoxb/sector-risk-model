@@ -18,6 +18,7 @@ from src.models.scorecard import COMPONENTS
 from src.report import formato as fm
 from src.report.alerts import pi_level
 from paineis import cenario, teia
+from paineis.minha_carteira import extras_do_link
 from paineis import fatores as fatores_p, setores as setores_p
 from paineis.comum import (CORES_C, GRID, MUTED, NOMES, N_CVAR, OFICIAL, RISCO, SEM, TXT, layout, metrica, modelo_txt, nome,
                            seletor_periodo)
@@ -71,21 +72,21 @@ def render(g: dict) -> None:
 
     def forca(d: dict) -> float:
         return d["p_conj"] if "p_conj" in d else d["corr"]
+    extras = extras_do_link(set(hold["ticker"]) | set(SECTORS) | {MARKET})   # ações fora do mapa (link ou Minha carteira)
+    hold_t = pd.concat([hold, pd.DataFrame([{"setor": x["setor"], "ticker": t, "nome": x["nome"], "peso": 0.0}
+                                            for t, x in extras.items() if x["setor"] in SECTORS and t not in set(hold["ticker"])],
+                                           columns=hold.columns)], ignore_index=True)
     if True:                                    # a teia: fatores → setores → empresas (ECharts)
-        cen, chocados = (None, [])
+        cen, chocados, diretos = (None, [], {})
         cart = st.session_state.get("cart_df")                 # a carteira da Minha carteira (ou a do link)
         p_cart = (dict(zip(cart["Ativo"], cart["Peso (%)"])) if cart is not None
                   else ca.parse_carteira(st.query_params.get("carteira")))
         p_cart = {t: v for t, v in p_cart.items() if isinstance(t, str) and v == v and v > 0}
         pesos = ca.normalizar(p_cart) if p_cart else None
         if g["cen_sem"] is not None:
-            cen, chocados = cenario.render(g, str(g["cen_sem"]["data"].max()), pesos)
-        extras = st.session_state.get("extras", {})          # ações fora do mapa, acrescentadas na Minha carteira
-        hold_t = pd.concat([hold, pd.DataFrame([{"setor": x["setor"], "ticker": t, "nome": x["nome"], "peso": 0.0}
-                                                for t, x in extras.items() if x["setor"] in SECTORS],
-                                               columns=hold.columns)], ignore_index=True)
+            cen, chocados, diretos = cenario.render(g, str(g["cen_sem"]["data"].max()), pesos)
         novo = teia.desenhar(g, st.session_state.get("mapa_setor"), Q_TXT, cen, chocados, "p_conj" if por_cauda else "corr",
-                             set(p_cart), hold_t)
+                             set(p_cart), hold_t, diretos)
         if novo:
             if novo in MACRO_FACTORS:               # fator: mostra (ou esconde) a sua cadeia
                 st.session_state["teia_foco"] = None if st.session_state.get("teia_foco") == novo else novo
@@ -103,7 +104,7 @@ def render(g: dict) -> None:
     m1, m2, m3 = st.columns([2, 2, 1], vertical_alignment="bottom")
     m_set = m1.selectbox("Setor aberto", [None] + setores, key="mapa_setor", placeholder="— todos os setores —",
                          format_func=lambda t: "— todos os setores —" if t is None else nome(t))
-    h_set = hold[hold["setor"] == m_set].reset_index(drop=True) if m_set else hold.iloc[:0]
+    h_set = hold_t[hold_t["setor"] == m_set].reset_index(drop=True) if m_set else hold.iloc[:0]
     tick_set = h_set["ticker"].tolist()
     if st.session_state.get("mapa_empresa") not in tick_set:
         st.session_state["mapa_empresa"] = None
@@ -223,8 +224,9 @@ def render(g: dict) -> None:
                                               f"{fm.pct(l['perda_obs'])} · simulação {fm.pct(l['p_cauda'], 0)} e "
                                               f"{fm.pct(l['perda_media'])}"
                                               for b, l in cn.drop(index=fs).nlargest(3, "p_obs").iterrows()))
-                    st.caption(f"Sempre na janela de {CVAR_YEARS} anos: primeiro os dias reais (poucos), depois 200 mil dias simulados pela cópula t. "
-                               "A simulação costuma dar menos do que o observado.")
+                    st.caption(f"Sempre na janela de {CVAR_YEARS} anos: primeiro os dias reais (poucos), depois 200 mil dias simulados por uma cópula t "
+                               "assimétrica (cai-se junto mais do que se sobe junto). A simulação fica perto do observado na média, "
+                               "mas abaixo em alguns pares.")
                 if stt is not None:
                     st.markdown("**Nas crises históricas**")
                     ss = stt[stt["serie"] == fs].set_index("cenario")
@@ -266,7 +268,7 @@ def render(g: dict) -> None:
         ord_e = t_emp.sort_values("peso", ascending=False)
         st.dataframe(pd.DataFrame({
             "Empresa": [f"{t} · {nomes_emp[t]}" for t in ord_e.index],
-            "Peso no ETF": ord_e["peso"].map(fm.pct).values,
+            "Peso no ETF": ord_e["peso"].map(lambda v: fm.pct(v) if v > 0 else "fora do ETF").values,
             f"CVaR {N_CVAR}": ord_e["cvar"].map(lambda v: fm.pct(v, 2)).values,
             "Face ao ETF": ord_e["racio"].map(fm.mult).values,
             f"ES {N_CVAR} previsto": [fm.pct(es_emp(t)) if es_emp(t) is not None else "—" for t in ord_e.index],

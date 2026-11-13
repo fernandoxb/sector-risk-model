@@ -7,7 +7,8 @@ Três camadas, simuladas por Monte Carlo:
                da janela): E[x_u | x_s] = h·μ_u + Σ_us Σ_ss⁻¹ (x_s − h·μ_s), Cov = h·(Σ_uu − Σ_us Σ_ss⁻¹ Σ_su)
   2. setores   r_s = h·a_s + B_s·x + ε_s, com B da regressão de cada setor nos seis fatores ao mesmo tempo (OLS) e
                ε a soma de h semanas reamostradas dos resíduos (bootstrap: guarda as caudas e a dependência entre
-               setores, porque se sorteia a semana inteira)
+               setores, porque se sorteia a semana inteira), alargada por k ≥ 1 quando o choque é mais intenso do que
+               uma semana típica (a dispersão dos resíduos cresce com a intensidade do movimento dos fatores)
   3. empresas  r_i = h·α_i + β_i·r_s + e_i, com β_i da regressão semanal na do seu ETF (ou no mercado, se a ação não
                tem setor, ex.: um ETF de ouro) e e_i reamostrado nas mesmas
                semanas que os resíduos dos setores
@@ -79,14 +80,29 @@ def ajustar(dados: pd.DataFrame, hold: pd.DataFrame, setores: list[str] = list(S
         alfa[t], beta[t] = a_, b_
         res_e.loc[m, t] = d[t].to_numpy()[m] - A @ [a_, b_]
     rng = np.random.default_rng(seed)
-    return {"mu": x.mean().to_numpy(), "sigma": x.cov().to_numpy(), "setores": setores,
+    S = x.cov().to_numpy()
+    zx = x.to_numpy() - x.mean().to_numpy()
+    intensidade = np.sqrt(np.einsum("ij,jk,ik->i", zx, np.linalg.inv(S), zx))     # Mahalanobis de cada semana
+    res_s_p = _preenche(res_s.to_numpy(), rng)
+    # nas semanas agitadas os setores afastam-se mais do que os fatores explicam: dispersão ~ a + b·intensidade
+    escala = np.polyfit(intensidade, np.sqrt((res_s_p ** 2).mean(axis=1)), 1)
+    return {"mu": x.mean().to_numpy(), "sigma": S, "setores": setores, "intensidade": intensidade, "escala": escala,
             "a": np.array([coef[s][0] for s in setores]), "B": np.array([coef[s][1:] for s in setores]),
-            "res_s": _preenche(res_s.to_numpy(), rng), "empresas": [t for t, _ in emp],
+            "res_s": res_s_p, "empresas": [t for t, _ in emp],
             "setor_de": dict(emp), "alfa": np.array([alfa[t] for t, _ in emp]), "beta": np.array([beta[t] for t, _ in emp]),
             "res_e": _preenche(res_e.to_numpy(), rng), "semanas": len(d), "inicio": d.index[0], "fim": d.index[-1]}
 
 
-def simular(mod: dict, choque: dict[str, float], h: int = 1, n: int = CENARIO_NSIM, seed: int = BT_SEED) -> pd.DataFrame:
+def fator_escala(mod: dict, x: np.ndarray, h: int) -> float:
+    """Quanto alargar os resíduos num cenário: a dispersão prevista pela intensidade do choque (distância de Mahalanobis
+    da mediana do movimento por semana, x/h, à média) a dividir pela de uma semana típica; nunca menos de 1."""
+    v = np.median(x, axis=0) / h - mod["mu"]
+    alvo = float(np.sqrt(v @ np.linalg.inv(mod["sigma"]) @ v))
+    return max(float(np.polyval(mod["escala"], alvo) / np.polyval(mod["escala"], np.median(mod["intensidade"]))), 1.0)
+
+
+def simular(mod: dict, choque: dict[str, float], h: int = 1, n: int = CENARIO_NSIM, seed: int = BT_SEED,
+            escalar: bool = True) -> pd.DataFrame:
     """`n` cenários de h semanas. `choque`: fator → variação total no horizonte, na unidade da regressão (p.p. ou
     Δ log). Devolve retornos simples, uma coluna por fator (as variações), setor e empresa."""
     rng = np.random.default_rng(seed)
@@ -105,11 +121,12 @@ def simular(mod: dict, choque: dict[str, float], h: int = 1, n: int = CENARIO_NS
             m_u, C_u = mu[u_idx], S[np.ix_(u_idx, u_idx)]
         x[:, u_idx] = rng.multivariate_normal(m_u, (C_u + C_u.T) / 2, size=n, method="eigh")
     semanas = rng.integers(0, len(mod["res_s"]), size=(n, h))           # as mesmas semanas para setores e empresas
-    r_s = h * mod["a"] + x @ mod["B"].T + mod["res_s"][semanas].sum(axis=1)
+    k = fator_escala(mod, x, h) if escalar else 1.0
+    r_s = h * mod["a"] + x @ mod["B"].T + k * mod["res_s"][semanas].sum(axis=1)
     base = np.column_stack([r_s, x[:, FAT.index(MERCADO)]])         # a empresa liga-se ao seu setor ou ao mercado
     pos = {s: k for k, s in enumerate(mod["setores"])} | {MERCADO: len(mod["setores"])}
     col_s = [pos[mod["setor_de"][t]] for t in mod["empresas"]]
-    r_e = h * mod["alfa"] + mod["beta"] * base[:, col_s] + mod["res_e"][semanas].sum(axis=1)
+    r_e = h * mod["alfa"] + mod["beta"] * base[:, col_s] + k * mod["res_e"][semanas].sum(axis=1)
     return pd.concat([pd.DataFrame(x, columns=FAT), pd.DataFrame(np.expm1(r_s), columns=mod["setores"]),
                       pd.DataFrame(np.expm1(r_e), columns=mod["empresas"])], axis=1)
 
