@@ -56,11 +56,15 @@ def render(g: dict) -> None:
             st.dataframe(pd.DataFrame({
                 "Setor": [f"{int(r)}. {t}" for t, r in zip(sc.index, sc["rank"])],
                 "Score": sc["score_final"].round(0).astype(int),
+                **({"Posição": [f"{a}–{b}" if a != b else f"{a}" for a, b in zip(sc["rank_p05"], sc["rank_p95"])]}
+                   if "rank_p05" in sc else {}),
                 "P × I": [f"{p * i} · {pi_level(p, i)}" for p, i in zip(sc["probabilidade"], sc["impacto"])],
                 "Modelo": sc["semaforo"].map(lambda v: SEM[v].split()[0]) + sc["risco_modelo"].map({True: " ⚠", False: ""}),
                 "ES amanhã": sc["bruto_cauda"].map(fm.pct),
             }), hide_index=True, width="stretch", height=470, column_config={
                 "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+                "Posição": st.column_config.TextColumn("Posição", help="Entre que posições o setor fica em 90% dos casos "
+                                                       "quando os pesos do score variam à volta dos oficiais."),
                 "P × I": st.column_config.TextColumn("P × I", help="Probabilidade (1–5) × impacto (1–5) e nível."),
                 "Modelo": st.column_config.TextColumn("Modelo", help="Semáforo do backtest oficial; ⚠ = risco de modelo."),
                 "ES amanhã": st.column_config.TextColumn(f"ES {N_CVAR}", help=f"ES {N_CVAR} previsto pelo {OFICIAL}."),
@@ -68,7 +72,8 @@ def render(g: dict) -> None:
         with st.expander("Como se calcula o score"):
             st.markdown(
                 "Cada componente é ordenado entre os 11 setores e vai de 0 (o mais baixo) a 1 (o mais alto); "
-                "o score é 100 × a soma ponderada.\n\n"
+                "o score é 100 × a soma ponderada. Na cauda, metade vem dessa ordem e metade de comparar o ES de hoje "
+                "com a história do próprio setor, para um score baixo não ser só \"o menos arriscado dos 11\".\n\n"
                 f"| Componente | Peso | O que mede |\n|---|---|---|\n"
                 f"| Cauda | {fm.pct(SCORE_WEIGHTS['cauda'], 0)} | ES {N_CVAR} previsto pelo {OFICIAL} para amanhã |\n"
                 f"| Sistémico | {fm.pct(SCORE_WEIGHTS['sistemico'], 0)} | quanto o setor pesa no CVaR da carteira, por unidade de peso (Euler) |\n"

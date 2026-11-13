@@ -82,6 +82,13 @@ MOMENTUM_DAYS = 60             # janela de exceções ao VaR 97,5% oficial
 # Risco de modelo: semáforo de Basileia (definido a 99%) do método oficial → multiplicador do score.
 MODEL_RISK_LEVEL = 0.99
 MODEL_RISK_MULT = {"verde": 1.00, "amarelo": 1.10, "vermelho": 1.25}
+# Cauda: metade pela posição entre os 11 setores, metade pelo percentil do ES de hoje na história do próprio setor
+# (as previsões do backtest), para um score baixo não querer dizer só "o menos mau dos 11".
+SCORE_HIST_WEIGHT = 0.5
+# Incerteza do ranking: pesos sorteados à volta dos oficiais, Dirichlet(SCORE_RANK_CONC · peso); com 20, o peso de
+# 0,30 varia com desvio-padrão de cerca de 0,10.
+SCORE_RANK_NSIM = 5000
+SCORE_RANK_CONC = 20.0
 SCORE_SENSITIVITY = 0.5        # análise de sensibilidade: cada peso varia ±50% (e re-normaliza)
 
 # --- Ligações medidas fator macro → setor (src/models/factor_links.py) ------

@@ -5,7 +5,9 @@ Funções puras (sem Streamlit, sem I/O) — o `main()` no fim é o único ponto
   stress_loss          perda média nos cenários de stress, com peso reduzido para linhas com proxy
   momentum             nº de exceções ao VaR oficial nos últimos `days` dias
   raw_components       junta as cinco fontes numa tabela de valores em bruto por setor
-  normalize            componentes em [0, 1] (o regime já vem em [0, 1] e não é re-normalizado)
+  own_history_pct      percentil do ES de hoje na história das previsões do próprio setor
+  normalize            componentes em [0, 1] (o regime já vem em [0, 1]; a cauda junta posição e história própria)
+  rank_uncertainty     intervalo da posição de cada setor quando os pesos variam
   weighted             média ponderada de um subconjunto de componentes
   scorecard            score 0–100, ajuste de risco de modelo, impacto e probabilidade (1–5)
   sensitivity          como muda o top 3 quando cada peso varia ±x% (re-normalizando)
@@ -27,7 +29,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from config.settings import (FEATURES, MODEL_RISK_LEVEL, MODEL_RISK_MULT,  # noqa: E402
-                             MOMENTUM_DAYS, OFFICIAL_VAR_METHOD, SCORE_IMPACT, SCORE_PROBABILITY,
+                             MOMENTUM_DAYS, OFFICIAL_VAR_METHOD, SCORE_HIST_WEIGHT, SCORE_IMPACT, SCORE_PROBABILITY,
+                             SCORE_RANK_CONC, SCORE_RANK_NSIM,
                              SCORE_SENSITIVITY, SCORE_WEIGHTS, SECTORS, STRESS_ONLY_LOSSES,
                              STRESS_PROXY_WEIGHT)
 from src.models.risk_metrics import quintile_score  # noqa: E402  (mesma regra 1–5 do mapa)
@@ -68,11 +71,19 @@ def momentum(series: pd.DataFrame, tickers: list[str], method: str = OFFICIAL_VA
     return pd.Series(out)
 
 
+def own_history_pct(series: pd.DataFrame, es_hoje: pd.Series, tickers: list[str],
+                    method: str = OFFICIAL_VAR_METHOD, level: float = 0.975) -> pd.Series:
+    """Percentil do ES previsto para amanhã na história das previsões do próprio setor (fração <= ao de hoje)."""
+    col = f"es_{method}_{level}"
+    return pd.Series({t: float((series.loc[series["setor"] == t, col] <= es_hoje[t]).mean()) for t in tickers})
+
+
 def raw_components(official: pd.DataFrame, rc: pd.DataFrame, stress: pd.DataFrame, metrics: pd.DataFrame,
                    series: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
     """Valores em bruto (maior = mais risco). Índices por ticker em `official`, `rc` e `metrics`."""
     return pd.DataFrame({
         "cauda": official["es975"].reindex(tickers),
+        "cauda_hist": own_history_pct(series, official["es975"], tickers),
         "sistemico": (rc["pct_cvar"] / rc["peso"]).reindex(tickers),
         "stress": stress_loss(stress, tickers),
         "regime": metrics["vol_pct"].reindex(tickers).astype(float),
@@ -80,8 +91,13 @@ def raw_components(official: pd.DataFrame, rc: pd.DataFrame, stress: pd.DataFram
     })
 
 
-def normalize(raw: pd.DataFrame) -> pd.DataFrame:
-    return pd.DataFrame({c: raw[c] if c in ALREADY_UNIT else percentile_norm(raw[c]) for c in raw.columns})
+def normalize(raw: pd.DataFrame, hist_weight: float = SCORE_HIST_WEIGHT) -> pd.DataFrame:
+    """Os cinco componentes em [0, 1]. Se `raw` trouxer `cauda_hist`, a cauda é a média ponderada da posição entre
+    os setores (1 − hist_weight) e do percentil na história do próprio setor (hist_weight)."""
+    comp = pd.DataFrame({c: raw[c] if c in ALREADY_UNIT else percentile_norm(raw[c]) for c in COMPONENTS})
+    if "cauda_hist" in raw:
+        comp["cauda"] = (1 - hist_weight) * comp["cauda"] + hist_weight * raw["cauda_hist"]
+    return comp
 
 
 def weighted(comp: pd.DataFrame, weights: dict[str, float], keys: tuple[str, ...] | None = None) -> pd.Series:
@@ -111,6 +127,21 @@ def scorecard(raw: pd.DataFrame, traffic: pd.Series, weights: dict[str, float] =
     out["probabilidade"] = quintile_score(weighted(comp, weights, SCORE_PROBABILITY))
     out["rank"] = out["score_final"].rank(ascending=False, method="min").astype(int)
     return out.sort_values("score_final", ascending=False)
+
+
+def rank_uncertainty(raw: pd.DataFrame, traffic: pd.Series, weights: dict[str, float] = SCORE_WEIGHTS,
+                     mult: dict[str, float] = MODEL_RISK_MULT, n: int = SCORE_RANK_NSIM,
+                     conc: float = SCORE_RANK_CONC, seed: int = 0) -> pd.DataFrame:
+    """Quanto depende a posição de cada setor dos pesos escolhidos? Sorteia `n` conjuntos de pesos à volta dos
+    oficiais, Dirichlet(conc · peso), e devolve por setor: rank_p05, rank_p95 e p_top3 (fração no top 3).
+    Mede só a incerteza dos pesos; não a dos dados."""
+    comp = normalize(raw)[list(weights)]
+    w = np.random.default_rng(seed).dirichlet(conc * np.array(list(weights.values())), size=n)
+    final = np.minimum(100 * comp.to_numpy() @ w.T * traffic.reindex(raw.index).map(mult).to_numpy()[:, None], 100)
+    ranks = (-final).argsort(axis=0).argsort(axis=0) + 1                       # setores × sorteios
+    return pd.DataFrame({"rank_p05": np.quantile(ranks, 0.05, axis=1).round().astype(int),
+                         "rank_p95": np.quantile(ranks, 0.95, axis=1).round().astype(int),
+                         "p_top3": (ranks <= 3).mean(axis=1)}, index=raw.index)
 
 
 def _top(raw: pd.DataFrame, traffic: pd.Series, weights: dict[str, float], n: int = 3) -> list[str]:
@@ -149,6 +180,7 @@ def main() -> Path:
 
     raw = raw_components(official, rc, stress, metrics, series, tickers)
     sc = scorecard(raw, traffic)
+    sc = sc.join(rank_uncertainty(raw, traffic))
     sens = sensitivity(raw, traffic)
 
     out = FEATURES / "scorecard.csv"
@@ -156,7 +188,7 @@ def main() -> Path:
     sens.to_csv(FEATURES / "scorecard_sensitivity.csv", index=False, float_format="%.4f")
 
     print(f"[scorecard] {len(sc)} setores → {out.name}")
-    cols = ["rank", *COMPONENTS, "score", "semaforo", "score_final", "impacto", "probabilidade"]
+    cols = ["rank", "rank_p05", "rank_p95", "p_top3", *COMPONENTS, "score", "semaforo", "score_final", "impacto"]
     print(sc[cols].round(3).to_string())
     print(sens.to_string(index=False))
     return out

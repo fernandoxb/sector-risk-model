@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 5.2
+versao: 5.3
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -255,6 +255,10 @@ Saídas: `data/features/scorecard.csv`, `scorecard_sensitivity.csv`.
 
 **Normalização:** cada componente vai para $[0,1]$ pelo percentil entre os 11 setores, $c = (\text{posição} - 1)/(n-1)$, com empates na posição média. Assim, o setor com o valor mais baixo vale 0 e o mais alto vale 1. O *regime* já é um percentil em $[0,1]$ e não é re-normalizado.
 
+**Cauda face à história do próprio setor (v5.3, `SCORE_HIST_WEIGHT` = 0,5):** só com a posição entre os 11, um score baixo quer dizer "o menos arriscado dos 11", mesmo num dia em que todos estão arriscados. Por isso a cauda passou a ser metade posição e metade história própria:
+$$c_{i,\text{cauda}} = 0{,}5\,\frac{\text{posição}_i - 1}{n - 1} + 0{,}5\,\hat F_i(\mathrm{ES}_i),\qquad \hat F_i(x) = \text{fração das previsões passadas do setor } i \text{ com ES} \le x$$
+A história são as previsões do backtest do modelo oficial (desde 2008, ou desde que o setor existe). O regime já era um percentil na história própria; com esta mudança, 30% do peso do score é absoluto (15% da cauda e 15% do regime). Sistémico, stress e momento continuam relativos.
+
 **Stress com proxy:** nos cenários em que o setor usa o proxy β × SPY (XLRE e XLC em 2008), a perda pesa `STRESS_PROXY_WEIGHT` = 0,5:
 $$\text{stress}_i = \frac{\sum_s \omega_s \max(0, L_{i,s})}{\sum_s \omega_s},\qquad \omega_s = 0{,}5 \text{ se proxy, } 1 \text{ caso contrário}$$
 
@@ -264,16 +268,21 @@ $$\text{score}_i = 100 \sum_k w_k\, c_{i,k},\qquad \sum_k w_k = 1$$
 
 **Mapa:** o **impacto** é o quintil (1–5, a mesma regra `quintile_score` do Sprint 1) da média ponderada de cauda, sistémico e stress. A **probabilidade** é o quintil da média ponderada de regime e momento, com os pesos de cada grupo re-normalizados.
 
+**Incerteza do ranking (v5.3):** os pesos são uma escolha. Para ver quanto a posição de cada setor depende deles, sorteiam-se 5 000 conjuntos de pesos à volta dos oficiais, $w \sim \text{Dirichlet}(20 \cdot w^{oficial})$ (o peso de 0,30 varia com desvio-padrão de cerca de 0,10), e recalcula-se o ranking. O `scorecard.csv` guarda `rank_p05` e `rank_p95` (as posições entre as quais o setor fica em 90% dos sorteios) e `p_top3`. Mede só a incerteza dos pesos, não a dos dados.
+
 ### C. Validação
+* O percentil na história própria e a mistura da cauda são verificados à mão; um setor pior em tudo fica em 1.º em todos os sorteios, e sem variação dos pesos o intervalo reduz-se à posição oficial.
 * A normalização é testada nos extremos (o menor dá 0, o maior dá 1), nos empates e com o regime intacto.
 * Os pesos têm de somar 1, e os grupos de impacto e de probabilidade são uma partição dos componentes. O score é também comparado com um cálculo à mão.
 * **Monotonia:** piorar qualquer componente de qualquer setor nunca baixa o score desse setor, nem o impacto ou a probabilidade do grupo afetado. Um semáforo pior também nunca baixa o `score_final`.
 * O proxy pesa metade, verificado à mão. O momento só conta a janela pedida.
 
-### D. Sensibilidade e leitura (2026-11-10)
-* **Topo:** o XLK é o 1.º com folga (score 91). Tem o maior ES previsto (9,5%), a maior contribuição para o CVaR por unidade de peso (1,42×) e a volatilidade no percentil 88%. Continua em 1.º em todas as variações de ±50% em qualquer peso.
-* **Logo abaixo:** XLE, XLY, XLI e XLF ficam num grupo apertado (score final entre 67 e 72). Por isso o 2.º e o 3.º lugares mudam com os pesos: em 5 das 10 variações o top 3 muda de composição.
-* **XLE:** é o único setor com o semáforo amarelo do modelo oficial. Sobe de 4.º para 2.º só por causa do ajuste de risco de modelo.
+### D. Sensibilidade e leitura (2026-11-12)
+* **Topo:** o XLK é o 1.º com folga (score 91) e fica em 1.º em todos os sorteios de pesos. Tem o maior ES previsto (8,2%, no percentil 97% da sua própria história), a maior contribuição para o CVaR por unidade de peso (1,42×) e a volatilidade no percentil 89%.
+* **Logo abaixo:** XLY (72), XLE (69) e XLI (68) não se distinguem: os intervalos são 2–4, 2–5 e 2–4, e a probabilidade de estar no top 3 é 80%, 62% e 54%. A ordem entre eles depende dos pesos.
+* **Fundo:** XLP, XLU, XLC e XLRE ficam entre o 7.º/8.º e o 11.º; a ordem entre eles também não é fiável.
+* **Efeito da história própria:** o XLC tinha cauda 0 por ser o último dos 11; o seu ES de hoje está no percentil 27% da sua história, por isso a cauda passa a 0,14. O XLP sobe para 0,73: é dos menos arriscados dos 11, mas está alto face ao seu próprio passado.
+* **Quebra na série:** as mudanças de 2026-11-13 (stress só com perdas, cauda com história própria) alteram o score sem que o mercado mude; os alertas desse dia sobre níveis P × I vêm daí.
 * **Stress só com perdas (2026-11-13, `STRESS_ONLY_LOSSES`):** antes, a *perda média* deixava os ganhos compensar as perdas. O XLE subiu 44,5% em 2022 e ficava com o componente de stress mais baixo, apesar de ter perdido 48% e 56% nos outros dois cenários. Agora um ganho num cenário conta como perda zero: $\max(0, L_{i,s})$.
 
 ---

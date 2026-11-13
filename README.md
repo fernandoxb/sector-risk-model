@@ -82,7 +82,7 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 | Previsão e backtest | Histórico, GJR-GARCH(1,1)-t, FHS e EVT condicional; Kupiec, Christoffersen, Z2 de Acerbi–Székely (p-valor por simulação), semáforo de Basileia, regra por mesa do FRTB | `src/models/backtest.py` |
 | Empresas e carteira própria | O mesmo backtest em 109 empresas; carteira do utilizador com contribuições de Euler, exposição por setor, stress e previsão pelo modelo oficial | `src/models/backtest_empresas.py`, `carteira.py` |
 | Carteira | Covariância de Ledoit-Wolf, contribuições de Euler para a volatilidade e o CVaR, stress tests de 2008, COVID-19 e 2022 | `src/models/portfolio.py` |
-| Scorecard 0–100 | 5 componentes normalizados por percentil, multiplicador de risco de modelo (semáforo), P × I, sensibilidade ±50% aos pesos | `src/models/scorecard.py` |
+| Scorecard 0–100 | 5 componentes normalizados por percentil (a cauda também face à história do próprio setor), intervalo da posição com pesos sorteados, multiplicador de risco de modelo (semáforo), P × I, sensibilidade ±50% aos pesos | `src/models/scorecard.py` |
 | Dependência de cauda | Quedas conjuntas observadas e cópula t (tau de Kendall, ν por máxima verosimilhança) nos resíduos do GARCH; é o que liga o mapa de risco | `src/models/cauda.py` |
 | Fatores macro | Regressões semanais setor ~ fator com erros HAC de Newey–West, para juros, inflação, spreads high yield, VIX, petróleo e dólar; contágio pela MST | `src/models/factor_links.py` |
 | Horizontes | VaR e ES a 10 e 21 dias por simulação de trajetórias do GARCH, com backtest em blocos sem sobreposição e comparação com a raiz do tempo | `src/models/horizonte.py` |
@@ -126,7 +126,7 @@ O cockpit está organizado em separadores:
 * **Carteira com pesos iguais:** volatilidade de 12,1% e CVaR 97,5% de 2,21% a 1 dia. A diversificação vale 1,49× na volatilidade, mas só 1,39× no CVaR, porque nas quedas os setores caem juntos.
 * **Stress 2008:** a carteira perde 49,5% (SPY: 55,2%). Na COVID-19 perde mais do que o SPY (36,0% contra 33,7%), por causa do peso da energia.
 * **Fatores macro:** 34 das 66 ligações fator → setor são significativas (|t| ≥ 2 com HAC). As mais fortes são o VIX → XLK (t = −14,0) e os spreads high yield → XLI (t = −11,5).
-* **Scorecard:** o XLK lidera (92/100), seguido do XLE (74) e do XLY (72). Nenhum setor tem agravamento de risco de modelo.
+* **Scorecard:** o XLK lidera (91/100) com quaisquer pesos. XLY (72), XLE (69) e XLI (68) não se distinguem: as posições variam entre o 2.º e o 5.º lugar quando os pesos mudam.
 
 ## Arquitetura
 ```mermaid
@@ -198,7 +198,7 @@ Convenções:
 * **Modelo oficial (EVT):** a 97,5% tem ligeiramente mais exceções do que as esperadas no agregado (1 208 contra 1 152, ou seja, 2,62% contra 2,5%). Na amostra toda só passa os três testes em 9 de 11 setores a 97,5% e em 7 de 11 a 99%.
 * **Ligações macro:** os alertas e os choques de stress usam as regressões de um fator de cada vez, sem correção para testes múltiplos nas 66 (com |t| ≥ 2, cerca de 3 falsos positivos). A regressão conjunta é mostrada ao lado, com cerca de 155 semanas para 6 fatores.
 * **Dependência de cauda:** cada frequência de quedas conjuntas assenta em cerca de 38 dias (erro de uns 8 pontos), numa janela de 3 anos sem crise sistémica.
-* **Scorecard e P × I:** são relativos aos 11 setores (percentis e quintis). Um setor pode mudar de nível sem que o seu risco mude, e um score baixo quer dizer "o menos arriscado dos 11", não "risco baixo".
+* **Scorecard e P × I:** 70% do peso do score é relativo aos 11 setores (só a cauda, em metade, e o regime se comparam com a história do próprio setor). O intervalo da posição mede a incerteza dos pesos, não a dos dados.
 * **Cenários e horizontes:** a simulação da cópula t subestima as quedas conjuntas; o ES a 10 e 21 dias não tem backtest (só o VaR), e os horizontes longos existem só para os setores.
 * **Carteira HRP:** os pesos são calculados e avaliados na mesma amostra, por isso a redução de risco mostrada é otimista.
 * **Âmbito:** é um projeto académico e não é aconselhamento de investimento.

@@ -131,3 +131,32 @@ def test_sensibilidade(raw, verde):
     novo = SCORE_WEIGHTS[k] * 1.5
     assert s[(s.componente == k) & (s.variacao == "+50%")]["peso_novo"].iloc[0] == \
         pytest.approx(novo / (1 + 0.5 * SCORE_WEIGHTS[k]))
+
+
+# ----------------------------------------------------------------------------- história própria e incerteza do ranking
+def test_percentil_na_historia_do_proprio_setor():
+    series = pd.DataFrame({"setor": ["A"] * 4 + ["B"] * 4, "es_x_0.975": [0.01, 0.02, 0.03, 0.04] * 2})
+    p = sc.own_history_pct(series, pd.Series({"A": 0.025, "B": 0.05}), ["A", "B"], method="x")
+    assert p.to_dict() == {"A": 0.5, "B": 1.0}                 # metade da história de A fica abaixo do ES de hoje
+
+
+def test_cauda_junta_posicao_e_historia(raw):
+    base = sc.normalize(raw)
+    com = sc.normalize(raw.assign(cauda_hist=1.0), hist_weight=0.5)
+    assert list(com.columns) == list(sc.COMPONENTS)                              # cauda_hist não é um componente
+    assert com["cauda"].to_numpy() == pytest.approx(0.5 * base["cauda"].to_numpy() + 0.5)
+    assert com.drop(columns="cauda").equals(base.drop(columns="cauda"))
+    # todos os setores no máximo da sua história: o menos arriscado dos 11 deixa de ter cauda 0
+    assert com["cauda"].min() == pytest.approx(0.5)
+
+
+def test_incerteza_do_ranking(raw, verde):
+    dominante = raw.copy()
+    dominante.loc[TICK[0]] = raw.max() * 2                      # o pior em tudo: 1.º com quaisquer pesos
+    u = sc.rank_uncertainty(dominante, verde, n=500, seed=1)
+    assert (u.loc[TICK[0], ["rank_p05", "rank_p95"]] == 1).all() and u.loc[TICK[0], "p_top3"] == 1.0
+    assert (u["rank_p05"] <= u["rank_p95"]).all() and u["p_top3"].sum() == pytest.approx(3.0)
+    fixo = sc.rank_uncertainty(raw, verde, n=200, conc=1e9, seed=2)             # pesos sem variar: sem incerteza
+    oficial = sc.scorecard(raw, verde)["rank"]
+    assert (fixo["rank_p05"] == fixo["rank_p95"]).all() and (fixo["rank_p05"] == oficial.reindex(fixo.index)).all()
+
