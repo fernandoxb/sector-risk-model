@@ -72,3 +72,29 @@ def test_empresa_sem_backtest_nao_aparece_validada():
     from paineis.comum import modelo_txt
     assert modelo_txt({"validado": float("nan"), "es_subestimado": float("nan"), "mult_es": 1.0}) == "sem backtest"
     assert modelo_txt({"validado": True, "es_subestimado": False, "mult_es": 1.0}) == "✅ validado"
+
+
+@pytest.mark.parametrize("janela, anos", [("1 Ano", 1), ("10 Anos", 10)])
+def test_janela_muda_as_ligacoes_do_mapa(monkeypatch, janela, anos):
+    """A janela da barra lateral escolhe as quedas conjuntas dessa janela (q de 10% com 1 ano) e os preços de 10 anos."""
+    monkeypatch.setenv("COCKPIT_SNAPSHOT", "1")
+    at = AppTest.from_file(str(APP), default_timeout=180).run()
+    at.sidebar.selectbox[0].set_value(janela).run()
+    assert not at.exception, [e.value for e in at.exception]
+    texto = " ".join(c.value for c in at.caption)
+    assert ("10% piores dias" in texto) == (anos == 1)                  # com 1 ano a cauda é de 10%
+    at.session_state["mapa_setor"] = "XLK"
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("Empresas do Tecnologia (XLK)" in s.value for s in at.subheader)
+
+
+def test_cenario_na_teia(monkeypatch):
+    """Com um choque nos juros, o painel mostra a tabela dos setores e a teia corre sem erros."""
+    monkeypatch.setenv("COCKPIT_SNAPSHOT", "1")
+    at = AppTest.from_file(str(APP), default_timeout=180)
+    at.session_state["cen_fatores"] = ["juros"]
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("O que o modelo espera para os outros fatores" in m.value for m in at.markdown)
+    assert any("Testado em 2008, 2020 e 2022" in c.value for c in at.caption)

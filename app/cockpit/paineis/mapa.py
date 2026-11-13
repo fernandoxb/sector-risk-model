@@ -17,6 +17,7 @@ from src.models import cockpit as ck
 from src.models.scorecard import COMPONENTS
 from src.report import formato as fm
 from src.report.alerts import pi_level
+from paineis import cenario, teia
 from paineis.comum import (CORES_C, GRID, MUTED, NOMES, N_CVAR, OFICIAL, RISCO, SEM, TXT, layout, metrica, modelo_txt, nome,
                            seletor_periodo)
 
@@ -96,6 +97,26 @@ def render(g: dict) -> None:
 
     def forca(d: dict) -> float:
         return d["p_conj"] if "p_conj" in d else d["corr"]
+    teia_on = st.toggle("✨ Teia nova (protótipo): fatores → setores → empresas", value=True, key="teia_on",
+                        help="Protótipo da Fase 2, em ECharts. Desliga para voltar ao mapa anterior e comparar.")
+    if teia_on:
+        cen, chocados = (None, [])
+        if g["cen_sem"] is not None:
+            cen, chocados = cenario.render(g, str(g["cen_sem"]["data"].max()))
+        novo = teia.desenhar(g, st.session_state.get("mapa_setor"), Q_TXT, cen, chocados)
+        if novo:
+            if novo in MACRO_FACTORS:               # fator: mostra (ou esconde) a sua cadeia
+                st.session_state["teia_foco"] = None if st.session_state.get("teia_foco") == novo else novo
+            elif novo in SECTORS:                   # setor: abre as empresas, como o seletor abaixo
+                st.session_state["mapa_setor"], st.session_state["mapa_empresa"] = novo, None
+                st.session_state["teia_foco"] = novo
+            elif "/" in novo:                       # empresa: abre a ficha
+                st.session_state["mapa_setor"], st.session_state["mapa_empresa"] = novo.split("/")
+            st.rerun()
+        st.caption("**Centro:** fatores macro, ligados aos setores em que mexem mesmo com os outros fatores fixos "
+                   "(vermelho cheio agrava, verde tracejado atenua). **Anel do meio:** setores, cor = score, tamanho = ES "
+                   f"previsto, ligados pelos que mais caem juntos nos {Q_TXT} piores dias. **Anel de fora:** as 10 maiores "
+                   "empresas de cada setor. Clica num fator para ver o choque a correr pela cadeia; roda do rato para ampliar.")
     m1, m2, m3 = st.columns([2, 2, 1], vertical_alignment="bottom")
     m_set = m1.selectbox("Setor aberto", [None] + setores, key="mapa_setor", placeholder="— todos os setores —",
                          format_func=lambda t: "— todos os setores —" if t is None else nome(t))
@@ -232,15 +253,16 @@ def render(g: dict) -> None:
     lim = dict(range=[-2.25, 2.25]) if m_set else {}
     layout(fig_m, 700 if m_set else 520, hovermode="closest", dragmode=False,
            xaxis=dict(visible=False, **lim), yaxis=dict(visible=False, scaleanchor="x", **lim))
-    st.plotly_chart(fig_m, width="stretch", key="mapa_chart", on_select="rerun", selection_mode="points",
-                    config={"displayModeBar": False, "scrollZoom": False})
-    if m_set:
+    if not teia_on:
+        st.plotly_chart(fig_m, width="stretch", key="mapa_chart", on_select="rerun", selection_mode="points",
+                        config={"displayModeBar": False, "scrollZoom": False})
+    if m_set and not teia_on:
         st.caption(f"**Setores:** cor = score de risco, tamanho = CVaR histórico. **Empresas do {m_set}:** tamanho = peso "
                    f"no ETF, cor = CVaR da empresa face ao do ETF (verde ≤ 1×, vermelho ≥ 2,5×), linha = peso. "
                    "Ao escolher uma empresa, as curvas tracejadas ligam-na às que mais caem (ou andam) com ela. No anel exterior ficam os outros "
                    "setores; os ligados ao centro são os vizinhos de contágio. "
                    f"As {len(tick_set)} maiores posições somam {fm.pct(h_set['peso'].sum(), 0)} do ETF.")
-    else:
+    elif not teia_on:
         st.caption("Cor = score de risco (verde baixo, vermelho alto); tamanho = CVaR histórico. As linhas ligam os setores "
                    + (f"que mais caem juntos: passa o rato numa linha para ver em quantos dos {Q_TXT} piores dias de um "
                       "o outro também caiu." if por_cauda else
@@ -248,6 +270,7 @@ def render(g: dict) -> None:
         if por_cauda:
             with st.expander("Todas as ligações: quedas conjuntas contra correlação"):
                 ps = cauda[cauda["grupo"] == cd.GRUPO_SETORES]
+                n_cauda = int(cauda_meta.get("q", 0.05) * cauda_meta["grupos"][cd.GRUPO_SETORES]["dias"])
                 mat = pd.DataFrame(np.nan, index=setores, columns=setores)
                 for r_ in ps.itertuples():
                     mat.loc[r_.a, r_.b] = mat.loc[r_.b, r_.a] = r_.p_conj
@@ -267,8 +290,8 @@ def render(g: dict) -> None:
                            "correlação): " + "; ".join(f"{r_.a}–{r_.b} (correlação {fm.num(r_.corr)}, {int(r_.posto_c)}.º)"
                                                        for r_ in sub.itertuples())
                            + f". Cópula t ajustada aos resíduos do GARCH: ν = {fm.num(cauda_meta['grupos'][cd.GRUPO_SETORES]['nu'], 1)} "
-                           f"({cauda_meta['grupos'][cd.GRUPO_SETORES]['dias']} dias). Com cerca de 38 dias de cauda por setor, "
-                           "cada percentagem tem uma margem de erro de uns 8 pontos.")
+                           f"({cauda_meta['grupos'][cd.GRUPO_SETORES]['dias']} dias). Com cerca de {n_cauda} dias de cauda por setor, "
+                           f"cada percentagem tem uma margem de erro de uns {fm.num(100 * (0.3 * 0.7 / n_cauda) ** 0.5, 0)} pontos.")
 
     # --- painel: empresas do setor ou ficha da empresa
     if m_set and not m_emp:
@@ -331,7 +354,7 @@ def render(g: dict) -> None:
                                               f"{fm.pct(l['perda_obs'])} · simulação {fm.pct(l['p_cauda'], 0)} e "
                                               f"{fm.pct(l['perda_media'])}"
                                               for b, l in cn.drop(index=fs).nlargest(3, "p_obs").iterrows()))
-                    st.caption("Primeiro os dias reais da janela (poucos), depois 200 mil dias simulados pela cópula t. "
+                    st.caption(f"Sempre na janela de {CVAR_YEARS} anos: primeiro os dias reais (poucos), depois 200 mil dias simulados pela cópula t. "
                                "A simulação costuma dar menos do que o observado.")
                 if stt is not None:
                     st.markdown("**Nas crises históricas**")

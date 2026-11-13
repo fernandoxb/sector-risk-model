@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 5.4
+versao: 5.6
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -297,7 +297,7 @@ Saídas: `data/features/factor_links.csv` (as 66 regressões).
 |---|---|---|---|---|
 | juros | DGS10 (Treasury 10Y) | FRED | Δ em p.p. | subir |
 | inflacao | T10YIE (breakeven 10Y) | FRED | Δ em p.p. | subir |
-| spreads | BAMLH0A0HYM2 (spread high yield) | FRED | Δ em p.p. | subir |
+| spreads | BAA10Y (spread Baa da Moody's sobre o Treasury 10Y; até 2026-11-12, BAMLH0A0HYM2, high yield) | FRED | Δ em p.p. | subir |
 | vix | ^VIX | Yahoo | Δ log | subir |
 | petroleo | CL=F (WTI, futuro) | Yahoo | Δ log | subir |
 | dolar | DX-Y.NYB (DXY) | Yahoo | Δ log | subir |
@@ -322,6 +322,8 @@ com $\hat u_t = x_t \hat\varepsilon_t$, o núcleo de Bartlett e $L = \lfloor 4 (
 * Também são testados o corte da semana incompleta, as transformações (Δ e Δ log, com níveis ≤ 0 → sem valor), o último valor de cada semana e a MST com $N-1$ arestas.
 
 ### E. Resultados (semanas 2023-11-10 → 2026-11-06)
+> **Atualização de 2026-11-13:** o spread passou a ser o Baa da Moody's (ver F). A tabela abaixo é do spread high yield. Com o Baa são aceites **31 das 66** ligações; nos spreads ficam 6 (XLK $t$ = −3,7, XLY −3,2, XLF −3,0, XLC −2,6, XLI −2,5 e XLE −2,0), em vez de 9 com $t$ perto de −11. O spread Baa mexe menos por semana do que o high yield e liga-se menos ao VIX. Os outros cinco fatores não mudam.
+
 São aceites **33 das 66** ligações. Por fator:
 
 | Fator | Ligações aceites | Leitura |
@@ -340,7 +342,7 @@ São aceites **33 das 66** ligações. Por fator:
 **Limitações:**
 * **Testes múltiplos:** com 66 testes a $|t| \ge 2$ (cerca de 5%), esperam-se ~3 ligações falsas mesmo sem relação nenhuma. As ligações com $|t|$ perto de 2 (dólar → XLRE, inflação → XLI) devem ser lidas com cautela.
 * As regressões são **univariadas**: o VIX e os spreads estão muito correlacionados entre si, e cada beta capta também o efeito dos outros fatores.
-* O CSV público do FRED só tem **os últimos 3 anos** do spread high yield (licença do ICE). Chega para `CVAR_YEARS` = 3, mas não para janelas mais longas.
+* **Spread de crédito:** o CSV público do FRED só tem os últimos 3 anos do spread high yield (licença da ICE). Para haver janelas de 5 e 10 anos, desde 2026-11-13 usa-se o spread Baa da Moody's (`BAA10Y`, desde 1986). Mede o crédito de qualidade média, não o especulativo, por isso reage menos nas crises.
 
 ### F. No cockpit
 * As ligações medidas aparecem no separador **Fatores macro** e na ficha de cada setor do **Mapa de risco** (secção 11).
@@ -566,6 +568,22 @@ A correlação linear mede o andamento conjunto em dias normais. Para o contági
 * **Um só $\nu$ por grupo:** a cópula t tem a mesma cauda para todos os pares e é simétrica (quedas e subidas conjuntas iguais). Nos dados reais, as quedas conjuntas costumam ser mais fortes do que as subidas.
 * **A árvore deixa ligações de fora:** mostra as N − 1 mais fortes que ligam tudo; a matriz completa está no cockpit.
 
+### G. Janelas de 1, 3, 5 e 10 anos (v5.5)
+O separador Mapa de risco deixa escolher a janela. `cauda.fit_windows` repete o ajuste para cada janela de `CAUDA_JANELAS`; a de 3 anos continua em `tail_dependence.csv` e as outras vão para `tail_dependence_janelas.csv` (coluna `anos`).
+
+* **Quem entra:** uma série entra numa janela se tiver dados em pelo menos 80% dos dias (`CAUDA_MIN_COBERTURA`). As contas usam os dias em que todas têm preço: na janela de 10 anos os setores começam com o XLC, em junho de 2018 (2 112 dias).
+* **Cauda com 1 ano:** os 5% piores dias seriam cerca de 12, poucos demais; usa-se $q$ = 10% (25 dias), e o acaso passa a ser 10%.
+* **Dados:** os preços das empresas e os fatores passaram a ser descarregados desde 2005. O backtest das empresas continua a começar em 2015 (`COMPANY_BT_START`), para os resultados da secção 13 não mudarem.
+
+| Janela | $q$ | Dias comuns | Quedas conjuntas, média dos 55 pares | Par mais ligado |
+|---|---|---|---|---|
+| 1 ano | 10% | 250 | 22% (acaso: 10%) | XLU–XLRE 52% |
+| 3 anos | 5% | 752 | 28% | XLY–XLC 54% |
+| 5 anos | 5% | 1 253 | 35% | XLY–XLC 58% |
+| 10 anos | 5% | 2 112 | 44% | XLF–XLI 69% |
+
+**Leitura:** quanto mais longa a janela, mais os setores caem juntos, porque entram crises em que quase tudo cai ao mesmo tempo (2022 nos 5 anos; a COVID-19 nos 10). Num ano calmo a ligação mais forte é entre os setores sensíveis aos juros (utilities e imobiliário); em 10 anos é entre os cíclicos (financeiro e indústria). A janela muda também a Minha carteira e a Análise ao vivo; o modelo oficial, o score e o backtest usam sempre 3 anos.
+
 ---
 
 ## 🎯 15. EVT condicional e mudança do modelo oficial (Fase B)
@@ -629,10 +647,11 @@ As 66 regressões da secção 9 usam um fator de cada vez. Como o VIX e os sprea
 * **Leitura honesta do Ridge:** com cerca de 155 semanas, $\alpha = 1$ quase não encolhe os coeficientes ($Z^\top Z$ tem diagonal 154). Quem separa os fatores correlacionados é a regressão ser conjunta; o limiar de 0,05 sozinho aceitaria quase tudo, por isso exige-se também o teste $t$.
 * **Validação:** o coeficiente é igual ao de `sklearn.linear_model.Ridge` (erro relativo < 1e-9). Com dados simulados em que A causa o setor e B só anda com A ($r \approx 0{,}85$), a regressão de um fator aceita B por engano e a conjunta não.
 
-**Resultados (semanas 2023-11-17 → 2026-11-06):** 28 ligações resistem. Das 34 aceites uma a uma, 12 deixam de o ser e aparecem 6 novas.
+**Resultados (semanas 2023-11-17 → 2026-11-06, com o spread Baa):** 32 ligações resistem. Das 31 aceites uma a uma, 7 deixam de o ser e aparecem 8 novas.
 
-* **Somem:** a inflação implícita em XLK, XLF, XLE e XLI; os juros no XLE ($t$ de +2,8 para −0,2: o efeito era do petróleo e da inflação); o VIX em XLV, XLP e XLRE; os spreads em XLE e XLV; o dólar em XLV e XLRE.
-* **Aparecem:** os juros a agravar XLV, XLY e XLB, e o petróleo a agravar o XLI, efeitos que estavam escondidos por outros fatores.
+* **Somem:** os juros no XLE ($t$ de +2,8 para −0,2: o efeito era do petróleo e da inflação); a inflação implícita em XLK e XLE; os spreads em XLE e XLI; o VIX no XLP; o dólar no XLRE.
+* **Aparecem:** os juros a agravar XLV, XLY e XLB; a inflação em XLY e XLB; o VIX no XLE; o petróleo no XLI e no XLU. São efeitos que estavam escondidos por outros fatores.
+* Com o spread high yield (até 2026-11-12) resistiam 28 e somiam 12 das 34; a troca de série reduz a sobreposição entre o VIX e o crédito.
 * **O que não muda:** o Sentinela, o choque de juros e os cenários de stress continuam a usar o β de um fator de cada vez. Num choque de um só fator, esse β é o efeito total, incluindo o que costuma vir com ele; o conjunto responde a outra pergunta (o fator com tudo o resto parado).
 
 ### B. De onde vem o risco de cada empresa
@@ -732,6 +751,58 @@ Em cada bloco de $h$ dias, o VaR previsto na véspera é comparado com a perda d
 * Só a frequência de exceções é testada; o ES a 10 e 21 dias não tem backtest.
 * Os parâmetros do GARCH ficam fixos durante o horizonte, e a média diária $\mu$ estimada em 3 anos é somada todos os dias.
 * Os horizontes existem só para os 11 setores; as empresas e a carteira do utilizador continuam a 1 dia.
+
+---
+
+## 🕸️ 19. Teia de risco e motor de cenários (Fases 2 e 3)
+
+Código: `app/cockpit/paineis/teia.py` (teia em ECharts), `src/models/cenarios.py` (motor) e `app/cockpit/paineis/cenario.py` (painel) · parâmetros: `CENARIO_*` · testes: `tests/test_teia.py`, `tests/test_cenarios.py`.
+Saídas: `data/features/cenario_semanal.parquet` (os dados semanais que o cockpit usa para simular ao vivo) e `cenario_validacao.csv`.
+
+### A. A teia
+O Mapa de risco passou a ter uma vista única em anéis: os seis fatores macro no centro, os 11 setores no anel do meio e as 10 maiores empresas de cada setor no anel de fora.
+
+* **Ligações dos fatores:** só as que resistem na regressão conjunta (secção 16). Vermelho cheio quer dizer que o fator a subir agrava o setor; verde tracejado que atenua (o tracejado distingue-as sem depender da cor).
+* **Ligações entre setores:** a árvore das quedas conjuntas da janela escolhida (secção 14.G). Os setores que caem juntos ficam vizinhos no anel.
+* **Cliques:** um fator mostra a sua cadeia, com partículas a correr do fator para os setores e, com um atraso, para as empresas; um setor abre as empresas num leque, ligadas entre si pelas que caem juntas; uma empresa abre a ficha.
+* **Biblioteca:** ECharts, pelo componente `streamlit-echarts`, escolhido depois de um protótipo com os dados reais. O mapa anterior, em Plotly, continua disponível num interruptor.
+
+### B. O motor de cenários
+Responde a "se este fator se mexer assim, o que acontece aos setores e às empresas?". Usa dados semanais dos últimos 10 anos (`CENARIO_ANOS`), com sete fatores: os seis macro e o mercado (retorno log do SPY), porque é pelo mercado que as crises chegam aos setores. Em cada um de 5 000 cenários de $h$ semanas:
+
+1. **Fatores:** os escolhidos ficam com a variação pedida; os outros seguem a normal condicional, com a média e a covariância semanais da janela, escaladas por $h$:
+$$\mathbb{E}[x_u \mid x_s] = h\mu_u + \Sigma_{us}\Sigma_{ss}^{-1}(x_s - h\mu_s),\qquad \mathrm{Cov}[x_u \mid x_s] = h\,(\Sigma_{uu} - \Sigma_{us}\Sigma_{ss}^{-1}\Sigma_{su})$$
+2. **Setores:** $r_s = h\,a_s + B_s x + \sum_{k=1}^{h}\varepsilon_{s,t_k}$. $B$ vem da regressão de cada setor nos sete fatores ao mesmo tempo (OLS); os resíduos são semanas inteiras sorteadas do passado, o que guarda as caudas e a dependência entre setores.
+3. **Empresas:** $r_i = h\,\alpha_i + \beta_i r_s + \sum_k e_{i,t_k}$, com $\beta_i$ da regressão semanal na do seu ETF e os resíduos sorteados nas mesmas semanas que os dos setores.
+
+Os retornos log somados passam a simples ($e^r - 1$). O painel mostra a mediana, os 5% piores e melhores e a probabilidade de perder, e a teia passa a ter a cor da mediana (vermelho perde, verde ganha). Estimar e simular demora cerca de 0,05 s, por isso corre ao vivo.
+
+**Validação:** o coeficiente $B$ é recuperado em dados simulados; a média condicional bate com a fórmula; sem choque, a dispersão simulada dos fatores é a da janela; o teste dos episódios não usa nenhuma semana depois do início da crise.
+
+### C. Teste em três crises, fora da amostra
+Para cada crise, o modelo é estimado só com as semanas anteriores e recebe as variações reais dos fatores durante a crise. Compara-se a previsão de cada setor com o que aconteceu. Há duas versões: só os seis fatores macro (o mercado fica condicional, como num cenário normal) e os macro mais o mercado real.
+
+| Crise (semanas) | Fatores impostos | Setores dentro do intervalo de 90% | Correlação previsto × real | Erro médio | Desvio médio |
+|---|---|---|---|---|---|
+| Lehman, 2008 (10) | só macro | 1 de 9 | 0,24 | 21,2 p.p. | +18,1 p.p. |
+| | macro + mercado | 2 de 9 | 0,52 | 10,4 p.p. | +0,5 p.p. |
+| COVID-19, 2020 (4) | só macro | 0 de 11 | 0,77 | 16,8 p.p. | +16,8 p.p. |
+| | macro + mercado | 4 de 11 | 0,71 | 5,2 p.p. | +3,6 p.p. |
+| Juros, 2022 (24) | só macro | 4 de 11 | 0,17 | 17,4 p.p. | +9,6 p.p. |
+| | macro + mercado | 4 de 11 | 0,35 | 12,9 p.p. | −7,8 p.p. |
+
+Desvio positivo = o modelo previu perdas menores do que as reais.
+
+* **Só com os fatores macro, o modelo subestima as crises:** a perda prevista ficou em média 15 pontos abaixo da real. A relação entre os fatores e o mercado estimada em tempos calmos é linear e não capta o pânico.
+* **Com o mercado real, a mediana acerta bem** em 2008 e 2020 (desvio de 0,5 e 3,6 pontos). Em 2022 os setores dividiram-se mais do que o modelo prevê (energia +34%, comunicações −31%).
+* **Os intervalos são estreitos demais:** só 32% dos setores ficaram dentro do intervalo de 90%. Nas crises, a parte própria de cada setor varia muito mais do que em média. Sortear blocos de semanas seguidas em vez de semanas soltas não ajudou (testado).
+* **Leitura:** o motor serve para ver para onde um choque empurra cada setor e quais sofrem mais do que outros. Não serve para dar a dimensão exata de uma crise; o painel diz isto ao lado dos resultados.
+
+### D. Limitações
+* A normal condicional e as regressões são lineares; nas crises as relações mudam.
+* Os parâmetros ficam fixos no horizonte, e o horizonte é uma soma de semanas independentes (raiz do tempo nos fatores).
+* As empresas só se ligam ao seu setor; não há ligação direta de uma empresa a um fator.
+* Quando um setor ou uma empresa ainda não existia, os resíduos dessas semanas são sorteados da própria série.
 
 ---
 

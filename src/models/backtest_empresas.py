@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import (BT_SIGNIF, BT_WINDOW, CLEAN, COMPANY_FULL_WEEKLY, COMPANY_MIN_DAYS,  # noqa: E402
+from config.settings import (BT_SIGNIF, BT_WINDOW, CLEAN, COMPANY_BT_START, COMPANY_FULL_WEEKLY, COMPANY_MIN_DAYS,  # noqa: E402
                              CVAR_LEVEL, ES_ADJ_MAX, FEATURES, MODEL_RISK_LEVEL, OFFICIAL_VAR_METHOD)
 from src.collect.sessao import ultima_sessao_da_semana  # noqa: E402
 from src.models import backtest as bt  # noqa: E402
@@ -116,7 +116,7 @@ def portfolio_backtest(rets: pd.DataFrame, w: pd.Series, window: int = BT_WINDOW
 
 
 def main(full: bool | None = None) -> Path:
-    prices = pd.read_parquet(CLEAN / "prices_empresas.parquet")
+    prices = pd.read_parquet(CLEAN / "prices_empresas.parquet").loc[COMPANY_BT_START:]   # desde 2015: comparável
     tickers = com_historico(prices)
     sem = [t for t in prices.columns if t not in tickers]
     out = FEATURES / "company_backtest.csv"

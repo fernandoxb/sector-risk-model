@@ -126,3 +126,21 @@ def test_cauda_pesada_da_mais_quedas_conjuntas_do_que_gauss():
     assert pc[0] > pc[1] + 0.1
     assert pc[0] > cd.lambda_t(p, 3.0)[0, 1] - 0.02       # λ é o limite quando q → 0; a 1% ainda fica por cima
 
+
+
+# ----------------------------------------------------------------------------- janelas
+def test_janelas_usam_os_anos_pedidos_e_a_cobertura():
+    """Na janela de 10 anos entra uma série com 8 anos (cobertura 80%) e as contas usam os dias comuns; uma série
+    com 2 anos fica de fora. Com 1 ano e q = 10% há ~25 dias de cauda por série."""
+    rng = np.random.default_rng(9)
+    idx = pd.bdate_range("2014-01-01", "2025-12-31")
+    comum = rng.standard_t(5, len(idx)) * 0.01
+    p = pd.DataFrame({c: 100 * np.exp(np.cumsum(comum + rng.normal(0, 0.006, len(idx)))) for c in "ABCD"}, index=idx)
+    p.loc[: idx[-1] - pd.DateOffset(years=8), "C"] = np.nan          # C só tem os últimos 8 anos
+    p.loc[: idx[-1] - pd.DateOffset(years=2), "D"] = np.nan          # D só tem os últimos 2
+    f10 = cd._fit(p, list("ABCD"), anos=10, q=0.05)
+    assert list(f10["corr"].columns) == ["A", "B", "C"]
+    assert f10["n"] == p["C"].notna().sum() - 1                       # dias comuns: começam com C
+    f1 = cd._fit(p, list("ABCD"), anos=1, q=0.10)
+    assert list(f1["corr"].columns) == list("ABCD") and 250 < f1["n"] < 265
+    assert f1["p_conj"].loc["A", "B"] > 0.3                           # A e B partilham o choque comum

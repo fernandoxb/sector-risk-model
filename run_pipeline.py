@@ -7,7 +7,7 @@ import sys
 
 from src.clean import validate
 from src.collect import download_factors, download_prices, empresas
-from src.models import (backtest, backtest_empresas, cauda, decomposicao, factor_links, horizonte, portfolio,
+from src.models import (backtest, backtest_empresas, cauda, cenarios, decomposicao, factor_links, horizonte, portfolio,
                         risk_metrics, scorecard)
 
 if __name__ == "__main__":
@@ -25,4 +25,5 @@ if __name__ == "__main__":
     scorecard.main()
     factor_links.main()
     decomposicao.main()
+    cenarios.main()
     cauda.main()

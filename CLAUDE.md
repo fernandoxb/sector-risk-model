@@ -42,8 +42,9 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   `data/features/holdings.csv` (`src/collect/empresas.py`). O mapa HTML antigo foi apagado.
 - Empresas: `backtest_empresas.py` reutiliza `backtest.run` (sem lógica nova) → `company_backtest.csv`, `company_risk.csv`
   (`validado`, `es_subestimado`). Carteira do utilizador: `carteira.py`; previsão = FHS sobre os retornos da carteira.
-- Dependência de cauda (`src/models/cauda.py`, QRM cap. 5): `tail_dependence.csv` liga o mapa de risco por quedas
-  conjuntas (padrão) ou correlação.
+- Dependência de cauda (`src/models/cauda.py`, QRM cap. 5): `tail_dependence.csv` (3 anos) liga o mapa de risco por quedas
+  conjuntas (padrão) ou correlação; as janelas 1/5/10 anos (`CAUDA_JANELAS`) vão para `tail_dependence_janelas.csv`, e a
+  janela da barra lateral escolhe qual o mapa usa. Empresas e fatores desde 2005 (backtest das empresas desde `COMPANY_BT_START`).
 - Modelos de fatores (Fase C, QRM 3.4): `factor_links.fit_multivariate_ridge` junta colunas `*_multi` ao `factor_links.csv`
   (as antigas não mudam; Sentinela e choques usam as antigas); `decomposicao.py` → `company_factors.csv`.
 - HRP (v5.0): `carteira.calcular_pesos_hrp` (distância = 1 − quedas conjuntas, risco de cada ramo = CVaR); expander no
@@ -52,6 +53,10 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   observadas); a simulação subestima o observado, por isso o cockpit mostra o observado primeiro.
 - Horizontes (Fase E): `horizonte.py` simula trajetórias do GARCH a 10 e 21 dias → `horizon_risk.csv` (diário) e
   `horizon_backtest.csv` (semanal); `backtest.garch_filter` devolve também ω, α, γ, β por dia.
+- Teia (Fase 2): `app/cockpit/paineis/teia.py` em ECharts (`streamlit-echarts`, componente v2: um servidor Streamlit
+  arrancado antes da instalação não o reconhece). Motor de cenários (Fase 3): `src/models/cenarios.py` (7 fatores = 6 macro
+  + mercado; normal condicional → setores por OLS + resíduos reamostrados → empresas pelo beta ao ETF) → `cenario_semanal.parquet`
+  (data em coluna) e `cenario_validacao.csv`; painel em `paineis/cenario.py`, simula ao vivo.
 - `scripts/` — capturas de ecrã (`capturas.py`) e PDF da nota (`nota_pdf.py`), via Chrome headless.
 - Funções de cálculo são **puras** (sem Streamlit, sem I/O) para poderem ser testadas.
 - `data/`, `reference/`, `.venv/` não vão para o Git.

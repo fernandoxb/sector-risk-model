@@ -16,7 +16,9 @@ simples, que são o que o investidor sente.
 Funções puras: pseudo_obs, tau_to_rho, nearest_corr, lambda_t, t_copula_loglik, fit_nu, joint_crash, fit_group,
 pairs_table, graph. Com GARCH: garch_residuals. I/O em main().
 Cenários conjuntos (Fase D): simulate_t_copula, scenarios.
-Saídas: data/features/tail_dependence.csv (pares), tail_meta.json (ν e nº de dias por grupo) e
+Janelas (CAUDA_JANELAS, 1/3/5/10 anos): fit_windows. A de CVAR_YEARS vai para tail_dependence.csv; as outras para
+tail_dependence_janelas.csv (coluna `anos`).
+Saídas: data/features/tail_dependence.csv (pares), tail_meta.json (ν e nº de dias por grupo e por janela) e
 tail_scenarios.csv (setores: o que acontece aos outros quando um tem um dia mau).
 """
 import json
@@ -31,7 +33,7 @@ from arch import arch_model
 from scipy import optimize, stats
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import (BT_SEED, CAUDA_MIN_DAYS, CAUDA_NSIM, CAUDA_NU_BOUNDS, CAUDA_Q, CLEAN, CVAR_YEARS, FEATURES,  # noqa: E402
+from config.settings import (BT_SEED, CAUDA_JANELAS, CAUDA_MIN_COBERTURA, CAUDA_NSIM, CAUDA_NU_BOUNDS, CAUDA_Q, CLEAN, CVAR_YEARS, FEATURES,  # noqa: E402
                              SECTORS)
 from src.collect.empresas import load_holdings  # noqa: E402
 
@@ -174,39 +176,62 @@ def _window(prices: pd.DataFrame, years: int = CVAR_YEARS) -> pd.DataFrame:
     return prices[prices.index > prices.index.max() - pd.DateOffset(years=years)]
 
 
-def _fit(prices: pd.DataFrame, cols: list[str]) -> dict | None:
-    rets = _window(prices[cols]).pct_change().iloc[1:]
-    cols = [c for c in cols if rets[c].notna().sum() >= CAUDA_MIN_DAYS]
+def _fit(prices: pd.DataFrame, cols: list[str], anos: int = CVAR_YEARS, q: float = CAUDA_Q,
+         cobertura: float = CAUDA_MIN_COBERTURA) -> dict | None:
+    """Um grupo numa janela de `anos`: entram as séries com dados em pelo menos `cobertura` dos dias da janela, e as
+    contas usam os dias em que todas têm preço (na janela de 10 anos, os setores começam com o XLC, em 2018)."""
+    rets = _window(prices[cols], anos).pct_change().iloc[1:]
+    cols = [c for c in cols if rets[c].notna().mean() >= cobertura]
     rets = rets[cols].dropna()
     if len(cols) < 2:
         return None
     resid = pd.concat([garch_residuals(rets[c]) for c in cols], axis=1)
-    return fit_group(rets, resid)
+    return fit_group(rets, resid, q)
+
+
+def fit_windows(etfs: pd.DataFrame, emp: pd.DataFrame | None, hold: pd.DataFrame | None, anos: int,
+                q: float) -> dict[str, dict]:
+    """Os setores e, se houver preços das empresas, um grupo por setor (as suas empresas + o próprio ETF)."""
+    fits = {GRUPO_SETORES: _fit(etfs, list(SECTORS), anos, q)}
+    if emp is not None:
+        for s in SECTORS:
+            tk = [t for t in hold.loc[hold["setor"] == s, "ticker"] if t in emp.columns]
+            fits[s] = _fit(emp[tk].join(etfs[s], how="inner"), tk + [s], anos, q) if tk else None
+    return {g: f for g, f in fits.items() if f}
 
 
 def main() -> Path:
     etfs = pd.read_parquet(CLEAN / "prices.parquet")[list(SECTORS)]
-    fits = {GRUPO_SETORES: _fit(etfs, list(SECTORS))}
     emp_f = CLEAN / "prices_empresas.parquet"
-    if emp_f.exists():                                  # um grupo por setor: as suas empresas + o próprio ETF
-        emp, hold = pd.read_parquet(emp_f), load_holdings()
-        for s in SECTORS:
-            tk = [t for t in hold.loc[hold["setor"] == s, "ticker"] if t in emp.columns]
-            f = _fit(emp[tk].join(etfs[s], how="inner"), tk + [s]) if tk else None
-            if f:
-                fits[s] = f
+    emp, hold = (pd.read_parquet(emp_f), load_holdings()) if emp_f.exists() else (None, None)
+    por_janela = {anos: fit_windows(etfs, emp, hold, anos, q) for anos, q in CAUDA_JANELAS.items()}
+    fits = por_janela[CVAR_YEARS]
+
+    def pares(fs: dict) -> pd.DataFrame:
+        return pd.concat([pairs_table(f, g) for g, f in fs.items()], ignore_index=True)
+
+    def resumo(fs: dict) -> dict:
+        return {g: {"nu": round(f["nu"], 2), "dias": f["n"], "series": len(f["corr"])} for g, f in fs.items()}
+
     FEATURES.mkdir(parents=True, exist_ok=True)
-    out = FEATURES / "tail_dependence.csv"
-    pd.concat([pairs_table(f, g) for g, f in fits.items()], ignore_index=True).to_csv(out, index=False, float_format="%.6f")
-    meta = {"q": CAUDA_Q, "anos": CVAR_YEARS,
-            "grupos": {g: {"nu": round(f["nu"], 2), "dias": f["n"], "series": len(f["corr"])} for g, f in fits.items()}}
+    out = FEATURES / "tail_dependence.csv"                    # a janela padrão, no formato de sempre
+    pares(fits).to_csv(out, index=False, float_format="%.6f")
+    pd.concat([pares(fs).assign(anos=a) for a, fs in por_janela.items() if a != CVAR_YEARS], ignore_index=True).to_csv(
+        FEATURES / "tail_dependence_janelas.csv", index=False, float_format="%.6f")
+    meta = {"q": CAUDA_Q, "anos": CVAR_YEARS, "grupos": resumo(fits),
+            "janelas": {str(a): {"q": CAUDA_JANELAS[a], "grupos": resumo(fs)} for a, fs in por_janela.items()}}
     (FEATURES / "tail_meta.json").write_text(json.dumps(meta, indent=1))
     s = fits[GRUPO_SETORES]
     scenarios(s["rets"], s["rho_t"].to_numpy(), s["nu"]).to_csv(FEATURES / "tail_scenarios.csv", index=False,
                                                                   float_format="%.6f")
-    pares = pairs_table(s, GRUPO_SETORES).sort_values("p_conj", ascending=False)
+    top6 = pairs_table(s, GRUPO_SETORES).sort_values("p_conj", ascending=False)
     print(f"[cauda] {len(fits)} grupos; setores: ν = {s['nu']:.1f}, {s['n']} dias; quedas conjuntas (q = {CAUDA_Q:.0%}):")
-    print(pares.head(6)[["a", "b", "corr", "lam", "p_conj"]].round(3).to_string(index=False))
+    print(top6.head(6)[["a", "b", "corr", "lam", "p_conj"]].round(3).to_string(index=False))
+    for a, fs in por_janela.items():
+        st_ = fs[GRUPO_SETORES]
+        top = pairs_table(st_, GRUPO_SETORES).nlargest(1, "p_conj").iloc[0]
+        print(f"[cauda] {a} anos (q = {CAUDA_JANELAS[a]:.0%}): {len(fs)} grupos; setores {st_['n']} dias, ν = {st_['nu']:.1f}; "
+              f"par mais ligado {top.a}–{top.b} {top.p_conj:.0%}")
     return out
 
 

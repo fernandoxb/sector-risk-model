@@ -99,8 +99,10 @@ MACRO_FACTORS = {
                  "nome": "Treasury 10Y", "curto": "Juros 10Y"},
     "inflacao": {"serie": "T10YIE",       "fonte": "fred",  "transf": "diff",    "adverso": +1,
                  "nome": "Breakeven de inflação 10Y", "curto": "Inflação implícita"},
-    "spreads":  {"serie": "BAMLH0A0HYM2", "fonte": "fred",  "transf": "diff",    "adverso": +1,
-                 "nome": "Spread high yield (ICE BofA)", "curto": "Spread high yield"},
+    # Spread Baa (Moody's) − Treasury 10Y, desde 1986. O spread high yield da ICE BofA (BAMLH0A0HYM2) foi usado até
+    # 2026-11-13, mas o FRED só o dá para os últimos 3 anos (licença da ICE), o que impedia janelas mais longas.
+    "spreads":  {"serie": "BAA10Y",       "fonte": "fred",  "transf": "diff",    "adverso": +1,
+                 "nome": "Spread de crédito Baa (Moody's)", "curto": "Spread de crédito"},
     "vix":      {"serie": "^VIX",         "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
                  "nome": "VIX", "curto": "VIX"},
     "petroleo": {"serie": "CL=F",         "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
@@ -108,7 +110,7 @@ MACRO_FACTORS = {
     "dolar":    {"serie": "DX-Y.NYB",     "fonte": "yahoo", "transf": "logdiff", "adverso": +1,
                  "nome": "Índice do dólar (DXY)", "curto": "Dólar"},
 }
-FACTOR_START = "2015-01-01"   # histórico descarregado dos fatores (a regressão usa só CVAR_YEARS)
+FACTOR_START = START          # histórico descarregado dos fatores (as ligações usam CVAR_YEARS; o resto, as janelas longas)
 LINK_FREQ = "W-FRI"           # retornos semanais, sexta a sexta
 LINK_T_MIN = 2.0              # |t| HAC mínimo para aceitar uma ligação
 LINK_HAC_LAGS = None          # None = regra de Newey–West: floor(4 · (T/100)^(2/9))
@@ -186,15 +188,15 @@ WEEKLY_TOP = 3                       # setores no top do relatório semanal
 # --- Montra: modo snapshot do cockpit (app/cockpit/snapshot, versionado) -------
 # Usado quando não há rede ou o Yahoo limita (ex.: Streamlit Community Cloud). Atualizado pelo flow.
 SNAPSHOT = ROOT / "app" / "cockpit" / "snapshot"
-SNAPSHOT_YEARS = 5              # anos de preços guardados (3 para as janelas do cockpit + a previsão FHS da carteira)
+SNAPSHOT_YEARS = 10             # anos de preços guardados (a janela mais longa do cockpit)
 SNAPSHOT_RATE_MARGIN_DAYS = 200 # dias de juros antes do 1.º preço (o regime usa RATE_LOOKBACK dias úteis)
 # Ficheiros de data/features copiados tal como estão (o cockpit lê-os do snapshot se data/ não existir).
 SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "var_backtest_series.parquet",
                      "risk_contribution.csv", "stress_tests.csv", "covariance_shrinkage.csv", "factor_links.csv",
                      "alerts.json", "sector_metrics.csv", "score_history.csv", "holdings.csv",
                      "company_backtest.csv", "company_risk.csv", "var_backtest_split.csv",
-                     "var_backtest_multiple.csv", "tail_dependence.csv", "tail_meta.json",
-                     "company_factors.csv", "tail_scenarios.csv",
+                     "var_backtest_multiple.csv", "tail_dependence.csv", "tail_meta.json", "tail_dependence_janelas.csv",
+                     "company_factors.csv", "tail_scenarios.csv", "cenario_semanal.parquet", "cenario_validacao.csv",
                      "horizon_risk.csv", "horizon_backtest.csv")
 
 # --- Cenário de stress próprio (cockpit, separador Carteira e stress) --------
@@ -202,6 +204,18 @@ SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "
 # fator macro pelo β semanal da regressão HAC (factor_links.csv, só ligações aceites). Um fator de cada vez.
 # Limites dos sliders: (mínimo, máximo, padrão, passo), em % para o SPY e fatores "logdiff", em p.p. para "diff".
 SHOCK_MARKET = (-40.0, 20.0, -10.0, 1.0)
+
+# --- Motor de cenários (src/models/cenarios.py, Fase 3) ---------------------
+# Choque nos fatores → outros fatores (normal condicional) → setores (regressão nos seis fatores + resíduos
+# reamostrados) → empresas (beta ao seu ETF + resíduos), por Monte Carlo, em semanas.
+CENARIO_ANOS = 10                       # janela de estimação (inclui a COVID-19 e 2022)
+CENARIO_NSIM = 5000                     # cenários por simulação
+CENARIO_HORIZONTES = {"1 semana": 1, "1 mês": 4, "3 meses": 13}
+# Validação fora da amostra: o modelo estimado só com as semanas anteriores recebe as variações reais dos fatores
+# (sextas-feiras; o episódio são as semanas em (início, fim]).
+CENARIO_EPISODIOS = {"2008 · Lehman": ("2008-09-12", "2008-11-21"),
+                     "2020 · COVID-19": ("2020-02-21", "2020-03-20"),
+                     "2022 · Subida de juros": ("2021-12-31", "2022-06-17")}
 SHOCK_DIFF = (-2.0, 3.0, 1.0, 0.25)
 SHOCK_LOGDIFF = (-50.0, 150.0, 50.0, 5.0)
 
@@ -262,8 +276,10 @@ HRP_LINKAGE = "single"          # método de agrupamento (scipy.cluster.hierarch
 
 # --- Modelo de risco por empresa (src/models/backtest_empresas.py) -----------
 # O mesmo backtest dos setores (histórico, GARCH-t, FHS) aplicado às empresas de holdings.csv, com preços
-# desde COMPANY_START. Com a janela de BT_WINDOW dias, as previsões começam cerca de 3 anos depois.
-COMPANY_START = "2015-01-01"
+# desde COMPANY_BT_START. Com a janela de BT_WINDOW dias, as previsões começam cerca de 3 anos depois. Os preços são
+# descarregados desde COMPANY_START, para as janelas longas do mapa; o backtest continua desde 2015 (resultados comparáveis).
+COMPANY_START = START
+COMPANY_BT_START = "2015-01-01"
 COMPANY_MIN_DAYS = BT_WINDOW + 60    # histórico mínimo para ter modelo (senão a empresa fica só com risco descritivo)
 # Previsão FHS da carteira do utilizador no cockpit: GARCH sobre os retornos da carteira com os pesos atuais.
 USER_FORECAST_YEARS = 5              # anos de preços pedidos ao Yahoo (precisa de BT_WINDOW dias + 1 mês)
@@ -282,5 +298,8 @@ COMPANY_FULL_WEEKLY = True
 #           Kendall, ν por máxima verosimilhança)
 CAUDA_Q = 0.05                  # cauda = 5% piores dias (cerca de 38 dias em 3 anos)
 CAUDA_NU_BOUNDS = (2.1, 60.0)   # limites dos graus de liberdade ν da cópula t (ν alto ≈ cópula de Gauss, λ ≈ 0)
-CAUDA_MIN_DAYS = 500            # mínimo de dias comuns para uma série entrar num grupo
+# Janelas do mapa de risco (anos → cauda q). Com 1 ano, os 5% piores dias seriam só cerca de 12: usa-se 10%.
+# Uma série entra numa janela se tiver dados em pelo menos CAUDA_MIN_COBERTURA dos dias (o XLC só existe desde 2018).
+CAUDA_JANELAS = {1: 0.10, 3: CAUDA_Q, 5: CAUDA_Q, 10: CAUDA_Q}
+CAUDA_MIN_COBERTURA = 0.8
 CAUDA_NSIM = 200_000            # dias simulados da cópula t para os cenários conjuntos (cerca de 10 000 por cenário)

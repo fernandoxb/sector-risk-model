@@ -29,8 +29,9 @@ Cockpit ao vivo: **[sector-risk-model.streamlit.app](https://sector-risk-model.s
 |---|---|---|
 | Que modelo de VaR/ES resiste ao backtest? | Em 46 086 previsões por nível (2008–2026), só os dois métodos que juntam GARCH e a cauda dos dados passam. A EVT condicional é escolhida com 2008–2018 (9 de 9 setores) e confirmada em 2019–2026 (10 de 11) e em 75 de 109 empresas. | [abaixo](#resultado-principal-só-os-métodos-com-garch-e-cauda-dos-dados-passam-o-backtest) |
 | Os setores caem juntos? | Sim, mais do que a correlação sugere: quando o XLY está nos seus 5% piores dias, o XLC também está em 54% das vezes (5% se fossem independentes). | nota, secção 14 |
-| Que fatores macro mexem com cada setor? | 34 de 66 ligações são significativas uma a uma; com os seis fatores juntos resistem 28, e 12 das 34 somem (o juro no XLE era petróleo e inflação). | nota, secção 16 |
+| Que fatores macro mexem com cada setor? | 31 de 66 ligações são significativas uma a uma; com os seis fatores juntos resistem 32, 7 somem e 8 aparecem (o juro no XLE era petróleo e inflação). | nota, secção 16 |
 | De onde vem o risco de uma empresa? | Na mediana das 110 empresas: 13% do mercado, 21% do setor e 56% próprio. | nota, secção 16 |
+| E se um fator se mexer? | Um choque nos fatores propaga-se aos setores e às empresas por Monte Carlo. Testado em 2008, 2020 e 2022: com o mercado conhecido a mediana acerta (desvio de 0,5 e 3,6 pontos em 2008 e 2020); só com os fatores macro subestima as crises em cerca de 15 pontos. | nota, secção 19 |
 | E a 10 dias? | O VaR a 10 dias por simulação do GARCH passa o Kupiec nos 11 setores; na contagem de exceções fica igual à regra da raiz do tempo (121 contra 122, para 115 esperadas). | nota, secção 18 |
 
 **O que não funcionou, e está dito:** o ES fica subestimado em 25 das 109 empresas (é corrigido pelo fator que teria acertado no passado); a simulação pela cópula t dá menos quedas conjuntas do que as observadas (23% contra 28%), por isso o cockpit mostra primeiro o observado; a 10 dias a simulação não bate a raiz do tempo no backtest.
@@ -84,7 +85,8 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 | Carteira | Covariância de Ledoit-Wolf, contribuições de Euler para a volatilidade e o CVaR, stress tests de 2008, COVID-19 e 2022 | `src/models/portfolio.py` |
 | Scorecard 0–100 | 5 componentes normalizados por percentil (a cauda também face à história do próprio setor), intervalo da posição com pesos sorteados, multiplicador de risco de modelo (semáforo), P × I, sensibilidade ±50% aos pesos | `src/models/scorecard.py` |
 | Dependência de cauda | Quedas conjuntas observadas e cópula t (tau de Kendall, ν por máxima verosimilhança) nos resíduos do GARCH; é o que liga o mapa de risco | `src/models/cauda.py` |
-| Fatores macro | Regressões semanais setor ~ fator com erros HAC de Newey–West, para juros, inflação, spreads high yield, VIX, petróleo e dólar; contágio pela MST | `src/models/factor_links.py` |
+| Fatores macro | Regressões semanais setor ~ fator com erros HAC de Newey–West, para juros, inflação, spread de crédito Baa, VIX, petróleo e dólar; contágio pela MST | `src/models/factor_links.py` |
+| Teia e cenários | Teia em ECharts (fatores → setores → empresas) e motor de cenários por Monte Carlo: choque nos fatores → outros fatores (normal condicional) → setores (regressão + resíduos reamostrados) → empresas, testado em 2008, 2020 e 2022 | `app/cockpit/paineis/teia.py`, `src/models/cenarios.py` |
 | Horizontes | VaR e ES a 10 e 21 dias por simulação de trajetórias do GARCH, com backtest em blocos sem sobreposição e comparação com a raiz do tempo | `src/models/horizonte.py` |
 | Cenários conjuntos | "Se um setor tiver um dia mau": 200 mil dias simulados da cópula t, confrontados com os dias reais | `src/models/cauda.py` |
 | Carteira HRP | Hierarchical Risk Parity sobre a distância das quedas conjuntas, com o CVaR como risco de cada ramo; compara com a carteira do utilizador | `src/models/carteira.py` |
@@ -93,7 +95,7 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
-* **Mapa de risco:** a rede de contágio entre setores, ligados pelas quedas conjuntas (dependência de cauda) e não só pela correlação. Clicar num setor abre a ficha do setor (score, fatores macro, crises, risco previsto desde 2008) e as suas 10 maiores empresas; clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
+* **Mapa de risco:** com janela de 1, 3, 5 ou 10 anos, a rede de contágio entre setores, ligados pelas quedas conjuntas (dependência de cauda) e não só pela correlação. Clicar num setor abre a ficha do setor (score, fatores macro, crises, risco previsto desde 2008) e as suas 10 maiores empresas; clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
 * **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco histórico e o previsto (modelo oficial), quem mais pesa nele, a exposição por setor no mapa de contágio, o stress e uma carteira alternativa por Hierarchical Risk Parity. Guarda-se no link, sem conta.
 * **Setores:** scorecard e evolução do score.
 * **Análise ao vivo:** CVaR histórico, downside beta, regime de juros e exportação para o Obsidian.
@@ -125,7 +127,7 @@ O cockpit está organizado em separadores:
 **Outros números (dados até 2026-11-12):**
 * **Carteira com pesos iguais:** volatilidade de 12,1% e CVaR 97,5% de 2,21% a 1 dia. A diversificação vale 1,49× na volatilidade, mas só 1,39× no CVaR, porque nas quedas os setores caem juntos.
 * **Stress 2008:** a carteira perde 49,5% (SPY: 55,2%). Na COVID-19 perde mais do que o SPY (36,0% contra 33,7%), por causa do peso da energia.
-* **Fatores macro:** 34 das 66 ligações fator → setor são significativas (|t| ≥ 2 com HAC). As mais fortes são o VIX → XLK (t = −14,0) e os spreads high yield → XLI (t = −11,5).
+* **Fatores macro:** 31 das 66 ligações fator → setor são significativas (|t| ≥ 2 com HAC). As mais fortes são o VIX → XLK (t = −14,0) e o VIX → XLY (t = −12,8).
 * **Scorecard:** o XLK lidera (91/100) com quaisquer pesos. XLY (72), XLE (69) e XLI (68) não se distinguem: as posições variam entre o 2.º e o 5.º lugar quando os pesos mudam.
 
 ## Arquitetura
@@ -193,13 +195,14 @@ Convenções:
 * **Empresas:** o modelo oficial só está validado em 75 de 109 e subestima o ES em 25. O backtest das empresas começa em 2018, por isso não inclui 2008.
 * **Carteira do utilizador:** a previsão usa o modelo oficial sobre os retornos da carteira com os pesos atuais. O backtest de cada carteira tem só cerca de 2 anos de previsões, sem nenhuma crise.
 * **Correção do ES:** o fator é calibrado no mesmo backtest que o justifica; corrige o que o passado mostrou.
-* **Dados:** os preços vêm do Yahoo Finance (ajustados, sem garantia de serviço). Há séries do FRED com 1 dia de atraso, e o spread high yield (ICE BofA) só está disponível no FRED para os últimos 3 anos.
+* **Dados:** os preços vêm do Yahoo Finance (ajustados, sem garantia de serviço). Há séries do FRED com 1 dia de atraso. O spread de crédito é o Baa da Moody's, porque o high yield da ICE só está no FRED para os últimos 3 anos.
 * **Proxies em 2008:** o XLRE e o XLC ainda não existiam, por isso no stress de 2008 usam um proxy β × SPY com o β atual, que ignora o risco específico.
 * **Modelo oficial (EVT):** a 97,5% tem ligeiramente mais exceções do que as esperadas no agregado (1 208 contra 1 152, ou seja, 2,62% contra 2,5%). Na amostra toda só passa os três testes em 9 de 11 setores a 97,5% e em 7 de 11 a 99%.
 * **Ligações macro:** os alertas e os choques de stress usam as regressões de um fator de cada vez, sem correção para testes múltiplos nas 66 (com |t| ≥ 2, cerca de 3 falsos positivos). A regressão conjunta é mostrada ao lado, com cerca de 155 semanas para 6 fatores.
-* **Dependência de cauda:** cada frequência de quedas conjuntas assenta em cerca de 38 dias (erro de uns 8 pontos), numa janela de 3 anos sem crise sistémica.
+* **Dependência de cauda:** na janela de 3 anos, cada frequência de quedas conjuntas assenta em cerca de 38 dias (erro de uns 8 pontos). O mapa deixa escolher 1, 5 ou 10 anos; com 1 ano a cauda passa a 10% dos dias.
 * **Scorecard e P × I:** 70% do peso do score é relativo aos 11 setores (só a cauda, em metade, e o regime se comparam com a história do próprio setor). O intervalo da posição mede a incerteza dos pesos, não a dos dados.
 * **Cenários e horizontes:** a simulação da cópula t subestima as quedas conjuntas; o ES a 10 e 21 dias não tem backtest (só o VaR), e os horizontes longos existem só para os setores.
+* **Motor de cenários:** só com os fatores macro subestima as perdas das crises (em média 15 pontos) e os intervalos são estreitos demais (32% dos setores dentro do intervalo de 90%). Mostra direções e diferenças entre setores, não a dimensão exata de uma crise.
 * **Carteira HRP:** os pesos são calculados e avaliados na mesma amostra, por isso a redução de risco mostrada é otimista.
 * **Âmbito:** é um projeto académico e não é aconselhamento de investimento.
 

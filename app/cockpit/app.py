@@ -35,7 +35,7 @@ if getattr(sys, "_cockpit_assinatura", None) != _assinatura:
         del sys.modules[_m]
     sys._cockpit_assinatura = _assinatura
 from config.settings import (CALENDAR_PREVIEW, COMPANY_TTL, CVAR_YEARS, FEATURES, MARKET, RATE_LOOKBACK, RATE_SERIES,
-                             RATE_THRESHOLD_PP, SECTORS, SNAPSHOT, SNAPSHOT_FILES, SNAPSHOT_REMOTE_TIMEOUT,
+                             RATE_THRESHOLD_PP, SECTORS, SNAPSHOT, CAUDA_JANELAS, SNAPSHOT_FILES, SNAPSHOT_REMOTE_TIMEOUT,
                              SNAPSHOT_REMOTE_TTL, SNAPSHOT_REMOTE_URL)  # noqa: E402
 from src.collect import empresas as emp, sessao as cal  # noqa: E402
 from src.models import backtest_empresas as be, cockpit as ck  # noqa: E402
@@ -175,6 +175,9 @@ bt_split = feat_csv("var_backtest_split.csv")
 bt_multi = feat_csv("var_backtest_multiple.csv")
 cauda = feat_csv("tail_dependence.csv")
 cenarios = feat_csv("tail_scenarios.csv")
+_cs = FEAT / "cenario_semanal.parquet"
+cen_sem = ler_series(str(_cs), _cs.stat().st_mtime) if _cs.exists() else None
+cen_val = feat_csv("cenario_validacao.csv")
 horiz = feat_csv("horizon_risk.csv")
 horiz_bt = feat_csv("horizon_backtest.csv")
 cauda_meta = json.loads((FEAT / "tail_meta.json").read_text()) if (FEAT / "tail_meta.json").exists() else {}
@@ -213,11 +216,16 @@ PREV_DATA = str(off["data_previsao"].iloc[0]) if off is not None else "—"
 # ============================================================================ barra lateral (só o que é global)
 st.sidebar.title("🛡️ Risco Setorial")
 st.sidebar.caption("11 ETFs setoriais SPDR face ao SPY. Os parâmetros de cada análise estão no próprio separador.")
-janela = st.sidebar.selectbox("📅 Janela histórica (análise ao vivo)", ["1 Ano", "2 Anos", "3 Anos"],
-                              index=min(max(CVAR_YEARS, 1), 3) - 1,
-                              help="Afeta só o separador Análise ao vivo. Os resultados do pipeline usam sempre "
-                                   f"{CVAR_YEARS} anos.")
-periodo = {"1 Ano": "1y", "2 Anos": "2y", "3 Anos": "3y"}[janela]
+JANELAS = {f"{a} Ano" + ("s" if a > 1 else ""): a for a in CAUDA_JANELAS}
+janela = st.sidebar.selectbox("📅 Janela histórica", list(JANELAS), index=list(JANELAS.values()).index(CVAR_YEARS),
+                              help="Muda o Mapa de risco (ligações e empresas), a Minha carteira e a Análise ao vivo. "
+                                   f"O modelo oficial, o score e o backtest usam sempre {CVAR_YEARS} anos.")
+ANOS = JANELAS[janela]
+periodo = f"{ANOS}y"
+cauda_j = feat_csv("tail_dependence_janelas.csv")
+if ANOS != CVAR_YEARS and cauda_j is not None and (cauda_j["anos"] == ANOS).any():   # ligações do mapa nesta janela
+    cauda = cauda_j[cauda_j["anos"] == ANOS].drop(columns="anos")
+    cauda_meta = cauda_meta["janelas"][str(ANOS)] | {"anos": ANOS}
 
 setores = list(SECTORS)
 try:
