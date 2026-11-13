@@ -180,7 +180,7 @@ SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "
                      "alerts.json", "sector_metrics.csv", "score_history.csv", "holdings.csv",
                      "company_backtest.csv", "company_risk.csv", "var_backtest_split.csv",
                      "var_backtest_multiple.csv", "tail_dependence.csv", "tail_meta.json",
-                     "company_factors.csv")
+                     "company_factors.csv", "tail_scenarios.csv")
 
 # --- Cenário de stress próprio (cockpit, separador Carteira e stress) --------
 # Choque instantâneo propagado pelos betas: mercado pelo beta diário de 3 anos (sector_metrics.csv) e cada
@@ -260,3 +260,4 @@ COMPANY_FULL_WEEKLY = True
 CAUDA_Q = 0.05                  # cauda = 5% piores dias (cerca de 38 dias em 3 anos)
 CAUDA_NU_BOUNDS = (2.1, 60.0)   # limites dos graus de liberdade ν da cópula t (ν alto ≈ cópula de Gauss, λ ≈ 0)
 CAUDA_MIN_DAYS = 500            # mínimo de dias comuns para uma série entrar num grupo
+CAUDA_NSIM = 200_000            # dias simulados da cópula t para os cenários conjuntos (cerca de 10 000 por cenário)

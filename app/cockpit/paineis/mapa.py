@@ -33,6 +33,7 @@ def render(g: dict) -> None:
     grafo = g["grafo"]
     cauda = g["cauda"]
     cauda_meta = g["cauda_meta"]
+    cenarios = g["cenarios"]
     hold = g["hold"]
     janela = g["janela"]
     ler_series = g["ler_series"]
@@ -322,6 +323,16 @@ def render(g: dict) -> None:
                 viz = sorted(((v, grafo[fs][v]) for v in grafo.neighbors(fs)), key=lambda x: -forca(x[1]))
                 st.markdown(("**Cai junto com**  \n" if por_cauda else "**Contágio (vizinhos pela correlação)**  \n")
                             + " · ".join(f"{v} ({liga_curta(d_)})" for v, d_ in viz))
+                if cenarios is not None and (cenarios["cenario"] == fs).any():
+                    cn = cenarios[cenarios["cenario"] == fs].set_index("serie")
+                    st.markdown(f"**Se o {fs} tiver um dia mau** (um dos seus {Q_TXT} piores; perda média "
+                                f"{fm.pct(cn.loc[fs, 'perda_obs'])})  \n"
+                                + "  \n".join(f"{b}: cai junto em {fm.pct(l['p_obs'], 0)} das vezes, perda média "
+                                              f"{fm.pct(l['perda_obs'])} · simulação {fm.pct(l['p_cauda'], 0)} e "
+                                              f"{fm.pct(l['perda_media'])}"
+                                              for b, l in cn.drop(index=fs).nlargest(3, "p_obs").iterrows()))
+                    st.caption("Primeiro os dias reais da janela (poucos), depois 200 mil dias simulados pela cópula t. "
+                               "A simulação costuma dar menos do que o observado.")
                 if stt is not None:
                     st.markdown("**Nas crises históricas**")
                     ss = stt[stt["serie"] == fs].set_index("cenario")

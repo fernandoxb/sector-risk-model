@@ -15,7 +15,9 @@ simples, que são o que o investidor sente.
 
 Funções puras: pseudo_obs, tau_to_rho, nearest_corr, lambda_t, t_copula_loglik, fit_nu, joint_crash, fit_group,
 pairs_table, graph. Com GARCH: garch_residuals. I/O em main().
-Saídas: data/features/tail_dependence.csv (pares) e tail_meta.json (ν e nº de dias por grupo).
+Cenários conjuntos (Fase D): simulate_t_copula, scenarios.
+Saídas: data/features/tail_dependence.csv (pares), tail_meta.json (ν e nº de dias por grupo) e
+tail_scenarios.csv (setores: o que acontece aos outros quando um tem um dia mau).
 """
 import json
 import sys
@@ -29,7 +31,7 @@ from arch import arch_model
 from scipy import optimize, stats
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import (CAUDA_MIN_DAYS, CAUDA_NU_BOUNDS, CAUDA_Q, CLEAN, CVAR_YEARS, FEATURES,  # noqa: E402
+from config.settings import (BT_SEED, CAUDA_MIN_DAYS, CAUDA_NSIM, CAUDA_NU_BOUNDS, CAUDA_Q, CLEAN, CVAR_YEARS, FEATURES,  # noqa: E402
                              SECTORS)
 from src.collect.empresas import load_holdings  # noqa: E402
 
@@ -104,7 +106,41 @@ def fit_group(rets: pd.DataFrame, resid: pd.DataFrame, q: float = CAUDA_Q) -> di
     cols = list(resid.columns)
     return {"corr": rets.corr(), "tau": tau, "rho_t": pd.DataFrame(p, index=cols, columns=cols), "nu": nu,
             "lam": pd.DataFrame(lambda_t(p, nu), index=cols, columns=cols), "p_conj": joint_crash(rets.dropna(), q),
-            "n": len(resid)}
+            "n": len(resid), "rets": rets.dropna()}
+
+
+# ----------------------------------------------------------------------------- cenários conjuntos (Fase D)
+def simulate_t_copula(p: np.ndarray, nu: float, n: int = CAUDA_NSIM, seed: int = BT_SEED) -> np.ndarray:
+    """`n` dias simulados da cópula t com matriz ρ e ν graus de liberdade, em uniformes (QRM, algoritmo 5.10):
+    X = Z / √(W/ν), com Z ~ N(0, ρ) e W ~ χ²_ν; U = t_ν(X)."""
+    rng = np.random.default_rng(seed)
+    z = rng.standard_normal((n, len(p))) @ np.linalg.cholesky(p).T
+    return stats.t.cdf(z / np.sqrt(rng.chisquare(nu, (n, 1)) / nu), nu)
+
+
+def scenarios(rets: pd.DataFrame, p: np.ndarray, nu: float, q: float = CAUDA_Q, n: int = CAUDA_NSIM,
+              seed: int = BT_SEED) -> pd.DataFrame:
+    """"Se A tiver um dia mau (nos seus q piores), o que acontece a B?" Uma linha por par ordenado (cenario, serie).
+
+    Os uniformes da cópula passam a retornos pelos quantis observados de cada série (margens empíricas).
+      p_cauda      P(B também nos seus q piores dias | A nos seus q piores)
+      perda_media  perda média de B nesses dias (positiva = perda); na linha cenario == serie, a do próprio A
+      perda_normal perda média de B em todos os dias simulados, para comparar
+      p_obs, perda_obs  as mesmas duas medidas contadas nos dias reais (poucos: q × nº de dias), para confrontar
+    """
+    cols = list(rets.columns)
+    u = simulate_t_copula(np.asarray(p, dtype=float), nu, n, seed)
+    x = np.column_stack([np.quantile(rets[c].to_numpy(), u[:, j]) for j, c in enumerate(cols)])
+    jc = joint_crash(rets, q)
+    real = (rets.rank(axis=0, method="first") <= np.floor(q * len(rets))).to_numpy()
+    rows = []
+    for i, a in enumerate(cols):
+        mau = u[:, i] <= q
+        for j, b in enumerate(cols):
+            rows.append({"cenario": a, "serie": b, "p_cauda": float((u[mau, j] <= q).mean()),
+                         "perda_media": float(-x[mau, j].mean()), "perda_normal": float(-x[:, j].mean()),
+                         "p_obs": float(jc.iloc[i, j]), "perda_obs": float(-rets.iloc[real[:, i], j].mean())})
+    return pd.DataFrame(rows)
 
 
 def pairs_table(fit: dict, grupo: str) -> pd.DataFrame:
@@ -166,6 +202,8 @@ def main() -> Path:
             "grupos": {g: {"nu": round(f["nu"], 2), "dias": f["n"], "series": len(f["corr"])} for g, f in fits.items()}}
     (FEATURES / "tail_meta.json").write_text(json.dumps(meta, indent=1))
     s = fits[GRUPO_SETORES]
+    scenarios(s["rets"], s["rho_t"].to_numpy(), s["nu"]).to_csv(FEATURES / "tail_scenarios.csv", index=False,
+                                                                  float_format="%.6f")
     pares = pairs_table(s, GRUPO_SETORES).sort_values("p_conj", ascending=False)
     print(f"[cauda] {len(fits)} grupos; setores: ν = {s['nu']:.1f}, {s['n']} dias; quedas conjuntas (q = {CAUDA_Q:.0%}):")
     print(pares.head(6)[["a", "b", "corr", "lam", "p_conj"]].round(3).to_string(index=False))

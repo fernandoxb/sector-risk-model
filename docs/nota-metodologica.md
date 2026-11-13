@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 5.0
+versao: 5.1
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -641,6 +641,45 @@ $$1 = \underbrace{\frac{b_m^2\,\mathrm{Var}(r_{SPY})}{\mathrm{Var}(r_i)}}_{\text
 * A empresa faz parte do ETF do seu setor, o que aumenta a parte do setor nas empresas com mais peso (AAPL e NVDA no XLK).
 * É uma decomposição da variância de todos os dias, não da cauda: não diz de onde vêm as perdas nos piores dias.
 * A regressão conjunta usa 3 anos de semanas (cerca de 155 observações para 6 fatores); os coeficientes de fatores muito correlacionados continuam imprecisos.
+
+---
+
+## 🎲 17. Cenários conjuntos: se um setor tiver um dia mau (Fase D)
+
+Código: `src/models/cauda.py` (`simulate_t_copula`, `scenarios`) · parâmetros: `CAUDA_Q`, `CAUDA_NSIM` · testes: `tests/test_cauda.py`.
+Saída: `data/features/tail_scenarios.csv` (um par ordenado cenário → setor por linha). Referência: QRM, secção 5.1 e algoritmo 5.10.
+
+### A. Método
+1. **Simulação:** 200 000 dias da cópula t da secção 14 (a mesma matriz $\rho$ e o mesmo $\nu$): $X = Z/\sqrt{W/\nu}$, com $Z \sim N(0, \rho)$ e $W \sim \chi^2_\nu$; $U = t_\nu(X)$.
+2. **Margens:** cada uniforme passa a retorno pelo quantil observado do setor na janela de 3 anos (margens empíricas).
+3. **Cenário:** para cada setor A, ficam os dias simulados em que A está nos seus 5% piores (cerca de 10 000). Em cada outro setor B mede-se:
+   * `p_cauda`: a fração desses dias em que B também está nos seus 5% piores;
+   * `perda_media`: a perda média de B nesses dias.
+4. **Confronto:** as colunas `p_obs` e `perda_obs` são as mesmas medidas contadas nos dias reais da janela (cerca de 38 por cenário).
+
+### B. Validação
+* As margens simuladas são uniformes e o tau de Kendall devolve o $\rho$ pedido.
+* Com $\nu$ muito alto, `p_cauda` é igual à probabilidade da normal bivariada do `scipy` (diferença < 0,01).
+* Com $\nu = 3$ há mais quedas conjuntas do que com Gauss, e a 1% o valor simulado fica acima do limite $\lambda$ da secção 14.
+
+### C. Resultados (dados até 2026-11-12)
+| Cenário: dia mau do XLK (perda média 3,8%) | Cai junto, observado | Cai junto, simulado | Perda média, observada | Perda média, simulada |
+|---|---|---|---|---|
+| XLI | 46% | 33% | 1,6% | 1,2% |
+| XLY | 41% | 34% | 1,9% | 1,6% |
+| XLC | 41% | 27% | 1,5% | 1,0% |
+
+**A simulação fica abaixo do observado.** Na média dos 110 pares ordenados, a probabilidade de queda conjunta simulada é 22,9% contra 27,9% observados, e a perda média condicional 0,80% contra 1,03%. Duas razões:
+
+* a cópula t é simétrica: trata as quedas conjuntas como as subidas conjuntas, e nos mercados as quedas andam mais juntas;
+* a cópula foi ajustada aos resíduos do GARCH, que não têm os períodos de volatilidade alta comuns a todos os setores. Ajustada diretamente aos retornos, a média sobe só para 23,9%.
+
+Por isso o cockpit mostra primeiro o observado e depois a simulação, e não usa a simulação para alertas nem para o score.
+
+### D. Limitações
+* O observado assenta em cerca de 38 dias por cenário (erro-padrão de uns 7 pontos percentuais em cada probabilidade).
+* A simulação subestima as quedas conjuntas em cerca de 5 pontos percentuais; uma cópula com cauda inferior mais pesada (por exemplo, t assimétrica ou Clayton) seria o passo seguinte.
+* Os cenários são de um dia e sem a volatilidade de hoje: dizem o que acontece num dia mau típico da janela, não num dia mau de amanhã.
 
 ---
 

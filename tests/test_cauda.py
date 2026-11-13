@@ -90,3 +90,39 @@ def test_tabela_de_pares_e_grafo():
     g = cd.graph(pares, by="p_conj")
     assert g.number_of_edges() == 3 and g.has_edge("A", "B")                # árvore com N−1 arestas, com a mais forte
     assert set(g["A"]["B"]) == {"weight", "corr", "lam", "p_conj"}
+
+
+# ----------------------------------------------------------------------------- cenários conjuntos
+def test_simulacao_da_copula_tem_margens_uniformes_e_a_correlacao_pedida():
+    p = np.array([[1.0, 0.6], [0.6, 1.0]])
+    u = cd.simulate_t_copula(p, 5.0, n=200_000, seed=1)
+    assert u.mean(0) == pytest.approx([0.5, 0.5], abs=0.005) and u.std(0) == pytest.approx(12 ** -0.5, abs=0.005)
+    tau = stats.kendalltau(u[:5000, 0], u[:5000, 1])[0]
+    assert np.sin(np.pi * tau / 2) == pytest.approx(0.6, abs=0.04)          # inverte tau_to_rho
+
+
+def test_cenario_igual_a_normal_bivariada_quando_nu_e_grande():
+    """Com ν muito alto a cópula t é a de Gauss: P(B na cauda | A na cauda) vem da normal bivariada do scipy."""
+    rho, q = 0.7, 0.05
+    p = np.array([[1.0, rho], [rho, 1.0]])
+    rets = pd.DataFrame(np.random.default_rng(2).normal(0, 0.01, (750, 2)), columns=["A", "B"])
+    c = cd.scenarios(rets, p, nu=1e6, q=q, n=400_000, seed=3).set_index(["cenario", "serie"])
+    z = stats.norm.ppf(q)
+    exato = stats.multivariate_normal([0, 0], p).cdf([z, z]) / q
+    assert c.loc[("A", "B"), "p_cauda"] == pytest.approx(exato, abs=0.01)
+    assert c.loc[("A", "A"), "p_cauda"] == 1.0
+    assert c.loc[("A", "A"), "perda_media"] == pytest.approx(-rets["A"][rets["A"] <= rets["A"].quantile(q)].mean(), rel=0.05)
+    assert c.loc[("A", "B"), "perda_media"] > c.loc[("A", "B"), "perda_normal"]      # dia mau de A arrasta B
+    assert c.loc[("A", "B"), "p_obs"] == cd.joint_crash(rets, q).loc["A", "B"]       # contagem nos dias reais
+    piores = rets["A"].nsmallest(int(q * len(rets))).index
+    assert c.loc[("A", "B"), "perda_obs"] == pytest.approx(-rets.loc[piores, "B"].mean())
+
+
+def test_cauda_pesada_da_mais_quedas_conjuntas_do_que_gauss():
+    p = np.array([[1.0, 0.5], [0.5, 1.0]])
+    rets = pd.DataFrame(np.random.default_rng(4).normal(0, 0.01, (750, 2)), columns=["A", "B"])
+    pc = [cd.scenarios(rets, p, nu, q=0.01, n=400_000, seed=5).set_index(["cenario", "serie"]).loc[("A", "B"), "p_cauda"]
+          for nu in (3.0, 1e6)]
+    assert pc[0] > pc[1] + 0.1
+    assert pc[0] > cd.lambda_t(p, 3.0)[0, 1] - 0.02       # λ é o limite quando q → 0; a 1% ainda fica por cima
+

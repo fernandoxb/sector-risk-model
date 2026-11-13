@@ -70,6 +70,7 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 | Scorecard 0–100 | 5 componentes normalizados por percentil, multiplicador de risco de modelo (semáforo), P × I, sensibilidade ±50% aos pesos | `src/models/scorecard.py` |
 | Dependência de cauda | Quedas conjuntas observadas e cópula t (tau de Kendall, ν por máxima verosimilhança) nos resíduos do GARCH; é o que liga o mapa de risco | `src/models/cauda.py` |
 | Fatores macro | Regressões semanais setor ~ fator com erros HAC de Newey–West, para juros, inflação, spreads high yield, VIX, petróleo e dólar; contágio pela MST | `src/models/factor_links.py` |
+| Cenários conjuntos | "Se um setor tiver um dia mau": 200 mil dias simulados da cópula t, confrontados com os dias reais | `src/models/cauda.py` |
 | Carteira HRP | Hierarchical Risk Parity sobre a distância das quedas conjuntas, com o CVaR como risco de cada ramo; compara com a carteira do utilizador | `src/models/carteira.py` |
 | Modelos de fatores | Regressão conjunta dos 6 fatores (Ridge em variáveis padronizadas + t HAC) e decomposição do risco de cada empresa em mercado, setor e próprio | `src/models/factor_links.py`, `src/models/decomposicao.py` |
 | Bots | Prefect (uma task por bot), launchd nos dias úteis às 22:30, alertas do Sentinela e relatório semanal no Obsidian | `flows/`, `src/report/` |
