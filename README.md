@@ -170,7 +170,7 @@ sh flows/install_launchd.sh --remover           # desinstala
 * **Obsidian:** o Sentinela escreve em `Risco Setorial/` do cofre (`OBSIDIAN_VAULT`). O `00 Painel.md` precisa do plugin Dataview.
 
 ### Cockpit no Streamlit Community Cloud
-O cockpit tenta sempre os dados ao vivo. Se o Yahoo não responder (ou com `COCKPIT_SNAPSHOT=1`), lê o **snapshot versionado** em `app/cockpit/snapshot/`, com cerca de 2,7 MB: preços de 3 anos, juros e resultados do pipeline. O flow atualiza o snapshot em cada run e, na última sessão de cada semana, o bot Publicador faz commit e push só dessa pasta (`--publicar` força a publicação noutro dia). O Streamlit Cloud atualiza a app sozinho a cada push.
+O cockpit tenta sempre os preços ao vivo. Os resultados do pipeline vêm de um **snapshot** de cerca de 5 MB (preços de 5 anos, juros e as tabelas do pipeline). O flow grava-o em `data/snapshot/`, fora do Git, e na última sessão de cada semana o bot Publicador envia-o para o ramo `snapshot` como um único commit que substitui o anterior (`--publicar` força a publicação noutro dia). Assim o `main` só tem código e o repositório não cresce todas as semanas. O cockpit no Streamlit Cloud lê esse ramo de 6 em 6 horas; se não conseguir, usa a cópia embutida em `app/cockpit/snapshot/`, que também serve os testes (`python -m src.report.snapshot --embutido` atualiza-a).
 
 Para o publicar:
 1. Em [share.streamlit.io](https://share.streamlit.io), entra com o GitHub e escolhe **Create app** → *Deploy a public app from GitHub*.

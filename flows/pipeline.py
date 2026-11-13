@@ -1,7 +1,7 @@
 """Flow Prefect do pipeline diário: uma task por bot.
 
 Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Cauda → Sentinela → Relatório →
-Snapshot → Publicador (às sextas: commit e push só de app/cockpit/snapshot/)
+Snapshot → Publicador (às sextas: envia data/snapshot/ para o ramo snapshot, num único commit)
 - Coletor: retries=COLLECT_RETRIES (rede); se os preços vierem atrasados, repete o download até
   COLLECT_STALE_TRIES vezes. Cache pela última sessão de NY fechada, e só com os dados já completos.
 - As tasks são chamadas em sequência: se uma falhar (ex.: o contrato do Inspetor), a exceção pára o flow
@@ -119,13 +119,13 @@ def dependencia_cauda():
 
 @task(name="Snapshot")
 def snapshot_cockpit(offline: bool, fichas: bool = False):
-    """Atualiza app/cockpit/snapshot (o commit e o push ficam à escolha do utilizador)."""
+    """Grava data/snapshot (fora do Git); o Publicador envia-o para o ramo snapshot."""
     snapshot.main(offline=offline, fichas=fichas)
 
 
 @task(name="Publicador")
 def publicador(forcar: bool, notificar: bool):
-    """Commit e push semanal do snapshot. Uma falha (ex.: sem rede) não estraga o run: fica no log e notifica."""
+    """Envio semanal do snapshot para o ramo snapshot. Uma falha (ex.: sem rede) não estraga o run: fica no log e notifica."""
     log = get_run_logger()
     try:
         publicar.main(forcar=forcar)

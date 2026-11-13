@@ -227,11 +227,19 @@ NYSE_SPECIAL_CLOSURES = {
 }
 
 # --- Publicação semanal do snapshot (bot Publicador, src/report/publicar.py) --
-# Na última sessão de cada semana (normalmente sexta; quinta se a sexta for feriado), depois do run, faz commit e push só de app/cockpit/snapshot/,
-# para o cockpit no Streamlit Cloud acompanhar os dados. Nunca toca noutros ficheiros nem noutro ramo.
+# O pipeline grava o snapshot em SNAPSHOT_LIVE (fora do Git). Na última sessão de cada semana, o Publicador envia-o
+# para o ramo SNAPSHOT_PUBLISH_BRANCH como um único commit sem pai, que substitui o anterior: o `main` só tem código
+# e o repositório não cresce todas as semanas. O cockpit no Streamlit Cloud lê esse ramo (SNAPSHOT_REMOTE_URL); se
+# não conseguir, usa a cópia embutida em SNAPSHOT, que também serve os testes e só muda quando se corre
+# `python -m src.report.snapshot --embutido`.
+SNAPSHOT_LIVE = DATA / "snapshot"
 SNAPSHOT_PUBLISH = True
-SNAPSHOT_PUBLISH_BRANCH = "main"
+SNAPSHOT_PUBLISH_BRANCH = "snapshot"
 SNAPSHOT_PUBLISH_REMOTE = "origin"
+SNAPSHOT_REMOTE_URL = "https://raw.githubusercontent.com/fernandoxb/sector-risk-model/snapshot"
+SNAPSHOT_REMOTE_TTL = 6 * 3600       # segundos entre leituras do ramo pelo cockpit
+SNAPSHOT_REMOTE_TIMEOUT = 10         # segundos por ficheiro
+SNAPSHOT_FILES = ("meta.json", "prices.parquet", "rates.parquet", "companies.json") + SNAPSHOT_FEATURES
 
 
 # --- Empresas de cada setor (mapa de risco: setor → empresas → ficha) ---------

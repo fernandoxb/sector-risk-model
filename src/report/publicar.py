@@ -1,18 +1,21 @@
-"""Bot Publicador: commit e push semanal (última sessão da semana) só do snapshot do cockpit (app/cockpit/snapshot/).
+"""Bot Publicador: na última sessão da semana, envia o snapshot do cockpit para o ramo SNAPSHOT_PUBLISH_BRANCH.
 
 Regras de segurança:
-  - só faz commit dos ficheiros do snapshot (`git commit --only -- <pasta>`), mesmo que haja outras alterações;
-  - só no ramo SNAPSHOT_PUBLISH_BRANCH e só se o snapshot mudou;
-  - se o push falhar (ex.: o remoto avançou), o commit fica local e o erro volta para o flow, que alerta.
+  - o ramo leva um único commit sem pai, só com os ficheiros do snapshot, que substitui o anterior (push forçado
+    só desse ramo); o ramo de trabalho, o índice e os ficheiros locais não são tocados;
+  - recusa publicar no ramo em que se está a trabalhar (nunca reescreve o `main`);
+  - sem alterações no snapshot não há commit; se o push falhar, o erro volta para o flow, que alerta.
 A decisão "é dia de publicar?" é pura (deve_publicar); o resto chama o git.
 """
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import (ROOT, SNAPSHOT, SNAPSHOT_PUBLISH, SNAPSHOT_PUBLISH_BRANCH,  # noqa: E402
+from config.settings import (ROOT, SNAPSHOT_LIVE, SNAPSHOT_PUBLISH, SNAPSHOT_PUBLISH_BRANCH,  # noqa: E402
                              SNAPSHOT_PUBLISH_REMOTE)
 from src.report.weekly import is_report_day  # noqa: E402
 
@@ -26,8 +29,9 @@ def mensagem(asof: str) -> str:
     return f"Snapshot do cockpit: dados até {asof}\n\nPublicado automaticamente pelo bot Publicador (flows/pipeline.py)."
 
 
-def _git(repo: Path, *args: str) -> str:
-    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+def _git(repo: Path, *args: str, env: dict | None = None) -> str:
+    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
+                       env=None if env is None else os.environ | env)
     if r.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} falhou: {r.stderr.strip() or r.stdout.strip()}")
     return r.stdout.strip()
@@ -35,28 +39,32 @@ def _git(repo: Path, *args: str) -> str:
 
 def publicar(repo: Path, pasta: Path, asof: str, ramo: str = SNAPSHOT_PUBLISH_BRANCH,
              remoto: str = SNAPSHOT_PUBLISH_REMOTE, push: bool = True) -> str | None:
-    """Commit (e push) só de `pasta`. Devolve o hash do commit, ou None se o snapshot não mudou."""
-    rel = str(pasta.resolve().relative_to(repo.resolve()))
-    atual = _git(repo, "branch", "--show-current")
-    if atual != ramo:
-        raise RuntimeError(f"no ramo '{atual}', não em '{ramo}': snapshot não publicado")
-    if not _git(repo, "status", "--porcelain", "--", rel):
+    """Commit sem pai com os ficheiros de `pasta` (na raiz) → ramo `ramo`. Devolve o hash, ou None se nada mudou."""
+    if _git(repo, "branch", "--show-current") == ramo:
+        raise RuntimeError(f"o ramo de trabalho é '{ramo}': o snapshot não pode substituir o ramo em uso")
+    with tempfile.TemporaryDirectory() as tmp:        # índice à parte: o do repositório fica intacto
+        env = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
+        _git(repo, f"--work-tree={pasta.resolve()}", "add", "--all", ".", env=env)
+        tree = _git(repo, "write-tree", env=env)
+    ref = f"refs/heads/{ramo}"
+    atual = subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", f"{ref}^{{tree}}"],
+                           capture_output=True, text=True).stdout.strip()
+    if atual == tree:
         return None
-    _git(repo, "add", "--", rel)
-    _git(repo, "commit", "--only", "-m", mensagem(asof), "--", rel)
-    sha = _git(repo, "rev-parse", "--short", "HEAD")
+    commit = _git(repo, "commit-tree", tree, "-m", mensagem(asof))
     if push:
-        _git(repo, "push", remoto, ramo)
-    return sha
+        _git(repo, "push", "--force", remoto, f"{commit}:{ref}")
+    _git(repo, "update-ref", ref, commit)             # só depois do push: se falhar, tenta de novo no próximo run
+    return commit[:7]
 
 
 def main(forcar: bool = False) -> str | None:
-    asof = json.loads((SNAPSHOT / "meta.json").read_text())["dados_ate"]
+    asof = json.loads((SNAPSHOT_LIVE / "meta.json").read_text())["dados_ate"]
     if not deve_publicar(asof, forcar=forcar):
         print(f"[publicador] {asof} não é sexta: snapshot não publicado (usar --publicar para forçar)")
         return None
-    sha = publicar(ROOT, SNAPSHOT, asof)
-    print(f"[publicador] {'commit ' + sha + ' enviado para ' + SNAPSHOT_PUBLISH_REMOTE if sha else 'sem alterações'}")
+    sha = publicar(ROOT, SNAPSHOT_LIVE, asof)
+    print(f"[publicador] {'commit ' + sha + ' enviado para ' + SNAPSHOT_PUBLISH_REMOTE + '/' + SNAPSHOT_PUBLISH_BRANCH if sha else 'sem alterações'}")
     return sha
 
 

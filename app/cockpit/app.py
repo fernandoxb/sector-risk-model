@@ -10,8 +10,13 @@ Metodologia: docs/nota-metodologica.md
 """
 import json
 import os
+import ssl
 import sys
+import tempfile
+import urllib.request
 from pathlib import Path
+
+import certifi
 
 import pandas as pd
 import streamlit as st
@@ -30,7 +35,8 @@ if getattr(sys, "_cockpit_assinatura", None) != _assinatura:
         del sys.modules[_m]
     sys._cockpit_assinatura = _assinatura
 from config.settings import (CALENDAR_PREVIEW, COMPANY_TTL, CVAR_YEARS, FEATURES, MARKET, RATE_LOOKBACK, RATE_SERIES,
-                             RATE_THRESHOLD_PP, SECTORS, SNAPSHOT)  # noqa: E402
+                             RATE_THRESHOLD_PP, SECTORS, SNAPSHOT, SNAPSHOT_FILES, SNAPSHOT_REMOTE_TIMEOUT,
+                             SNAPSHOT_REMOTE_TTL, SNAPSHOT_REMOTE_URL)  # noqa: E402
 from src.collect import empresas as emp, sessao as cal  # noqa: E402
 from src.models import backtest_empresas as be, cockpit as ck  # noqa: E402
 import paineis.ao_vivo  # noqa: E402
@@ -59,6 +65,34 @@ def es_emp(t: str):
 # Ao vivo (Yahoo + FRED) por omissão; snapshot versionado se falharem ou com COCKPIT_SNAPSHOT=1.
 FORCAR_SNAPSHOT = os.environ.get("COCKPIT_SNAPSHOT", "").lower() in ("1", "true", "sim")
 FONTES: set[str] = set()          # "ao vivo" e/ou "snapshot"
+
+
+def _dados_ate(pasta: Path) -> str:
+    return json.loads((pasta / "meta.json").read_text())["dados_ate"]
+
+
+@st.cache_resource(ttl=SNAPSHOT_REMOTE_TTL, show_spinner=False)
+def pasta_snapshot() -> tuple[Path, str]:
+    """Onde ler o snapshot. No computador do pipeline (há data/features): a cópia embutida no repositório.
+    No Streamlit Cloud: o ramo `snapshot` do GitHub, descarregado por inteiro para uma pasta temporária. Se faltar
+    um ficheiro, não houver rede ou a cópia embutida for mais recente, fica a embutida."""
+    if (FEATURES / "scorecard.csv").exists():
+        return SNAPSHOT, "cópia embutida"
+    try:
+        tmp = Path(tempfile.mkdtemp(prefix="snapshot-"))
+        tls = ssl.create_default_context(cafile=certifi.where())      # o Python do macOS não traz certificados
+        for f in SNAPSHOT_FILES:
+            with urllib.request.urlopen(f"{SNAPSHOT_REMOTE_URL}/{f}", timeout=SNAPSHOT_REMOTE_TIMEOUT,
+                                        context=tls) as resp:
+                (tmp / f).write_bytes(resp.read())
+        if _dados_ate(tmp) >= _dados_ate(SNAPSHOT):
+            return tmp, "ramo snapshot"
+    except Exception:  # noqa: BLE001  sem rede, ficheiro em falta ou meta ilegível
+        pass
+    return SNAPSHOT, "cópia embutida"
+
+
+SNAPSHOT, SNAP_ORIGEM = pasta_snapshot()
 
 
 @st.cache_data(show_spinner=False)
@@ -203,7 +237,8 @@ except Exception:  # noqa: BLE001
 
 st.sidebar.markdown("**Datas dos dados**")
 st.sidebar.markdown(
-    f"- Pipeline (scorecard, backtest, carteira): até **{PIPE_ASOF}**\n"
+    f"- Pipeline (scorecard, backtest, carteira): até **{PIPE_ASOF}**"
+    + ("" if FEAT == FEATURES else f" ({SNAP_ORIGEM})") + "\n"
     f"- Previsão oficial ({OFICIAL}) para: **{PREV_DATA}**\n"
     f"- Preços da análise ao vivo: até **{rets.index[-1].date()}**\n"
     f"- Treasury 10Y: até **{regime['asof'] if regime else '—'}**")

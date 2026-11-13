@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 5.3
+versao: 5.4
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -363,7 +363,7 @@ O pipeline corre sozinho nos dias úteis às 22:30 (hora de Lisboa, depois do fe
   * **Onde se usa:** na sessão esperada (cache e alerta de dados atrasados), na data da previsão oficial (secção 6.K) e no dia do relatório semanal e da publicação.
 * **Horizontes (Fase E):** a task Backtester corre também `horizonte.main()`: previsão todos os dias, backtest dos horizontes só na última sessão da semana.
 * **Uma task por bot:** Coletor → Inspetor → Modelador → Backtester → Backtester de empresas → Carteira → Scorecard → Ligações → Cauda → Sentinela → Relatório → Snapshot → Publicador.
-* **Publicador (`src/report/publicar.py`):** na última sessão de cada semana (normalmente sexta), depois do run, faz commit e push só de `app/cockpit/snapshot/`, para o cockpit do Streamlit Cloud acompanhar os dados. Só atua no ramo `main` e só se o snapshot mudou. Usa `git commit --only`, pelo que nunca leva outras alterações, mesmo que já estejam no índice. Se o push falhar, o commit fica local, o erro vai para o log e chega uma notificação; o resto do run não é afetado.
+* **Publicador (`src/report/publicar.py`):** na última sessão de cada semana (normalmente sexta), depois do run, envia o snapshot (`data/snapshot/`, fora do Git) para o ramo `snapshot` como um único commit sem pai, que substitui o anterior com um push forçado só desse ramo. O `main`, o índice e os ficheiros locais não são tocados, e o Publicador recusa-se a substituir o ramo de trabalho. Sem alterações não há commit. Se o push falhar, o erro vai para o log e chega uma notificação; o resto do run não é afetado e o run seguinte volta a tentar. O cockpit do Streamlit Cloud descarrega esse ramo de 6 em 6 horas; se faltar um ficheiro ou não houver rede, usa a cópia embutida em `app/cockpit/snapshot/`. Até 2026-11-13 o snapshot ia para o `main` todas as semanas, o que fazia o repositório crescer cerca de 5 MB por semana.
 * **Snapshot (Sprint 6):** copia para `app/cockpit/snapshot/` (versionado, cerca de 2,7 MB) os preços dos ETFs e das empresas do mapa de risco (5 anos, desde a secção 13), o Treasury 10Y e os resultados que o cockpit lê. Assim o cockpit corre sem rede, por exemplo no Streamlit Community Cloud. As séries do backtest são gravadas em float32, o que dá um erro relativo de cerca de $10^{-7}$, sem efeito nas exceções mostradas.
 * **Coletor:** 2 novas tentativas, 5 minutos entre elas, e cache pela **última sessão de Nova Iorque já fechada** (17:00 hora de NY, 1 h depois do fecho, `src/collect/sessao.py`). Dois runs que esperam a mesma sessão descarregam os dados uma só vez, e a cache só é usada se os preços já chegarem a essa sessão. Se o download correr mas os preços vierem atrasados, o Coletor repete-o até 3 vezes, com 10 minutos entre elas; se continuarem atrasados, o flow segue e o Sentinela alerta. A chave não pode ser a data do calendário: um run de madrugada em Lisboa ainda só tem a sessão da véspera e bloquearia o run das 22:30 desse dia (aconteceu a 2026-11-11).
 * **Paragem em caso de falha:** as tasks correm em sequência. Se o contrato do Inspetor falhar, a exceção pára o flow e nada a jusante corre, por isso nunca se publica um mapa ou um alerta calculado com dados inválidos.
