@@ -32,7 +32,8 @@ from config.settings import (COLLECT_RETRIES, COLLECT_RETRY_DELAY, COLLECT_STALE
 from src.clean import validate  # noqa: E402
 from src.collect import download_factors, download_prices, empresas  # noqa: E402
 from src.collect.sessao import dados_completos, ultima_sessao, ultimo_fecho  # noqa: E402
-from src.models import backtest, backtest_empresas, cauda, factor_links, portfolio, risk_metrics, scorecard  # noqa: E402
+from src.models import (backtest, backtest_empresas, cauda, decomposicao, factor_links, portfolio,  # noqa: E402
+                        risk_metrics, scorecard)
 from src.report import alerts, publicar, snapshot, weekly  # noqa: E402
 
 
@@ -107,6 +108,7 @@ def score():
 @task(name="Ligações")
 def ligacoes():
     factor_links.main()
+    decomposicao.main()
 
 
 @task(name="Cauda")

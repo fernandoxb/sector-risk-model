@@ -104,3 +104,42 @@ def test_semana_usa_o_ultimo_valor():
     w = fl.weekly_levels(d.to_frame("x"))
     assert w["x"].tolist() == [2.0, 4.0]          # sexta 06 e sexta 13
 
+
+
+# ----------------------------------------------------------------------------- regressão conjunta
+@pytest.fixture(scope="module")
+def colineares():
+    """A causa o setor; B anda com A (r ≈ 0,85) mas não tem efeito próprio."""
+    rng = np.random.default_rng(3)
+    n = 2000
+    idx = pd.date_range("2000-01-07", periods=n, freq="W-FRI")
+    a = rng.normal(size=n)
+    b = 0.85 * a + np.sqrt(1 - 0.85 ** 2) * rng.normal(size=n)
+    f = pd.DataFrame({"a": a, "b": b}, index=idx)
+    r = pd.DataFrame({"S": 0.02 * a + rng.normal(0, 0.02, n)}, index=idx)
+    return r, f
+
+
+def test_multivariate_ridge_separates_collinear_factors(colineares):
+    r, f = colineares
+    assert f["a"].corr(f["b"]) == pytest.approx(0.85, abs=0.02)
+    uni = fl.link_matrix(r, f, FAT, t_min=2).set_index("fator")
+    assert uni.loc["b", "aceite"]                                    # um fator de cada vez: B é aceite por engano
+    multi = fl.fit_multivariate_ridge(r, f, alpha=1.0, beta_min=0.05, factors=FAT, t_min=2).set_index("fator")
+    assert multi.loc["a", "aceite_multi"] and not multi.loc["b", "aceite_multi"]
+    assert abs(multi.loc["b", "beta_pad_multi"]) < 0.05 < abs(multi.loc["a", "beta_pad_multi"])
+    assert multi.loc["a", "b_multi"] == pytest.approx(0.02, abs=0.003)          # volta à escala original
+    assert multi.loc["a", "sinal_multi"] == fl.MINUS and pd.isna(multi.loc["b", "sinal_multi"])
+
+
+def test_ridge_igual_ao_sklearn_e_alinha_datas(colineares):
+    r, f = colineares
+    f2 = f.iloc[:-1].copy()                              # o FRED vem uma semana atrás
+    f2.iloc[5, 0] = np.nan
+    multi = fl.fit_multivariate_ridge(r, f2, alpha=7.0, factors=FAT)
+    assert (multi["n_multi"] == len(r) - 2).all()
+    Ridge = pytest.importorskip("sklearn.linear_model").Ridge
+    d = r.join(f2, how="inner").dropna()
+    z = (d - d.mean()) / d.std()
+    coef = Ridge(alpha=7.0, fit_intercept=True).fit(z[["a", "b"]], z["S"]).coef_
+    assert multi["beta_pad_multi"].to_numpy() == pytest.approx(coef, rel=1e-9)

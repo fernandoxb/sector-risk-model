@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 4.5
+versao: 4.6
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -585,6 +585,46 @@ Séries que passam os três testes (Kupiec, Christoffersen e Z2) a 97,5%:
 * O limiar de 10% é fixo, como no livro; não foi otimizado nem testada a sensibilidade a outros valores.
 * $\hat\xi$ é limitado a 0,9, para o ES ser finito.
 * A mudança de modelo cria uma quebra nas séries do score e dos alertas a 2026-11-12: nesse dia, o alerta "XLE: semáforo amarelo → verde" vem da troca de método, não do mercado.
+
+---
+
+## 🧱 16. Modelos de fatores: regressão conjunta e risco próprio das empresas (Fase C)
+
+Código: `src/models/factor_links.py::fit_multivariate_ridge` e `src/models/decomposicao.py` · parâmetros: `FACTOR_RIDGE_ALPHA`, `FACTOR_BETA_MIN`, `DECOMP_MIN_DAYS` · testes: `tests/test_factor_links.py`, `tests/test_decomposicao.py`.
+Saídas: colunas novas em `factor_links.csv` (`beta_pad_multi`, `b_multi`, `t_multi`, `n_multi`, `aceite_multi`, `sinal_multi`) e `company_factors.csv`. Referência: QRM, secção 3.4.
+
+### A. Os seis fatores ao mesmo tempo
+As 66 regressões da secção 9 usam um fator de cada vez. Como o VIX e os spreads sobem juntos, uma ligação pode ser só o reflexo de outro fator. A regressão conjunta mede o efeito de cada fator com os outros cinco fixos:
+
+* **Dados:** só as semanas em que todos os fatores e setores têm valor (o FRED pode vir uma semana atrás do Yahoo).
+* **Padronização:** cada fator e cada retorno com média 0 e desvio-padrão 1 na janela, para os coeficientes serem comparáveis entre unidades diferentes (p.p. e log-retornos).
+* **Ridge:** $\hat\beta^{pad} = (Z^\top Z + \alpha I)^{-1} Z^\top y$, com $\alpha$ = `FACTOR_RIDGE_ALPHA` = 1. Na escala original, $b = \hat\beta^{pad}\,\sigma_y/\sigma_x$.
+* **Aceitação:** $|\hat\beta^{pad}| \ge$ `FACTOR_BETA_MIN` = 0,05 **e** $|t| \ge$ `LINK_T_MIN` = 2, com o $t$ HAC da regressão conjunta sem penalização. O sinal segue a convenção da secção 9.
+* **Leitura honesta do Ridge:** com cerca de 155 semanas, $\alpha = 1$ quase não encolhe os coeficientes ($Z^\top Z$ tem diagonal 154). Quem separa os fatores correlacionados é a regressão ser conjunta; o limiar de 0,05 sozinho aceitaria quase tudo, por isso exige-se também o teste $t$.
+* **Validação:** o coeficiente é igual ao de `sklearn.linear_model.Ridge` (erro relativo < 1e-9). Com dados simulados em que A causa o setor e B só anda com A ($r \approx 0{,}85$), a regressão de um fator aceita B por engano e a conjunta não.
+
+**Resultados (semanas 2023-11-17 → 2026-11-06):** 28 ligações resistem. Das 34 aceites uma a uma, 12 deixam de o ser e aparecem 6 novas.
+
+* **Somem:** a inflação implícita em XLK, XLF, XLE e XLI; os juros no XLE ($t$ de +2,8 para −0,2: o efeito era do petróleo e da inflação); o VIX em XLV, XLP e XLRE; os spreads em XLE e XLV; o dólar em XLV e XLRE.
+* **Aparecem:** os juros a agravar XLV, XLY e XLB, e o petróleo a agravar o XLI, efeitos que estavam escondidos por outros fatores.
+* **O que não muda:** o Sentinela, o choque de juros e os cenários de stress continuam a usar o β de um fator de cada vez. Num choque de um só fator, esse β é o efeito total, incluindo o que costuma vir com ele; o conjunto responde a outra pergunta (o fator com tudo o resto parado).
+
+### B. De onde vem o risco de cada empresa
+$$r_i = a + b_m\, r_{SPY} + b_s\, r_{setor}^{\perp} + e_i,\qquad r_{setor}^{\perp} = r_{setor} - \hat\beta_{setor,SPY}\, r_{SPY}$$
+
+Como $r_{SPY}$ e $r_{setor}^{\perp}$ não têm correlação na amostra, a variância separa-se sem termos cruzados:
+$$1 = \underbrace{\frac{b_m^2\,\mathrm{Var}(r_{SPY})}{\mathrm{Var}(r_i)}}_{\text{mercado}} + \underbrace{\frac{b_s^2\,\mathrm{Var}(r_{setor}^{\perp})}{\mathrm{Var}(r_i)}}_{\text{setor}} + \underbrace{\frac{\mathrm{Var}(e_i)}{\mathrm{Var}(r_i)}}_{\text{próprio}}$$
+
+* **Dados:** retornos simples diários, janela `CVAR_YEARS` = 3 anos, mínimo de 252 dias comuns.
+* **Validação:** mercado + setor é igual ao $R^2$ de uma regressão do `statsmodels` em SPY e no ETF do setor, e a parte do mercado é igual à correlação com o SPY ao quadrado.
+* **Resultados (110 empresas, dados até 2026-11-12):** mediana de 13% mercado, 21% setor e 56% próprio. Na energia e nas utilities o setor explica cerca de metade (XOM: 83% setor, 16% próprio). No outro extremo, MCD e VZ têm mais de 90% de risco próprio.
+* **No cockpit:** coluna "Risco próprio" na tabela de empresas de cada setor e uma linha na ficha da empresa.
+
+### C. Limitações
+* A ordem conta: o mercado entra primeiro e fica com tudo o que partilha com o setor. A parte "setor" é só o que o setor acrescenta ao mercado.
+* A empresa faz parte do ETF do seu setor, o que aumenta a parte do setor nas empresas com mais peso (AAPL e NVDA no XLK).
+* É uma decomposição da variância de todos os dias, não da cauda: não diz de onde vêm as perdas nos piores dias.
+* A regressão conjunta usa 3 anos de semanas (cerca de 155 observações para 6 fatores); os coeficientes de fatores muito correlacionados continuam imprecisos.
 
 ---
 

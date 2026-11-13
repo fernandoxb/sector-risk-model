@@ -98,6 +98,14 @@ FACTOR_START = "2015-01-01"   # histórico descarregado dos fatores (a regressã
 LINK_FREQ = "W-FRI"           # retornos semanais, sexta a sexta
 LINK_T_MIN = 2.0              # |t| HAC mínimo para aceitar uma ligação
 LINK_HAC_LAGS = None          # None = regra de Newey–West: floor(4 · (T/100)^(2/9))
+# Regressão conjunta (os 6 fatores ao mesmo tempo, variáveis padronizadas): separa fatores correlacionados
+# (VIX e spreads). Ridge com penalização FACTOR_RIDGE_ALPHA; uma ligação resiste se |β padronizado| >=
+# FACTOR_BETA_MIN e |t| HAC da regressão conjunta >= LINK_T_MIN.
+FACTOR_RIDGE_ALPHA = 1.0
+FACTOR_BETA_MIN = 0.05
+
+# --- Decomposição do risco de cada empresa (src/models/decomposicao.py) ------
+DECOMP_MIN_DAYS = TRADING_DAYS       # dias comuns mínimos (empresa, setor e mercado) na janela CVAR_YEARS
 
 # --- Visão conjunta (src/models/portfolio.py) --------------------------------
 # Carteira de referência: None = pesos iguais nos 11 setores; ou um dict {ticker: peso} que soma 1.
@@ -171,7 +179,8 @@ SNAPSHOT_FEATURES = ("scorecard.csv", "official_risk.csv", "var_backtest.csv", "
                      "risk_contribution.csv", "stress_tests.csv", "covariance_shrinkage.csv", "factor_links.csv",
                      "alerts.json", "sector_metrics.csv", "score_history.csv", "holdings.csv",
                      "company_backtest.csv", "company_risk.csv", "var_backtest_split.csv",
-                     "var_backtest_multiple.csv", "tail_dependence.csv", "tail_meta.json")
+                     "var_backtest_multiple.csv", "tail_dependence.csv", "tail_meta.json",
+                     "company_factors.csv")
 
 # --- Cenário de stress próprio (cockpit, separador Carteira e stress) --------
 # Choque instantâneo propagado pelos betas: mercado pelo beta diário de 3 anos (sector_metrics.csv) e cada

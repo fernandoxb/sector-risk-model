@@ -54,8 +54,13 @@ def render(g: dict) -> None:
             "t (HAC)": acc["t"].map(lambda v: fm.num(v, 1, sinal=True)),
             "R²": acc["r2"].map(lambda v: fm.pct(v, 0)),
             "Semanas": acc["n"],
+            **({"Com os outros fatores": np.where(acc["aceite_multi"].astype(bool), "✅ resiste", "some"),
+                "t conjunto": acc["t_multi"].map(lambda v: fm.num(v, 1, sinal=True))} if "aceite_multi" in acc else {}),
         }), hide_index=True, width="stretch")
         st.caption(f"{len(acc)} de {len(links)} ligações aceites. β: retorno semanal do setor por +1 p.p. "
                    "(juros, inflação, spreads) ou por +1% (VIX, petróleo, dólar, em log). R²: parte da variação "
                    "semanal do setor explicada pelo fator. São regressões de um fator de cada vez e, com 66 testes, "
-                   "cerca de 3 ligações podem ser falsos positivos.")
+                   "cerca de 3 ligações podem ser falsos positivos. **Com os outros fatores**: a ligação mantém-se quando os "
+                   "seis fatores entram juntos na regressão? Se some, o efeito era de outro fator que anda com este "
+                   "(o VIX e os spreads sobem juntos). Os choques de stress usam o β de um fator de cada vez, que inclui "
+                   "o que costuma vir com ele.")

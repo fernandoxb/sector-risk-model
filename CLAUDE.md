@@ -41,6 +41,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   (`validado`, `es_subestimado`). Carteira do utilizador: `carteira.py`; previsão = FHS sobre os retornos da carteira.
 - Dependência de cauda (`src/models/cauda.py`, QRM cap. 5): `tail_dependence.csv` liga o mapa de risco por quedas
   conjuntas (padrão) ou correlação.
+- Modelos de fatores (Fase C, QRM 3.4): `factor_links.fit_multivariate_ridge` junta colunas `*_multi` ao `factor_links.csv`
+  (as antigas não mudam; Sentinela e choques usam as antigas); `decomposicao.py` → `company_factors.csv`.
 - `scripts/` — capturas de ecrã (`capturas.py`) e PDF da nota (`nota_pdf.py`), via Chrome headless.
 - Funções de cálculo são **puras** (sem Streamlit, sem I/O) para poderem ser testadas.
 - `data/`, `reference/`, `.venv/` não vão para o Git.

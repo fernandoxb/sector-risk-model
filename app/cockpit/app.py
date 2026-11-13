@@ -143,6 +143,7 @@ cauda = feat_csv("tail_dependence.csv")
 cauda_meta = json.loads((FEAT / "tail_meta.json").read_text()) if (FEAT / "tail_meta.json").exists() else {}
 comp_bt = feat_csv("company_backtest.csv")
 comp_risk = feat_csv("company_risk.csv", index_col="empresa")
+comp_fat = feat_csv("company_factors.csv", index_col="empresa")
 hold = feat_csv("holdings.csv")
 if hold is None:
     hold = emp.fallback_holdings()

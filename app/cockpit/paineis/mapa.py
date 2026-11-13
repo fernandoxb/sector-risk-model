@@ -27,6 +27,7 @@ def render(g: dict) -> None:
     PREV_DATA = g["PREV_DATA"]
     bt_res = g["bt_res"]
     comp_risk = g["comp_risk"]
+    comp_fat = g["comp_fat"]
     empresa_dados = g["empresa_dados"]
     es_emp = g["es_emp"]
     grafo = g["grafo"]
@@ -315,7 +316,9 @@ def render(g: dict) -> None:
                         ag = l["sinal"] == "+"
                         st.markdown(f"{'🔺' if ag else '🔻'} **{MACRO_FACTORS[l['fator']]['curto']}** a subir "
                                     f"{'agrava' if ag else 'atenua'} (t = {fm.num(l['t'], 1, sinal=True)}, "
-                                    f"R² {fm.pct(l['r2'], 0)})")
+                                    f"R² {fm.pct(l['r2'], 0)})"
+                                    + ("" if "aceite_multi" not in l or bool(l["aceite_multi"])
+                                       else " · *some com os outros fatores*"))
                 viz = sorted(((v, grafo[fs][v]) for v in grafo.neighbors(fs)), key=lambda x: -forca(x[1]))
                 st.markdown(("**Cai junto com**  \n" if por_cauda else "**Contágio (vizinhos pela correlação)**  \n")
                             + " · ".join(f"{v} ({liga_curta(d_)})" for v, d_ in viz))
@@ -366,6 +369,8 @@ def render(g: dict) -> None:
             f"ES {N_CVAR} previsto": [fm.pct(es_emp(t)) if es_emp(t) is not None else "—" for t in ord_e.index],
             "Modelo": [modelo_txt(comp_risk.loc[t] if comp_risk is not None and t in comp_risk.index else None)
                        for t in ord_e.index],
+            "Risco próprio": [fm.pct(comp_fat.loc[t, "pct_especifico"], 0) if comp_fat is not None and t in comp_fat.index
+                              else "—" for t in ord_e.index],
             "Downside beta": ord_e["downside_beta"].map(fm.num).values,
             "Correlação com o ETF": ord_e["corr_etf"].map(fm.num).values,
             "Volatilidade anual": ord_e["vol"].map(fm.pct).values,
@@ -411,6 +416,12 @@ def render(g: dict) -> None:
             metrica(k4, f"Correlação com o {m_set}", fm.num(e["corr_etf"]))
             metrica(k5, "Volatilidade anual", fm.pct(e["vol"]))
 
+            if comp_fat is not None and m_emp in comp_fat.index:
+                cf = comp_fat.loc[m_emp]
+                st.caption(f"**De onde vem o risco da {m_emp}:** {fm.pct(cf['pct_mercado'], 0)} do mercado ({MARKET}), "
+                           f"{fm.pct(cf['pct_setor'], 0)} do setor ({m_set}, a parte que o mercado não explica) e "
+                           f"{fm.pct(cf['pct_especifico'], 0)} próprio da empresa. Partes da variância diária em "
+                           f"{CVAR_YEARS} anos; só o risco próprio se dilui ao juntar empresas.")
             cr = comp_risk.loc[m_emp] if comp_risk is not None and m_emp in comp_risk.index else None
             if cr is None:
                 st.caption("Sem modelo de previsão: a empresa ainda não tem histórico suficiente (cerca de 3 anos e "
