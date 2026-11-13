@@ -5,8 +5,8 @@
 [![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-blue.svg)](LICENSE)
 
 > **In English.** An end-to-end market-risk model for the 11 SPDR sector ETFs against the S&P 500. It is built as a
-> portfolio project for a Master's in Risk Management. Daily VaR and Expected Shortfall come from three methods
-> (historical, GJR-GARCH-t and Filtered Historical Simulation) and are **backtested out of sample from 2008 to 2026**
+> portfolio project for a Master's in Risk Management. Daily VaR and Expected Shortfall come from four methods
+> (historical, GJR-GARCH-t, Filtered Historical Simulation and conditional EVT) and are **backtested out of sample from 2008 to 2026**
 > with Kupiec, Christoffersen, Basel traffic lights and the Acerbi–Székely Z2 test. **Only the two methods that combine GARCH volatility with
 > the empirical tail (FHS and conditional EVT) pass**; conditional EVT is chosen on 2008–2018 data, confirmed on
 > 2019–2026 and on 109 single stocks, so it is the official model.
@@ -20,8 +20,23 @@ sítios:
 * um **cockpit** Streamlit, com o mapa de risco interativo;
 * notas no **Obsidian**, com alertas e um relatório semanal.
 
+## Resultados em 2 minutos
+![O cockpit em 20 segundos: resumo, mapa de risco, setor aberto, ficha da empresa, carteira e backtest](docs/img/cockpit-demo.gif)
+
+Cockpit ao vivo: **[sector-risk-model.streamlit.app](https://sector-risk-model.streamlit.app)** · método completo na [nota metodológica](docs/nota-metodologica.pdf).
+
+| Pergunta | Resposta | Onde |
+|---|---|---|
+| Que modelo de VaR/ES resiste ao backtest? | Em 46 086 previsões por nível (2008–2026), só os dois métodos que juntam GARCH e a cauda dos dados passam. A EVT condicional é escolhida com 2008–2018 (9 de 9 setores) e confirmada em 2019–2026 (10 de 11) e em 75 de 109 empresas. | [abaixo](#resultado-principal-só-os-métodos-com-garch-e-cauda-dos-dados-passam-o-backtest) |
+| Os setores caem juntos? | Sim, mais do que a correlação sugere: quando o XLY está nos seus 5% piores dias, o XLC também está em 54% das vezes (5% se fossem independentes). | nota, secção 14 |
+| Que fatores macro mexem com cada setor? | 34 de 66 ligações são significativas uma a uma; com os seis fatores juntos resistem 28, e 12 das 34 somem (o juro no XLE era petróleo e inflação). | nota, secção 16 |
+| De onde vem o risco de uma empresa? | Na mediana das 110 empresas: 13% do mercado, 21% do setor e 56% próprio. | nota, secção 16 |
+| E a 10 dias? | O VaR a 10 dias por simulação do GARCH passa o Kupiec nos 11 setores; na contagem de exceções fica igual à regra da raiz do tempo (121 contra 122, para 115 esperadas). | nota, secção 18 |
+
+**O que não funcionou, e está dito:** o ES fica subestimado em 25 das 109 empresas (é corrigido pelo fator que teria acertado no passado); a simulação pela cópula t dá menos quedas conjuntas do que as observadas (23% contra 28%), por isso o cockpit mostra primeiro o observado; a 10 dias a simulação não bate a raiz do tempo no backtest.
+
 ## Resultado principal: só os métodos com GARCH e cauda dos dados passam o backtest
-VaR e ES a 1 dia previstos **só com dados até à véspera**, em janela móvel de 3 anos, de 2008 a 2026: 46 075 previsões
+VaR e ES a 1 dia previstos **só com dados até à véspera**, em janela móvel de 3 anos, de 2008 a 2026: 46 086 previsões
 por nível, nos 11 setores. A tabela mostra em quantos setores (de 11) cada método **não é rejeitado** a 5%:
 
 | Método | Kupiec 97,5% | Christoffersen 97,5% | Condicional 97,5% | Z2 (ES) 97,5% | Kupiec 99% | Christoffersen 99% | Condicional 99% | Z2 (ES) 99% |
@@ -53,7 +68,7 @@ histórico: 40).
 
 Por isso é o **modelo oficial** e publica todos os dias o VaR 99%, o VaR 97,5% e o ES 97,5% da sessão seguinte (calendário da NYSE com feriados).
 
-![Backtest no cockpit: o histórico é rejeitado e a FHS passa](docs/img/cockpit-backtest.png)
+![Backtest no cockpit: o histórico e o GARCH-t são rejeitados; a EVT e a FHS passam](docs/img/cockpit-backtest.png)
 
 **E empresa a empresa?** O mesmo backtest corre nas 109 maiores empresas dos 11 setores (previsões desde 2018). A EVT
 passa os três testes a 97,5% em **75 de 109** (FHS: 61; GARCH-t: 22; histórico: 21), e em 25 o ES ainda fica
@@ -65,7 +80,7 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 |---|---|---|
 | Risco de cauda | CVaR/ES 97,5% (FRTB), downside beta nos 20% piores dias do SPY | `src/models/cockpit.py`, `risk_metrics.py` |
 | Previsão e backtest | Histórico, GJR-GARCH(1,1)-t, FHS e EVT condicional; Kupiec, Christoffersen, Z2 de Acerbi–Székely (p-valor por simulação), semáforo de Basileia, regra por mesa do FRTB | `src/models/backtest.py` |
-| Empresas e carteira própria | O mesmo backtest em 109 empresas; carteira do utilizador com contribuições de Euler, exposição por setor, stress e previsão FHS | `src/models/backtest_empresas.py`, `carteira.py` |
+| Empresas e carteira própria | O mesmo backtest em 109 empresas; carteira do utilizador com contribuições de Euler, exposição por setor, stress e previsão pelo modelo oficial | `src/models/backtest_empresas.py`, `carteira.py` |
 | Carteira | Covariância de Ledoit-Wolf, contribuições de Euler para a volatilidade e o CVaR, stress tests de 2008, COVID-19 e 2022 | `src/models/portfolio.py` |
 | Scorecard 0–100 | 5 componentes normalizados por percentil, multiplicador de risco de modelo (semáforo), P × I, sensibilidade ±50% aos pesos | `src/models/scorecard.py` |
 | Dependência de cauda | Quedas conjuntas observadas e cópula t (tau de Kendall, ν por máxima verosimilhança) nos resíduos do GARCH; é o que liga o mapa de risco | `src/models/cauda.py` |
@@ -79,7 +94,7 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
 * **Mapa de risco:** a rede de contágio entre setores, ligados pelas quedas conjuntas (dependência de cauda) e não só pela correlação. Clicar num setor abre a ficha do setor (score, fatores macro, crises, risco previsto desde 2008) e as suas 10 maiores empresas; clicar numa empresa abre a ficha com dados de bolsa, risco e últimas notícias.
-* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco histórico e o previsto (FHS), quem mais pesa nele, a exposição por setor no mapa de contágio e o stress. Guarda-se no link, sem conta.
+* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco histórico e o previsto (modelo oficial), quem mais pesa nele, a exposição por setor no mapa de contágio, o stress e uma carteira alternativa por Hierarchical Risk Parity. Guarda-se no link, sem conta.
 * **Setores:** scorecard e evolução do score.
 * **Análise ao vivo:** CVaR histórico, downside beta, regime de juros e exportação para o Obsidian.
 * **Fatores macro.**
@@ -107,11 +122,11 @@ O cockpit está organizado em separadores:
 |---|---|
 | ![Cockpit: scorecard de risco por setor](docs/img/cockpit-scorecard.png) | ![Cockpit: setor aberto no mapa de risco](docs/img/cockpit-ficha.png) |
 
-**Outros números (dados até 2026-11-10):**
+**Outros números (dados até 2026-11-12):**
 * **Carteira com pesos iguais:** volatilidade de 12,1% e CVaR 97,5% de 2,21% a 1 dia. A diversificação vale 1,49× na volatilidade, mas só 1,39× no CVaR, porque nas quedas os setores caem juntos.
 * **Stress 2008:** a carteira perde 49,5% (SPY: 55,2%). Na COVID-19 perde mais do que o SPY (36,0% contra 33,7%), por causa do peso da energia.
 * **Fatores macro:** 34 das 66 ligações fator → setor são significativas (|t| ≥ 2 com HAC). As mais fortes são o VIX → XLK (t = −14,0) e os spreads high yield → XLI (t = −11,5).
-* **Scorecard:** o XLK lidera (91/100). O XLE tem um agravamento de risco de modelo, porque o seu semáforo a 99% está amarelo.
+* **Scorecard:** o XLK lidera (92/100), seguido do XLE (74) e do XLY (72). Nenhum setor tem agravamento de risco de modelo.
 
 ## Arquitetura
 ```mermaid
@@ -181,9 +196,11 @@ Convenções:
 * **Dados:** os preços vêm do Yahoo Finance (ajustados, sem garantia de serviço). Há séries do FRED com 1 dia de atraso, e o spread high yield (ICE BofA) só está disponível no FRED para os últimos 3 anos.
 * **Proxies em 2008:** o XLRE e o XLC ainda não existiam, por isso no stress de 2008 usam um proxy β × SPY com o β atual, que ignora o risco específico.
 * **Modelo oficial (EVT):** a 97,5% tem ligeiramente mais exceções do que as esperadas no agregado (1 208 contra 1 152, ou seja, 2,62% contra 2,5%). Na amostra toda só passa os três testes em 9 de 11 setores a 97,5% e em 7 de 11 a 99%.
-* **Ligações macro:** são regressões univariadas (não isolam efeitos conjuntos) e não há correção para testes múltiplos nas 66 regressões. Com |t| ≥ 2, é de esperar cerca de 3 falsos positivos.
+* **Ligações macro:** os alertas e os choques de stress usam as regressões de um fator de cada vez, sem correção para testes múltiplos nas 66 (com |t| ≥ 2, cerca de 3 falsos positivos). A regressão conjunta é mostrada ao lado, com cerca de 155 semanas para 6 fatores.
 * **Dependência de cauda:** cada frequência de quedas conjuntas assenta em cerca de 38 dias (erro de uns 8 pontos), numa janela de 3 anos sem crise sistémica.
-* **Scorecard e P × I:** são relativos aos 11 setores (percentis e quintis). Um setor pode mudar de nível sem que o seu risco mude. Na média dos stress tests, ganhos compensam perdas (o XLE em 2022).
+* **Scorecard e P × I:** são relativos aos 11 setores (percentis e quintis). Um setor pode mudar de nível sem que o seu risco mude, e um score baixo quer dizer "o menos arriscado dos 11", não "risco baixo".
+* **Cenários e horizontes:** a simulação da cópula t subestima as quedas conjuntas; o ES a 10 e 21 dias não tem backtest (só o VaR), e os horizontes longos existem só para os setores.
+* **Carteira HRP:** os pesos são calculados e avaliados na mesma amostra, por isso a redução de risco mostrada é otimista.
 * **Âmbito:** é um projeto académico e não é aconselhamento de investimento.
 
 ## Estrutura
