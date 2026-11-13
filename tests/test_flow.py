@@ -3,7 +3,8 @@ import logging
 
 import pytest
 
-from flows import pipeline as fl
+pytest.importorskip("prefect")          # o CI instala só requirements-test.txt, sem o Prefect
+from flows import pipeline as fl  # noqa: E402
 
 DEPOIS = ("modelador", "backtester", "backtester_empresas", "carteira", "score", "ligacoes", "dependencia_cauda",
           "sentinela", "relatorio", "snapshot_cockpit", "publicador")
