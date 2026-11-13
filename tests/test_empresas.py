@@ -36,3 +36,11 @@ def test_ficha_que_falha_mantem_a_anterior():
                                        info, lambda t: [])
     assert falhas == ["B"] and out["B"]["info"]["nome"] == "antigo" and out["A"]["info"] == {"nome": "A"}
     assert list(out) == ["A", "B", "C"]
+
+
+def test_acao_fora_do_mapa_vai_para_o_etf_do_seu_setor():
+    from src.collect.empresas import extra_de_info
+    assert extra_de_info("ASML", {"nome": "ASML Holding", "setor_yahoo": "Technology"}) == \
+        {"ticker": "ASML", "nome": "ASML Holding", "setor": "XLK"}
+    assert extra_de_info("GLD", {"nome": "SPDR Gold Shares"})["setor"] is None        # sem setor: liga-se ao mercado
+    assert extra_de_info("ZZZZQ", {}) is None                                          # o Yahoo não conhece

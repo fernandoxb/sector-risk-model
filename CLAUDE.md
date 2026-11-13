@@ -48,6 +48,9 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   janela da barra lateral escolhe qual o mapa usa. Empresas e fatores desde 2005 (backtest das empresas desde `COMPANY_BT_START`).
 - Modelos de fatores (Fase C, QRM 3.4): `factor_links.fit_multivariate_ridge` junta colunas `*_multi` ao `factor_links.csv`
   (as antigas não mudam; Sentinela e choques usam as antigas); `decomposicao.py` → `company_factors.csv`.
+- Ações fora do mapa (Fase 5): `empresas.validar_ticker` + `YAHOO_SETOR_ETF`; ficam em `st.session_state["extras"]` e no link;
+  no simulador entram por `paineis/cenario.com_extras` (preços ao vivo; sem setor → `cenarios.MERCADO`); para o pipeline
+  diário, `EXTRA_TICKERS` (peso 0 em `holdings.csv`).
 - HRP (v5.0): `carteira.calcular_pesos_hrp` (distância = 1 − quedas conjuntas, risco de cada ramo = CVaR); expander no
   separador Minha carteira.
 - Cenários conjuntos (Fase D): `cauda.scenarios` simula a cópula t → `tail_scenarios.csv` (colunas simuladas e

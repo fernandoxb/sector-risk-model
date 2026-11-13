@@ -5,8 +5,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config.settings import CENARIO_HORIZONTES, MACRO_FACTORS, MARKET, SHOCK_DIFF, SHOCK_LOGDIFF, SHOCK_MARKET
+from config.settings import CENARIO_ANOS, CENARIO_HORIZONTES, MACRO_FACTORS, MARKET, SHOCK_DIFF, SHOCK_LOGDIFF, SHOCK_MARKET
 from src.models import cenarios as cn
+from src.models.factor_links import sector_returns, weekly_levels
 from src.report import formato as fm
 from paineis.comum import nome
 
@@ -15,7 +16,26 @@ NOMES_F = {f: MACRO_FACTORS[f]["curto"] for f in MACRO_FACTORS} | {cn.MERCADO: "
 
 @st.cache_resource(show_spinner=False)
 def _modelo(versao: str, _dados: pd.DataFrame, _hold: pd.DataFrame) -> dict:
-    return cn.ajustar(_dados.set_index("data").astype(float), _hold)
+    """`versao`: a última semana dos dados e as ações fora do mapa (muda quando o utilizador acrescenta uma)."""
+    return cn.ajustar(_dados.astype(float), _hold)
+
+
+def com_extras(dados: pd.DataFrame, hold: pd.DataFrame, extras: dict, precos) -> tuple[pd.DataFrame, pd.DataFrame, list]:
+    """Junta aos dados semanais do motor as ações fora do mapa (preços ao vivo) e à lista das empresas o seu setor
+    (MERCADO se não tiver). Devolve (dados por semana, holdings alargadas, tickers sem preços)."""
+    d = dados.set_index("data")
+    if not extras:
+        return d, hold, []
+    falta = []
+    try:
+        px = precos(tuple(extras), f"{CENARIO_ANOS}y")
+        r = sector_returns(weekly_levels(px))
+        d = d.join(r.reindex(d.index), how="left")
+    except Exception:  # noqa: BLE001  sem rede (ex.: modo snapshot): ficam de fora
+        falta = list(extras)
+    h = pd.DataFrame([{"setor": x["setor"] or cn.MERCADO, "ticker": t, "nome": x["nome"], "peso": 0.0}
+                      for t, x in extras.items() if t not in falta])
+    return d, pd.concat([hold, h], ignore_index=True), falta
 
 
 def carteira_no_cenario(sims: pd.DataFrame, pesos: pd.Series) -> pd.Series | None:
@@ -66,7 +86,9 @@ def render(g: dict, versao: str, pesos: pd.Series | None = None) -> tuple[pd.Ser
                        "últimos 10 anos, os setores pela sua sensibilidade aos fatores e as empresas pela sensibilidade "
                        "ao seu setor. A teia passa a mostrar o efeito.")
             return None, []
-        mod = _modelo(versao, dados, g["hold"])
+        extras = st.session_state.get("extras", {})
+        d_m, h_m, sem_px = com_extras(dados, g["hold"], extras, g["precos"])
+        mod = _modelo(versao + "|" + ",".join(sorted(extras)), d_m, h_m)
         sims = cn.simular(mod, choque, CENARIO_HORIZONTES[hz])
         res = cn.resumo(sims)
         outros = [f for f in cn.FAT if f not in choque]
@@ -75,7 +97,7 @@ def render(g: dict, versao: str, pesos: pd.Series | None = None) -> tuple[pd.Ser
         if pesos is not None and len(pesos):
             r_c = carteira_no_cenario(sims, pesos)
             if r_c is not None:
-                fora = [t for t in pesos.index if t not in sims and t != MARKET]
+                fora = [t for t in pesos.index if t not in sims and t != MARKET]      # sem setor no modelo ou sem preços
                 st.markdown(f"**A tua carteira** ({len(pesos)} posições da Minha carteira): mediana "
                             f"**{fm.pct(r_c.median(), 1, sinal=True)}** em {hz} · os 5% piores {fm.pct(r_c.quantile(0.05), 1, sinal=True)}"
                             f" · probabilidade de perder {fm.pct((r_c < 0).mean(), 0)}"

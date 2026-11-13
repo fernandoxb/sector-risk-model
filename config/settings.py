@@ -269,6 +269,13 @@ COMPANY_TTL = 900               # segundos de cache da ficha e das notícias ao 
 USER_PORTFOLIO_MAX = 25         # máximo de posições
 USER_PORTFOLIO_DEFAULT = 6      # carteira de exemplo: a maior posição dos primeiros N setores, pesos iguais
 USER_MARKET_LABEL = "Mercado"   # "setor" do SPY na exposição setorial
+# Ações fora das 110 do mapa: o cockpit valida qualquer ticker no Yahoo e põe-no no ETF do seu setor (classificação
+# do Yahoo). Sem setor conhecido (ex.: um ETF de ouro), liga-se ao mercado. As de EXTRA_TICKERS entram também no
+# pipeline diário (preços, modelo e backtest, como as do mapa), com peso 0 no ETF.
+YAHOO_SETOR_ETF = {"Technology": "XLK", "Financial Services": "XLF", "Energy": "XLE", "Healthcare": "XLV",
+                   "Industrials": "XLI", "Consumer Cyclical": "XLY", "Consumer Defensive": "XLP", "Utilities": "XLU",
+                   "Basic Materials": "XLB", "Real Estate": "XLRE", "Communication Services": "XLC"}
+EXTRA_TICKERS: tuple[str, ...] = ()
 # Carteira alternativa por Hierarchical Risk Parity (López de Prado, 2016), com a distância das quedas conjuntas
 HRP_RISK_MEASURE = "cvar"       # risco de cada ramo: "cvar" (CVAR_LEVEL, histórico) ou "variance" (Ledoit-Wolf)
 HRP_MIN_DAYS = 252              # dias comuns mínimos para calcular

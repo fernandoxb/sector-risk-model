@@ -9,12 +9,23 @@ import plotly.graph_objects as go
 import streamlit as st
 from config.settings import (BT_SIGNIF, BT_TL_DAYS, CVAR_LEVEL, MARKET, PANIC_Q, SECTORS, SHOCK_MARKET, USER_FORECAST_YEARS,
                              USER_PORTFOLIO_DEFAULT, USER_PORTFOLIO_MAX)
-from config.settings import HRP_MIN_DAYS
+from config.settings import COMPANY_TTL, HRP_MIN_DAYS, USER_MARKET_LABEL
+from src.collect.empresas import validar_ticker
 from src.models import carteira as ca, cauda as cd, cockpit as ck
 from src.models.portfolio import shock_returns
 from src.report import formato as fm
 from src.report.alerts import pi_level
 from paineis.comum import (CRIT, CRIT_MIN, GRID, MUTED, N_CVAR, OFICIAL, RISCO, SEM, TXT, layout, metrica, modelo_txt, nome)
+
+
+@st.cache_data(ttl=COMPANY_TTL, show_spinner="🔎 A procurar a ação no Yahoo…")
+def _validar(texto: str) -> dict | None:
+    return validar_ticker(texto)
+
+
+def tickers_do_link(link: str) -> list[str]:
+    """Tickers escritos no link (?carteira=AAPL:30,ASML.AS:10), em maiúsculas, pela ordem."""
+    return [p.partition(":")[0].strip().upper() for p in link.replace(";", ",").split(",") if ":" in p]
 
 
 def render(g: dict) -> None:
@@ -34,9 +45,16 @@ def render(g: dict) -> None:
     setores = g["setores"]
     stt = g["stt"]
 
-    SET_DE = ca.mapa_setores(hold)
-    UNIVERSO = list(dict.fromkeys(hold["ticker"])) + setores + [MARKET]
-    NOME_AT = dict(zip(hold["ticker"], hold["nome"])) | {s_: f"ETF {SECTORS[s_]}" for s_ in setores} | {MARKET: "ETF S&P 500"}
+    extras = st.session_state.setdefault("extras", {})     # ações fora do mapa: ticker → {nome, setor}
+    base = list(dict.fromkeys(hold["ticker"])) + setores + [MARKET]
+    if "cart_df" not in st.session_state:                   # 1.ª vez: as ações do link que não estão no mapa
+        for t_ in tickers_do_link(st.query_params.get("carteira") or ""):
+            if t_ not in base and t_ not in extras and (ficha := _validar(t_)):
+                extras[ficha["ticker"]] = ficha
+    SET_DE = ca.mapa_setores(hold) | {t: (x["setor"] or USER_MARKET_LABEL) for t, x in extras.items()}
+    UNIVERSO = base + [t for t in extras if t not in base]
+    NOME_AT = (dict(zip(hold["ticker"], hold["nome"])) | {s_: f"ETF {SECTORS[s_]}" for s_ in setores}
+               | {MARKET: "ETF S&P 500"} | {t: f"{x['nome']} (fora do mapa)" for t, x in extras.items()})
 
     def rot_ativo(t: str) -> str:
         return f"{t} · {NOME_AT.get(t, t)}"
@@ -53,8 +71,8 @@ def render(g: dict) -> None:
         st.session_state["cart_df"] = pd.DataFrame({"Ativo": list(ini), "Peso (%)": [round(v, 1) for v in ini.values()]})
         st.session_state["cart_v"] = 0
 
-    st.caption(f"Monta uma carteira com as {hold['ticker'].nunique()} empresas do mapa, os 11 ETFs setoriais e o SPY "
-               f"(até {USER_PORTFOLIO_MAX} posições) e vê o risco, a exposição por setor e as ligações de contágio. "
+    st.caption(f"Monta uma carteira com as {hold['ticker'].nunique()} empresas do mapa, os 11 ETFs setoriais, o SPY ou "
+               f"qualquer outra ação (até {USER_PORTFOLIO_MAX} posições) e vê o risco, a exposição por setor e as ligações de contágio. "
                "Guarda-se no link, sem conta.")
     col_ed, col_bt = st.columns([3, 1])
     with col_ed:
@@ -82,6 +100,22 @@ def render(g: dict) -> None:
             st.query_params["carteira"] = ca.format_carteira(pesos_ed)
             st.toast("Carteira guardada no link da página.")
         st.caption("Linha nova: clica na última linha da tabela. Para apagar, seleciona a linha e carrega em Delete.")
+        nova = st.text_input("Outra ação (ticker do Yahoo)", key="cart_nova", placeholder="ex.: ASML, SAP.DE, BRK.B",
+                             help="Qualquer ação ou ETF do Yahoo Finance. O setor vem da classificação do Yahoo; sem "
+                                  "setor (ex.: um ETF de ouro) liga-se ao mercado.")
+        if st.button("➕ Acrescentar", width="stretch", disabled=not nova.strip()):
+            ficha = _validar(nova)
+            if ficha is None:
+                st.error(f"O Yahoo não conhece «{nova.strip()}» (ou não respondeu).")
+            elif ficha["ticker"] in pesos_ed:
+                st.info(f"{ficha['ticker']} já está na carteira.")
+            else:
+                if ficha["ticker"] not in base:
+                    extras[ficha["ticker"]] = ficha
+                linhas = pesos_ed | {ficha["ticker"]: 5.0}
+                st.session_state["cart_df"] = pd.DataFrame({"Ativo": list(linhas), "Peso (%)": list(linhas.values())})
+                st.session_state["cart_v"] += 1
+                st.rerun()
 
     if not pesos_ed:
         st.info("Acrescenta pelo menos um ativo com peso positivo.")

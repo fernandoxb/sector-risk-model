@@ -10,7 +10,7 @@ import pandas as pd
 import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import (COMPANY_NEWS, COMPANY_START, FEATURES, HOLDINGS_TOP, RAW,  # noqa: E402
+from config.settings import (COMPANY_NEWS, COMPANY_START, EXTRA_TICKERS, FEATURES, HOLDINGS_TOP, RAW, YAHOO_SETOR_ETF,  # noqa: E402
                              SECTOR_PROFILE, SECTORS)
 
 COLS = ["setor", "ticker", "nome", "peso"]
@@ -81,6 +81,28 @@ def fetch_news(ticker: str, n: int = COMPANY_NEWS) -> list[dict]:
     return parse_news(yf.Ticker(ticker).news, n)
 
 
+def extra_de_info(ticker: str, info: dict, mapa: dict = YAHOO_SETOR_ETF) -> dict | None:
+    """Ficha do Yahoo (`parse_info`) → {ticker, nome, setor}: o setor é o ETF da classificação do Yahoo, ou None
+    (sem classificação: um ETF, um fundo). None se o Yahoo não conhece o ticker (sem nome)."""
+    if not info.get("nome"):
+        return None
+    return {"ticker": ticker, "nome": info["nome"], "setor": mapa.get(info.get("setor_yahoo"))}
+
+
+def validar_ticker(texto: str) -> dict | None:
+    """Procura o ticker no Yahoo tal como foi escrito (ASML.AS tem o sufixo da bolsa) e, se falhar, no formato
+    norte-americano (BRK.B → BRK-B)."""
+    for t in dict.fromkeys([str(texto).strip().upper(), norm_ticker(texto)]):
+        if t:
+            try:
+                ficha = extra_de_info(t, fetch_info(t))
+            except Exception:  # noqa: BLE001  ticker desconhecido ou Yahoo em baixo
+                ficha = None
+            if ficha:
+                return ficha
+    return None
+
+
 def load_holdings(folder: Path = FEATURES) -> pd.DataFrame:
     """holdings.csv da pasta dada, ou o recurso de SECTOR_PROFILE se não existir."""
     f = folder / "holdings.csv"
@@ -124,13 +146,17 @@ def main() -> Path:
             partes.append(fetch_holdings(s))
         except Exception:  # noqa: BLE001  Yahoo sem dados do fundo: mantém o que havia
             falhas.append(s)
-            partes.append(antigo[antigo["setor"] == s])
+            partes.append(antigo[(antigo["setor"] == s) & (antigo["peso"] > 0)])     # sem as extra antigas
     FEATURES.mkdir(parents=True, exist_ok=True)
     out = FEATURES / "holdings.csv"
     h = pd.concat(partes, ignore_index=True)
+    extra = [x for x in (validar_ticker(t) for t in EXTRA_TICKERS if t not in set(h["ticker"])) if x and x["setor"]]
+    if extra:                                          # ações seguidas no pipeline, fora das 10 maiores de cada ETF
+        h = pd.concat([h, pd.DataFrame(extra).assign(peso=0.0)[COLS]], ignore_index=True)
     h.to_csv(out, index=False, float_format="%.6f")
     print(f"[coletor] posições: {len(h)} empresas em {h['setor'].nunique()} setores"
-          + (f"; mantidas do ficheiro anterior: {falhas}" if falhas else ""))
+          + (f"; mantidas do ficheiro anterior: {falhas}" if falhas else "")
+          + (f"; extra: {[x['ticker'] for x in extra]}" if extra else ""))
     return out
 
 

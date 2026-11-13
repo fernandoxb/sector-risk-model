@@ -169,10 +169,12 @@ def opcoes(sc: pd.DataFrame, links: pd.DataFrame | None, pares: pd.DataFrame | N
                         "label": {"show": abre or r.ticker in carteira or (aceso is not None and i in aceso and foco in SECTORS),
                                   "color": TXT, "fontSize": 10, "position": "left" if esq else "right",
                                   "rotate": graus - 180 if esq else graus, "opacity": opac(i)},
-                        "dica": f"<b>{r.ticker}</b> · {r.nome}<br/>{fm.pct(r.peso)} do {s}"
+                        "dica": f"<b>{r.ticker}</b> · {r.nome}<br/>" + (f"{fm.pct(r.peso)} do {s}" if r.peso else f"setor {s}")
                                 + (f"<br/>ES 97,5% previsto {fm.pct(es_e[r.ticker])}" if r.ticker in es_e else "")
                                 + (f"<br/>Risco próprio {fm.pct(proprio, 0)}" if proprio is not None and proprio == proprio else "")
-                                + txt_cen(r.ticker) + "<br/><i>clica para abrir a ficha</i>"})
+                                + txt_cen(r.ticker)
+                                + ("<br/><i>fora do mapa (acrescentada na Minha carteira)</i>" if r.peso == 0
+                                   else "<br/><i>clica para abrir a ficha</i>")})
             arestas.append({"source": s, "target": i,
                             "lineStyle": {"color": COR_FIO, "width": 0.8 if abre else 0.5,
                                           "opacity": opac(i, 0.7 if abre else 0.35), "curveness": 0}})
@@ -263,12 +265,13 @@ def evento(valor) -> str | None:
 
 
 def desenhar(g: dict, aberto: str | None, q_txt: str, cenario: pd.Series | None = None,
-             chocados: list[str] | None = None, por: str = "p_conj", carteira: set[str] | None = None) -> str | None:
+             chocados: list[str] | None = None, por: str = "p_conj", carteira: set[str] | None = None,
+             hold: pd.DataFrame | None = None) -> str | None:
     """Desenha a teia e devolve o clique novo (id do nó), ou None. Com um cenário, a cadeia animada é a do 1.º fator
     macro chocado."""
     from streamlit_echarts import JsCode, st_echarts
     foco = next((f for f in (chocados or []) if f in MACRO_FACTORS), None) if cenario is not None else None
-    op = opcoes(g["sc"], g["links"], g["cauda"], g["hold"], g["comp_risk"], g["comp_fat"], aberto,
+    op = opcoes(g["sc"], g["links"], g["cauda"], g["hold"] if hold is None else hold, g["comp_risk"], g["comp_fat"], aberto,
                 foco or st.session_state.get("teia_foco"), q_txt, cenario, por, carteira)
     op["tooltip"]["formatter"] = JsCode(JS_DICA)
     res = st_echarts(op, events={"click": JS_CLIQUE}, height=f"{ALTURA}px", key="teia_chart", theme="dark")

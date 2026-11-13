@@ -69,3 +69,14 @@ def test_episodio_nao_espreita_o_futuro(dados):
     assert v.loc["XLU", "real"] < base.set_index("setor").loc["XLU", "real"]      # o real muda, a previsão não
     assert v.loc["XLU", "mediana"] == pytest.approx(base.set_index("setor").loc["XLU", "mediana"])
     assert base["semanas"].iloc[0] == 9
+
+
+def test_acao_sem_setor_liga_se_ao_mercado(dados):
+    d, hold = dados
+    d = d.assign(OURO=0.3 * d["mercado"] + np.random.default_rng(9).normal(0, 0.004, len(d)))
+    h = pd.concat([hold, pd.DataFrame({"setor": [cn.MERCADO], "ticker": ["OURO"], "nome": ["Ouro"], "peso": [0.0]})])
+    mod = cn.ajustar(d, h, setores=["XLU", "XLE"])
+    k = mod["empresas"].index("OURO")
+    assert mod["setor_de"]["OURO"] == cn.MERCADO and mod["beta"][k] == pytest.approx(0.3, abs=0.02)
+    s = cn.simular(mod, {"mercado": np.log(0.9)}, h=1, n=5000, seed=3)
+    assert np.log1p(s["OURO"]).median() == pytest.approx(mod["alfa"][k] + 0.3 * np.log(0.9), abs=0.004)

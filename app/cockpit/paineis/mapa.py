@@ -80,8 +80,12 @@ def render(g: dict) -> None:
         pesos = ca.normalizar(p_cart) if p_cart else None
         if g["cen_sem"] is not None:
             cen, chocados = cenario.render(g, str(g["cen_sem"]["data"].max()), pesos)
+        extras = st.session_state.get("extras", {})          # ações fora do mapa, acrescentadas na Minha carteira
+        hold_t = pd.concat([hold, pd.DataFrame([{"setor": x["setor"], "ticker": t, "nome": x["nome"], "peso": 0.0}
+                                                for t, x in extras.items() if x["setor"] in SECTORS],
+                                               columns=hold.columns)], ignore_index=True)
         novo = teia.desenhar(g, st.session_state.get("mapa_setor"), Q_TXT, cen, chocados, "p_conj" if por_cauda else "corr",
-                             set(p_cart))
+                             set(p_cart), hold_t)
         if novo:
             if novo in MACRO_FACTORS:               # fator: mostra (ou esconde) a sua cadeia
                 st.session_state["teia_foco"] = None if st.session_state.get("teia_foco") == novo else novo

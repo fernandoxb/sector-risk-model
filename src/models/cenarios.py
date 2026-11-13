@@ -7,7 +7,8 @@ Três camadas, simuladas por Monte Carlo:
   2. setores   r_s = h·a_s + B_s·x + ε_s, com B da regressão de cada setor nos seis fatores ao mesmo tempo (OLS) e
                ε a soma de h semanas reamostradas dos resíduos (bootstrap: guarda as caudas e a dependência entre
                setores, porque se sorteia a semana inteira)
-  3. empresas  r_i = h·α_i + β_i·r_s + e_i, com β_i da regressão semanal na do seu ETF e e_i reamostrado nas mesmas
+  3. empresas  r_i = h·α_i + β_i·r_s + e_i, com β_i da regressão semanal na do seu ETF (ou no mercado, se a ação não
+               tem setor, ex.: um ETF de ouro) e e_i reamostrado nas mesmas
                semanas que os resíduos dos setores
 Retornos log somados no horizonte de h semanas e devolvidos como retornos simples (e^r − 1).
 
@@ -66,8 +67,8 @@ def ajustar(dados: pd.DataFrame, hold: pd.DataFrame, setores: list[str] = list(S
         b = np.linalg.lstsq(X1[m], d[s].to_numpy()[m], rcond=None)[0]
         coef[s] = b
         res_s.loc[m, s] = d[s].to_numpy()[m] - X1[m] @ b
-    emp = [(h.ticker, h.setor) for h in hold.drop_duplicates("ticker").itertuples()
-           if h.ticker in d and h.setor in setores and d[h.ticker].notna().sum() > 52]
+    emp = [(h.ticker, h.setor) for h in hold.drop_duplicates("ticker").itertuples()     # setor MERCADO: beta ao SPY
+           if h.ticker in d and (h.setor in setores or h.setor == MERCADO) and d[h.ticker].notna().sum() > 52]
     alfa, beta, res_e = {}, {}, pd.DataFrame(np.nan, index=d.index, columns=[t for t, _ in emp])
     for t, s in emp:
         m = (d[t].notna() & d[s].notna()).to_numpy()
@@ -103,9 +104,10 @@ def simular(mod: dict, choque: dict[str, float], h: int = 1, n: int = CENARIO_NS
         x[:, u_idx] = rng.multivariate_normal(m_u, (C_u + C_u.T) / 2, size=n, method="eigh")
     semanas = rng.integers(0, len(mod["res_s"]), size=(n, h))           # as mesmas semanas para setores e empresas
     r_s = h * mod["a"] + x @ mod["B"].T + mod["res_s"][semanas].sum(axis=1)
-    pos = {s: k for k, s in enumerate(mod["setores"])}
+    base = np.column_stack([r_s, x[:, FAT.index(MERCADO)]])         # a empresa liga-se ao seu setor ou ao mercado
+    pos = {s: k for k, s in enumerate(mod["setores"])} | {MERCADO: len(mod["setores"])}
     col_s = [pos[mod["setor_de"][t]] for t in mod["empresas"]]
-    r_e = h * mod["alfa"] + mod["beta"] * r_s[:, col_s] + mod["res_e"][semanas].sum(axis=1)
+    r_e = h * mod["alfa"] + mod["beta"] * base[:, col_s] + mod["res_e"][semanas].sum(axis=1)
     return pd.concat([pd.DataFrame(x, columns=FAT), pd.DataFrame(np.expm1(r_s), columns=mod["setores"]),
                       pd.DataFrame(np.expm1(r_e), columns=mod["empresas"])], axis=1)
 

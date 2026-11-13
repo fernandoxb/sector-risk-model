@@ -96,7 +96,7 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
 * **Teia de risco:** numa só vista, os fatores macro no centro, os 11 setores e as 10 maiores empresas de cada um, ligados pelo que mexe com quem e pelo que cai junto (janela de 1, 3, 5 ou 10 anos). Clicar num fator mostra o choque a correr pela cadeia; num setor, abre as empresas e a ficha do setor; numa empresa, a ficha com bolsa, risco e notícias. O simulador de choques pinta a teia com o efeito em cada setor e empresa e dá o resultado da tua carteira. Por baixo, o score dos 11 setores e todas as ligações aos fatores macro.
-* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs e o SPY; mostra o risco histórico e o previsto (modelo oficial), quem mais pesa nele, a exposição por setor na teia, o stress e uma carteira alternativa por Hierarchical Risk Parity. Guarda-se no link, sem conta.
+* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs, o SPY ou qualquer outra ação do Yahoo (setor atribuído automaticamente); mostra o risco histórico e o previsto (modelo oficial), quem mais pesa nele, a exposição por setor na teia, o stress e uma carteira alternativa por Hierarchical Risk Parity. Guarda-se no link, sem conta.
 * **Análise ao vivo:** CVaR histórico, downside beta, regime de juros e exportação para o Obsidian.
 * **Modelo:** backtest.
 * **Carteira-base:** a carteira de referência dos 11 setores, com contribuições para o risco, stress históricos e um cenário de stress próprio.

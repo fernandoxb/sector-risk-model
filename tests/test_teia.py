@@ -77,3 +77,15 @@ def test_carteira_no_cenario():
     r = carteira_no_cenario(sims, pd.Series({"A": 0.25, "SPY": 0.25, "FORA": 0.5}))
     assert r.tolist() == pytest.approx([0.5 * 0.10 + 0.5 * 0.05, 0.5 * -0.10 + 0.5 * -0.05])   # FORA sai, pesos re-normalizados
     assert carteira_no_cenario(sims, pd.Series({"FORA": 1.0})) is None
+
+
+def test_acao_fora_do_mapa_na_teia(dados):
+    sc, links, pares, hold = dados
+    h = pd.concat([hold, pd.DataFrame({"setor": ["XLK"], "ticker": ["ASML"], "nome": ["ASML Holding"], "peso": [0.0]})])
+    nos = {n["id"]: n for n in teia.opcoes(sc, links, pares, h, None, None, carteira={"ASML"})["series"][0]["data"]}
+    assert "fora do mapa" in nos["XLK/ASML"]["dica"] and nos["XLK/ASML"]["label"]["show"]
+
+
+def test_tickers_do_link():
+    from paineis.minha_carteira import tickers_do_link
+    assert tickers_do_link("aapl:30, ASML.AS:10;brk-b:5,lixo") == ["AAPL", "ASML.AS", "BRK-B"]

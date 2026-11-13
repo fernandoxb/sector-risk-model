@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 5.7
+versao: 5.8
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -462,6 +462,17 @@ Separador **Minha carteira** do cockpit; cálculo em `src/models/carteira.py` (f
 * O stress histórico ignora o risco específico de cada empresa, pelo que **subestima** carteiras concentradas em poucas ações.
 * O universo são as 10 maiores posições de cada ETF; não há obrigações, ações fora dos EUA nem outras classes de ativos.
 * Pesos fixos: não há histórico de transações nem re-equilíbrio.
+
+### F. Ações fora do mapa (Fase 5)
+A carteira aceita qualquer ticker do Yahoo Finance, não só as 110 empresas do mapa. Escreve-se o ticker (ou põe-se no link, `?carteira=ASML:20,SAP.DE:15`) e o cockpit:
+
+* **Valida-o no Yahoo** (`empresas.validar_ticker`): tenta o ticker tal como foi escrito, porque o sufixo da bolsa usa um ponto (SAP.DE), e depois no formato norte-americano (BRK.B → BRK-B).
+* **Atribui-lhe um setor:** o ETF da classificação do Yahoo (`YAHOO_SETOR_ETF`; ASML → XLK). Sem classificação (um ETF de ouro, por exemplo) fica ligado ao mercado.
+* **Calcula ao vivo:** o risco da carteira usa os preços do Yahoo, como antes. No simulador de choques (secção 19), estima-se o beta semanal da ação ao seu ETF (ou ao mercado) em 10 anos e sorteiam-se os seus resíduos nas mesmas semanas que os outros. Exemplo: ASML β = 1,17 ao XLK, SAP.DE 0,58, GLD 0,18 ao mercado.
+* **Na teia:** aparece no anel do seu setor, com contorno branco.
+* **No pipeline diário:** só as que estiverem em `EXTRA_TICKERS` (`config/settings.py`). Entram em `holdings.csv` com peso 0 e passam a ter preços, modelo, backtest e quedas conjuntas, como as do mapa.
+
+Limitações: uma ação cotada noutra moeda (SAP.DE em euros) traz o risco cambial dentro dos retornos; sem rede (modo snapshot) as ações fora do mapa não têm preços e ficam de fora.
 
 ### E. Carteira alternativa por Hierarchical Risk Parity (v5.0)
 Código: `src/models/carteira.py` (`calcular_pesos_hrp`, `hrp_quasi_diag`, `hrp_recursive_bisection`) · parâmetros: `HRP_RISK_MEASURE`, `HRP_MIN_DAYS`, `HRP_LINKAGE` · testes: `tests/test_carteira.py`.
