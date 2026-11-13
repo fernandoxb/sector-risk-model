@@ -34,11 +34,11 @@ if getattr(sys, "_cockpit_assinatura", None) != _assinatura:
     for _m in [m for m in sys.modules if m.split(".")[0] in ("config", "src", "paineis")]:
         del sys.modules[_m]
     sys._cockpit_assinatura = _assinatura
-from config.settings import (CALENDAR_PREVIEW, COMPANY_TTL, CVAR_YEARS, FEATURES, MARKET, RATE_LOOKBACK, RATE_SERIES,
+from config.settings import (BT_WINDOW, CALENDAR_PREVIEW, COMPANY_TTL, CVAR_YEARS, FEATURES, MARKET, RATE_LOOKBACK, RATE_SERIES,
                              RATE_THRESHOLD_PP, SECTORS, SNAPSHOT, CAUDA_JANELAS, SNAPSHOT_FILES, SNAPSHOT_REMOTE_TIMEOUT,
                              SNAPSHOT_REMOTE_TTL, SNAPSHOT_REMOTE_URL)  # noqa: E402
 from src.collect import empresas as emp, sessao as cal  # noqa: E402
-from src.models import backtest_empresas as be, cockpit as ck  # noqa: E402
+from src.models import backtest_empresas as be, carteira as ca_m, cockpit as ck, horizonte as hz  # noqa: E402
 import paineis.ao_vivo  # noqa: E402
 import paineis.carteira_base  # noqa: E402
 import paineis.glossario  # noqa: E402
@@ -197,6 +197,18 @@ def empresa_vivo(ticker: str) -> dict:
 def backtest_carteira(chave: str, _rets: pd.DataFrame, _w: pd.Series, ate: str) -> dict | None:
     """Backtest e previsão FHS da carteira; `chave` (pesos) e `ate` (último preço) identificam o resultado em cache."""
     return be.portfolio_backtest(_rets, _w)
+
+
+@st.cache_data(ttl=3600, show_spinner="📆 A simular a carteira a 10 dias e a 1 mês…")
+def horizontes_carteira(chave: str, _rets: pd.DataFrame, _w: pd.Series, ate: str) -> pd.DataFrame | None:
+    """VaR e ES da carteira a 10 e 21 dias (horizonte.forecast sobre os retornos com os pesos atuais)."""
+    r = (_rets[list(_w.index)].dropna() @ _w).rename("carteira")
+    return hz.forecast(r) if len(r) > BT_WINDOW + 45 else None
+
+
+@st.cache_data(ttl=3600, show_spinner="🛡️ A testar a HRP fora da amostra…")
+def hrp_oos(chave: str, _rets: pd.DataFrame, _w: pd.Series, ate: str) -> pd.DataFrame | None:
+    return ca_m.hrp_fora_da_amostra(_rets, _w)
 
 
 def empresa_dados(ticker: str) -> tuple[dict, str]:

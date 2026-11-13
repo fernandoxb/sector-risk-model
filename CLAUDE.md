@@ -51,6 +51,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 - Ações fora do mapa (Fase 5): `empresas.validar_ticker` + `YAHOO_SETOR_ETF`; ficam em `st.session_state["extras"]` e no link;
   no simulador entram por `paineis/cenario.com_extras` (preços ao vivo; sem setor → `cenarios.MERCADO`); para o pipeline
   diário, `EXTRA_TICKERS` (peso 0 em `holdings.csv`).
+- Carteira (Fase 6): horizontes 10/21 dias via `horizonte.forecast` sobre r_p; HRP fora da amostra em
+  `carteira.hrp_fora_da_amostra` (`HRP_OOS_JANELA`, `HRP_OOS_PASSO`); ambos em cache no `app.py`.
 - HRP (v5.0): `carteira.calcular_pesos_hrp` (distância = 1 − quedas conjuntas, risco de cada ramo = CVaR); expander no
   separador Minha carteira.
 - Cenários conjuntos (Fase D): `cauda.scenarios` simula a cópula t → `tail_scenarios.csv` (colunas simuladas e

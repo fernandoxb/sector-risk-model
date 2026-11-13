@@ -104,3 +104,16 @@ def ck_cvar(r):
     from src.models.cockpit import cvar
     return cvar(r, CVAR_LEVEL)
 
+
+
+def test_hrp_fora_da_amostra_so_usa_o_passado(tres_ativos):
+    w = pd.Series({"A": 0.4, "B": 0.4, "C": 0.2})
+    oos = ca.hrp_fora_da_amostra(tres_ativos, w, janela=300, passo=100)
+    assert len(oos) == 800 - 300 and list(oos.columns) == ["hrp", "atual", "iguais"]
+    assert oos["atual"].to_numpy() == pytest.approx((tres_ativos.iloc[300:] @ w).to_numpy())
+    futuro = tres_ativos.copy()
+    futuro.iloc[400:] *= 3                                                # mexer depois do dia 400 não muda o antes
+    assert ca.hrp_fora_da_amostra(futuro, w, janela=300, passo=100)["hrp"].iloc[:100].equals(oos["hrp"].iloc[:100])
+    r = ca.resumo_oos(oos)
+    assert r.loc["hrp", "cvar"] < r.loc["atual", "cvar"]                  # C, calmo e independente, recebe mais peso
+    assert ca.hrp_fora_da_amostra(tres_ativos.tail(350), w, janela=300, passo=100) is None

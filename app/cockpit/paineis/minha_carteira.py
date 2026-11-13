@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from config.settings import (BT_SIGNIF, BT_TL_DAYS, CVAR_LEVEL, MARKET, PANIC_Q, SECTORS, SHOCK_MARKET, USER_FORECAST_YEARS,
                              USER_PORTFOLIO_DEFAULT, USER_PORTFOLIO_MAX)
-from config.settings import COMPANY_TTL, HRP_MIN_DAYS, USER_MARKET_LABEL
+from config.settings import COMPANY_TTL, HRP_MIN_DAYS, HRP_OOS_JANELA, HRP_OOS_PASSO, USER_MARKET_LABEL
 from src.collect.empresas import validar_ticker
 from src.models import carteira as ca, cauda as cd, cockpit as ck
 from src.models.portfolio import shock_returns
@@ -207,6 +207,24 @@ def render(g: dict) -> None:
             else:
                 v1.caption("Sem previsão nem backtest para a carteira: alguma posição tem menos de 3 anos e meio de "
                            "preços. Ficam as medidas históricas.")
+            hz_u = None
+            if bt_u:
+                try:
+                    hz_u = g["horizontes_carteira"](ca.format_carteira(pesos_ed), px_l.pct_change().iloc[1:], w_u,
+                                                    str(px_l.index[-1].date()))
+                except Exception:  # noqa: BLE001  GARCH sem convergir: fica só a 1 dia
+                    pass
+            if hz_u is not None:
+                cols_h = st.columns(len(hz_u) * 2)
+                for k_, r_h in enumerate(hz_u.itertuples()):
+                    nome_h = "1 mês" if r_h.horizonte == 21 else f"{r_h.horizonte} dias"
+                    metrica(cols_h[2 * k_], f"ES {N_CVAR} · {nome_h}", fm.pct(r_h.es975, 1),
+                            f"raiz do tempo: {fm.pct(r_h.es975_raiz, 1)}",
+                            ajuda=f"Perda média nos 2,5% piores casos ao fim de {r_h.horizonte} dias úteis, em 20 mil "
+                                  "trajetórias do GARCH da carteira (a volatilidade de hoje vai regressando à média). A raiz "
+                                  "do tempo é o ES de 1 dia × √dias.")
+                    metrica(cols_h[2 * k_ + 1], f"VaR 99% · {nome_h}", fm.pct(r_h.var99, 1),
+                            f"VaR {N_CVAR}: {fm.pct(r_h.var975, 1)}")
 
             # --- mapa: setores (tamanho = exposição) com as posições da carteira à volta
             st.subheader("A carteira no mapa de risco")
@@ -329,6 +347,22 @@ def render(g: dict) -> None:
                             "Peso HRP": w_h.map(lambda v: fm.pct(v, 1)).values,
                             "Diferença": (w_h - w_u).map(lambda v: fm.pp(100 * v, 1)).values,
                         }), hide_index=True, width="stretch")
+                        oos = None
+                        try:
+                            px_o = precos(tuple(dict.fromkeys(list(w_u.index))), f"{USER_FORECAST_YEARS}y")
+                            oos = g["hrp_oos"](ca.format_carteira(pesos_ed), px_o.pct_change().iloc[1:], w_u,
+                                               str(px_o.index[-1].date()))
+                        except Exception:  # noqa: BLE001  sem preços longos: fica só a comparação na mesma amostra
+                            pass
+                        if oos is not None:
+                            ro = ca.resumo_oos(oos)
+                            st.markdown(
+                                f"**Fora da amostra** ({len(oos)} dias desde {oos.index[0].date()}, pesos HRP recalculados de "
+                                f"{HRP_OOS_PASSO} em {HRP_OOS_PASSO} dias só com os {HRP_OOS_JANELA} dias anteriores): CVaR "
+                                f"{N_CVAR} HRP **{fm.pct(ro.loc['hrp', 'cvar'], 2)}**, a tua carteira "
+                                f"{fm.pct(ro.loc['atual', 'cvar'], 2)}, pesos iguais {fm.pct(ro.loc['iguais', 'cvar'], 2)} · "
+                                f"volatilidade anual {fm.pct(ro.loc['hrp', 'vol'])}, {fm.pct(ro.loc['atual', 'vol'])} e "
+                                f"{fm.pct(ro.loc['iguais', 'vol'])}.")
                         if st.button("Usar estes pesos na tabela"):
                             st.session_state["cart_df"] = pd.DataFrame({"Ativo": list(w_h.index),
                                                                         "Peso (%)": [round(100 * v, 1) for v in w_h]})
@@ -337,8 +371,9 @@ def render(g: dict) -> None:
                         st.caption("Hierarchical Risk Parity (López de Prado, 2016): junta os ativos que caem nos mesmos dias "
                                    "(os 5% piores de cada um), ordena-os por essa proximidade e reparte o peso ao meio, vezes "
                                    f"sem conta, dando mais ao lado com menos CVaR {N_CVAR}. Usa só os ativos que já tens e a "
-                                   f"mesma janela ({janela.lower()}). É um exercício com dados passados, calculado na mesma "
-                                   "amostra em que é avaliado, por isso a redução mostrada é otimista. Não considera retornos "
+                                   f"mesma janela ({janela.lower()}). Os números de cima são calculados na mesma amostra em que "
+                                   "a HRP é escolhida, por isso são otimistas; a linha \"Fora da amostra\" é o teste honesto. "
+                                   "Não considera retornos "
                                    "esperados, custos nem impostos, e não é aconselhamento de investimento.")
 
             st.subheader("Stress da carteira")

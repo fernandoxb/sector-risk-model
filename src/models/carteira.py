@@ -8,6 +8,7 @@
   stress_setorial                    perda aproximada nos cenários históricos, pelo setor de cada posição
   score_carteira                     média dos scores dos setores, ponderada pela exposição
   calcular_pesos_hrp                 pesos por Hierarchical Risk Parity, agrupando pelos ativos que caem juntos
+  hrp_fora_da_amostra, resumo_oos    a HRP recalculada só com o passado, contra os pesos do utilizador e pesos iguais
 O risco das empresas é histórico e descritivo (sem previsão FHS nem backtest), como no mapa de risco.
 """
 import sys
@@ -20,7 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scipy.cluster.hierarchy import leaves_list, linkage  # noqa: E402
 from scipy.spatial.distance import squareform  # noqa: E402
 
-from config.settings import (CVAR_LEVEL, HRP_LINKAGE, HRP_MIN_DAYS, HRP_RISK_MEASURE, MARKET, PANIC_Q,  # noqa: E402
+from config.settings import (CVAR_LEVEL, HRP_LINKAGE, HRP_MIN_DAYS, HRP_OOS_JANELA, HRP_OOS_PASSO,  # noqa: E402
+                             HRP_RISK_MEASURE, MARKET, PANIC_Q, TRADING_DAYS,
                              SECTORS, USER_MARKET_LABEL, USER_PORTFOLIO_MAX)
 from src.models.cauda import joint_crash  # noqa: E402
 from src.models.cockpit import cvar, downside_beta  # noqa: E402
@@ -161,4 +163,25 @@ def calcular_pesos_hrp(retornos_ativos: pd.DataFrame, matriz_distancia: pd.DataF
     np.fill_diagonal(d, 0.0)
     ordem = [cols[i] for i in hrp_quasi_diag(linkage(squareform(d, checks=False), HRP_LINKAGE))]
     return hrp_recursive_bisection(r, ordem, risk_measure).reindex(cols)
+
+
+def hrp_fora_da_amostra(rets: pd.DataFrame, w: pd.Series, janela: int = HRP_OOS_JANELA, passo: int = HRP_OOS_PASSO,
+                        risk_measure: str = HRP_RISK_MEASURE) -> pd.DataFrame | None:
+    """Retornos diários fora da amostra de três carteiras com os mesmos ativos: a HRP, recalculada a cada `passo` dias
+    só com os `janela` dias anteriores; os pesos `w` do utilizador; e pesos iguais. Pesos constantes dentro de cada
+    período. None se não houver `janela` + `passo` dias em que todos os ativos têm preço."""
+    r = rets[list(w.index)].dropna()
+    if len(r) < janela + passo:
+        return None
+    partes = []
+    for i in range(janela, len(r), passo):
+        w_h = calcular_pesos_hrp(r.iloc[i - janela:i], risk_measure=risk_measure, min_days=min(HRP_MIN_DAYS, janela))
+        bloco = r.iloc[i:i + passo]
+        partes.append(pd.DataFrame({"hrp": bloco @ w_h, "atual": bloco @ w, "iguais": bloco.mean(axis=1)}))
+    return pd.concat(partes)
+
+
+def resumo_oos(oos: pd.DataFrame, alpha: float = CVAR_LEVEL) -> pd.DataFrame:
+    """Por carteira: volatilidade anual e CVaR a 1 dia dos retornos fora da amostra."""
+    return pd.DataFrame({"vol": oos.std() * np.sqrt(TRADING_DAYS), "cvar": oos.apply(lambda c: cvar(c, alpha))})
 

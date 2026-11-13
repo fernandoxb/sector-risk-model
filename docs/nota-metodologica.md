@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 5.8
+versao: 5.9
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -488,7 +488,8 @@ $$\alpha_1 = 1 - \frac{R_1}{R_1 + R_2},\qquad \alpha_2 = 1 - \alpha_1$$
 * **Casos-limite:** um só ativo recebe peso 1; com menos de `HRP_MIN_DAYS` = 252 dias comuns não há sugestão.
 * **Validação:** os pesos somam 1 e são não negativos nas duas medidas; com dois ativos, o resultado é a paridade de risco pelo CVaR calculada à mão; com A e B a cair juntos em mais de 90% dos piores dias e C independente e calmo, $w_C > w_A + w_B$.
 * **Exemplo (NVDA 30%, MSFT 20%, JPM 20%, XOM 15%, XLU 15%; 3 anos até 2026-11-12):** o CVaR 97,5% desce de 3,47% para 2,29% (−34%) e a volatilidade anual de 19,5% para 12,9%.
-* **Limitações:** os pesos são calculados e avaliados na mesma amostra, por isso a redução é otimista; fora da amostra será menor. O método não usa retornos esperados, custos nem impostos, e o corte ao meio segue a ordem das folhas, não os ramos da árvore. É uma leitura de risco, não aconselhamento de investimento.
+* **Fora da amostra (Fase 6):** `carteira.hrp_fora_da_amostra` recalcula os pesos HRP de 63 em 63 dias só com os 504 dias anteriores e mantém-nos até ao recálculo seguinte; compara com os pesos do utilizador e com pesos iguais nos mesmos dias. Na carteira do exemplo, em 750 dias desde 2023-11-17: CVaR 97,5% da HRP 2,56%, da carteira 3,47% e de pesos iguais 2,95%; volatilidade anual 13,7%, 19,7% e 16,2%. A redução fora da amostra (−26% no CVaR) é menor do que a calculada na mesma amostra (−34%), como se esperava, mas continua. Validação: mexer nos retornos depois de um recálculo não muda os pesos até lá.
+* **Limitações:** os números da mesma amostra são otimistas (o cockpit mostra os dois); o teste fora da amostra cobre só 3 anos, sem uma crise como 2008 ou 2020. O método não usa retornos esperados, custos nem impostos, e o corte ao meio segue a ordem das folhas, não os ramos da árvore. É uma leitura de risco, não aconselhamento de investimento.
 
 ---
 
@@ -761,7 +762,7 @@ Em cada bloco de $h$ dias, o VaR previsto na véspera é comparado com a perda d
 * Com cerca de 420 blocos de 10 dias por setor, esperam-se 10 exceções a 97,5% e 4 a 99%: o teste tem pouca força para distinguir os dois métodos.
 * Só a frequência de exceções é testada; o ES a 10 e 21 dias não tem backtest.
 * Os parâmetros do GARCH ficam fixos durante o horizonte, e a média diária $\mu$ estimada em 3 anos é somada todos os dias.
-* Os horizontes existem só para os 11 setores; as empresas e a carteira do utilizador continuam a 1 dia.
+* Os horizontes existem para os 11 setores e, desde a Fase 6, para a carteira do utilizador (o mesmo `horizonte.forecast` sobre os retornos com os pesos atuais; ex.: ES 97,5% de 13,6% a 10 dias e 17,4% a 1 mês na carteira do exemplo, contra 14,4% e 20,8% pela raiz do tempo). As empresas continuam a 1 dia.
 
 ---
 

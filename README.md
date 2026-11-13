@@ -96,7 +96,7 @@ acertado no backtest (k = 1 − Z2, em média ×1,30).
 O cockpit está organizado em separadores:
 * **Resumo:** alertas do dia, setores de maior risco e previsão oficial para amanhã.
 * **Teia de risco:** numa só vista, os fatores macro no centro, os 11 setores e as 10 maiores empresas de cada um, ligados pelo que mexe com quem e pelo que cai junto (janela de 1, 3, 5 ou 10 anos). Clicar num fator mostra o choque a correr pela cadeia; num setor, abre as empresas e a ficha do setor; numa empresa, a ficha com bolsa, risco e notícias. O simulador de choques pinta a teia com o efeito em cada setor e empresa e dá o resultado da tua carteira. Por baixo, o score dos 11 setores e todas as ligações aos fatores macro.
-* **Minha carteira:** monta uma carteira com as 110 empresas, os ETFs, o SPY ou qualquer outra ação do Yahoo (setor atribuído automaticamente); mostra o risco histórico e o previsto (modelo oficial), quem mais pesa nele, a exposição por setor na teia, o stress e uma carteira alternativa por Hierarchical Risk Parity. Guarda-se no link, sem conta.
+* **Minha carteira:** (VaR e ES previstos a 1 dia, 10 dias e 1 mês; HRP testada fora da amostra) monta uma carteira com as 110 empresas, os ETFs, o SPY ou qualquer outra ação do Yahoo (setor atribuído automaticamente); mostra o risco histórico e o previsto (modelo oficial), quem mais pesa nele, a exposição por setor na teia, o stress e uma carteira alternativa por Hierarchical Risk Parity. Guarda-se no link, sem conta.
 * **Análise ao vivo:** CVaR histórico, downside beta, regime de juros e exportação para o Obsidian.
 * **Modelo:** backtest.
 * **Carteira-base:** a carteira de referência dos 11 setores, com contribuições para o risco, stress históricos e um cenário de stress próprio.
@@ -197,7 +197,7 @@ Convenções:
 * **Scorecard e P × I:** 70% do peso do score é relativo aos 11 setores (só a cauda, em metade, e o regime se comparam com a história do próprio setor). O intervalo da posição mede a incerteza dos pesos, não a dos dados.
 * **Cenários e horizontes:** a simulação da cópula t subestima as quedas conjuntas; o ES a 10 e 21 dias não tem backtest (só o VaR), e os horizontes longos existem só para os setores.
 * **Motor de cenários:** só com os fatores macro subestima as perdas das crises (em média 15 pontos) e os intervalos são estreitos demais (32% dos setores dentro do intervalo de 90%). Mostra direções e diferenças entre setores, não a dimensão exata de uma crise.
-* **Carteira HRP:** os pesos são calculados e avaliados na mesma amostra, por isso a redução de risco mostrada é otimista.
+* **Carteira HRP:** na mesma amostra a redução de risco é otimista; o cockpit mostra também o teste fora da amostra (pesos recalculados de 3 em 3 meses só com o passado), que cobre apenas cerca de 3 anos.
 * **Âmbito:** é um projeto académico e não é aconselhamento de investimento.
 
 ## Estrutura

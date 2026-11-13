@@ -280,6 +280,9 @@ EXTRA_TICKERS: tuple[str, ...] = ()
 HRP_RISK_MEASURE = "cvar"       # risco de cada ramo: "cvar" (CVAR_LEVEL, histórico) ou "variance" (Ledoit-Wolf)
 HRP_MIN_DAYS = 252              # dias comuns mínimos para calcular
 HRP_LINKAGE = "single"          # método de agrupamento (scipy.cluster.hierarchy.linkage)
+# Teste fora da amostra: pesos HRP recalculados a cada HRP_OOS_PASSO dias só com os HRP_OOS_JANELA dias anteriores
+HRP_OOS_JANELA = 2 * TRADING_DAYS
+HRP_OOS_PASSO = 63              # cerca de 3 meses
 
 # --- Modelo de risco por empresa (src/models/backtest_empresas.py) -----------
 # O mesmo backtest dos setores (histórico, GARCH-t, FHS) aplicado às empresas de holdings.csv, com preços
