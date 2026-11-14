@@ -49,7 +49,7 @@ Todos os parâmetros estão em `config/settings.py`. As funções de cálculo s�
    (`ajustar_varios`). A validação em `cenarios.episodio` estima só com as semanas antes de cada crise.
    **Resultado conhecido:** os intervalos de 90% cobrem 7 de 31 setores-crise só com fatores macro e 16 de 31 com o
    mercado real (esperado: cerca de 28). O cockpit chama-lhes "intervalos do modelo" e mostra esta cobertura.
-5. **Cópulas:** ρ pelo tau de Kendall, ν por máxima verosimilhança (`cauda.fit_nu`, validado contra a tabela 5.1 do QRM);
+5. **Cópulas:** ρ pelo tau de Kendall, ν por máxima verosimilhança (`cauda.fit_nu`, verosimilhança igual à do `scipy`), λ validado contra a tabela 5.1 do QRM;
    cópula t assimétrica com γ pelo método dos momentos (`ajustar_gama`): um parâmetro para duas médias.
 6. **Regressões dos fatores:** erros HAC de Newey–West (validados contra a fórmula à mão), regressão conjunta Ridge
    (igual ao `sklearn`), aceitação por |t| ≥ 2 sem correção para testes múltiplos.
