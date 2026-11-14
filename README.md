@@ -124,4 +124,4 @@ tests/                  pytest, no network (includes the cockpit in snapshot mod
 docs/                   methodological note (PT, .md and .pdf), English summary and screenshots
 ```
 
-Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md). Citing: see [CITATION.cff](CITATION.cff). Licence: MIT.
+Reviewing the project: [docs/guia-revisao.md](docs/guia-revisao.md) (Portuguese). Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md). Citing: see [CITATION.cff](CITATION.cff). Licence: MIT.
