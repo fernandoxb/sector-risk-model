@@ -291,7 +291,7 @@ st.sidebar.markdown("[Código no GitHub](https://github.com/fernandoxb/sector-ri
 # ============================================================================ cabeçalho
 st.title("🛡️ Cockpit de Risco Setorial")
 if "snapshot" in FONTES:
-    st.info(f"📦 Modo snapshot: preços e juros guardados no repositório (até {SNAP_META.get('dados_ate', '?')}), "
+    st.info(f"📦 Modo snapshot: índices de preços (base 100) e juros guardados no repositório (até {SNAP_META.get('dados_ate', '?')}), "
             f"porque {'COCKPIT_SNAPSHOT está ativo' if FORCAR_SNAPSHOT else 'o Yahoo não respondeu'}.")
 
 tabs = st.tabs(["📋 Resumo", "🕸️ Teia de risco", "💼 Minha carteira", "📊 Análise ao vivo", "🧪 Modelo", "🧩 Carteira-base",
