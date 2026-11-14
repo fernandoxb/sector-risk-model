@@ -129,7 +129,7 @@ O cockpit está organizado em separadores:
 * **Carteira com pesos iguais:** volatilidade de 12,1% e CVaR 97,5% de 2,21% a 1 dia. A diversificação vale 1,49× na volatilidade, mas só 1,39× no CVaR, porque nas quedas os setores caem juntos.
 * **Stress 2008:** a carteira perde 49,5% (SPY: 55,2%). Na COVID-19 perde mais do que o SPY (36,0% contra 33,7%), por causa do peso da energia.
 * **Fatores macro:** 34 das 66 ligações fator → setor são significativas (|t| ≥ 2 com HAC). As mais fortes são o VIX → XLK (t = −14,5) e os spreads high yield → XLI (t = −11,8).
-* **Scorecard:** o XLK lidera (91/100) com quaisquer pesos. XLY (72), XLE (69) e XLI (68) não se distinguem: as posições variam entre o 2.º e o 5.º lugar quando os pesos mudam.
+* **Scorecard:** o cockpit mostra grupos em vez de posições, porque os intervalos de posição se sobrepõem: grupo 1 XLK (91/100, 1.º com quaisquer pesos); grupo 2 XLY, XLE, XLI e XLF (62–71); grupo 3 os outros seis.
 
 ## Arquitetura
 ```mermaid

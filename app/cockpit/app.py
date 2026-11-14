@@ -39,6 +39,7 @@ from config.settings import (BT_WINDOW, CALENDAR_PREVIEW, COMPANY_TTL, CVAR_YEAR
                              SNAPSHOT_REMOTE_TTL, SNAPSHOT_REMOTE_URL)  # noqa: E402
 from src.collect import empresas as emp, sessao as cal  # noqa: E402
 from src.models import backtest_empresas as be, carteira as ca_m, cockpit as ck, horizonte as hz  # noqa: E402
+from src.models.scorecard import grupos  # noqa: E402
 import paineis.ao_vivo  # noqa: E402
 import paineis.carteira_base  # noqa: E402
 import paineis.glossario  # noqa: E402
@@ -160,6 +161,8 @@ def ler_series(path: str, mtime: float) -> pd.DataFrame:
 
 
 sc = feat_csv("scorecard.csv", index_col=0)
+if sc is not None and "grupo" not in sc:                 # snapshot anterior aos grupos
+    sc["grupo"] = grupos(sc)
 off = feat_csv("official_risk.csv", index_col="setor")
 bt_res = feat_csv("var_backtest.csv")
 rc = feat_csv("risk_contribution.csv", index_col=0)

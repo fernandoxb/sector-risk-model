@@ -8,6 +8,7 @@ Funções puras (sem Streamlit, sem I/O) — o `main()` no fim é o único ponto
   own_history_pct      percentil do ES de hoje na história das previsões do próprio setor
   normalize            componentes em [0, 1] (o regime já vem em [0, 1]; a cauda junta posição e história própria)
   rank_uncertainty     intervalo da posição de cada setor quando os pesos variam
+  grupos               setores cujos intervalos de posição se sobrepõem ficam no mesmo grupo
   weighted             média ponderada de um subconjunto de componentes
   scorecard            score 0–100, ajuste de risco de modelo, impacto e probabilidade (1–5)
   sensitivity          como muda o top 3 quando cada peso varia ±x% (re-normalizando)
@@ -144,6 +145,22 @@ def rank_uncertainty(raw: pd.DataFrame, traffic: pd.Series, weights: dict[str, f
                          "p_top3": (ranks <= 3).mean(axis=1)}, index=raw.index)
 
 
+def grupos(sc: pd.DataFrame) -> pd.Series:
+    """Grupos de setores que não se distinguem. Pela ordem do score, um setor entra no grupo em curso se o seu
+    intervalo de posição (rank_p05–rank_p95) partilhar pelo menos uma posição com o de **todos** os que já lá estão;
+    senão abre o grupo seguinte. Sem intervalos, cada setor é o seu próprio grupo (a posição)."""
+    if "rank_p05" not in sc:
+        return sc["rank"].astype(int).rename("grupo")
+    g, lo, hi, out = 0, 0, 0, {}                     # [lo, hi] = posições comuns a todos os membros do grupo
+    for t, r in sc.sort_values("score_final", ascending=False).iterrows():
+        if g and r["rank_p05"] <= hi and r["rank_p95"] >= lo:
+            lo, hi = max(lo, r["rank_p05"]), min(hi, r["rank_p95"])
+        else:
+            g, lo, hi = g + 1, r["rank_p05"], r["rank_p95"]
+        out[t] = g
+    return pd.Series(out, name="grupo").reindex(sc.index)
+
+
 def _top(raw: pd.DataFrame, traffic: pd.Series, weights: dict[str, float], n: int = 3) -> list[str]:
     return list(scorecard(raw, traffic, weights).index[:n])
 
@@ -181,6 +198,7 @@ def main() -> Path:
     raw = raw_components(official, rc, stress, metrics, series, tickers)
     sc = scorecard(raw, traffic)
     sc = sc.join(rank_uncertainty(raw, traffic))
+    sc["grupo"] = grupos(sc)
     sens = sensitivity(raw, traffic)
 
     out = FEATURES / "scorecard.csv"
@@ -188,7 +206,7 @@ def main() -> Path:
     sens.to_csv(FEATURES / "scorecard_sensitivity.csv", index=False, float_format="%.4f")
 
     print(f"[scorecard] {len(sc)} setores → {out.name}")
-    cols = ["rank", "rank_p05", "rank_p95", "p_top3", *COMPONENTS, "score", "semaforo", "score_final", "impacto"]
+    cols = ["rank", "grupo", "rank_p05", "rank_p95", "p_top3", *COMPONENTS, "score", "semaforo", "score_final", "impacto"]
     print(sc[cols].round(3).to_string())
     print(sens.to_string(index=False))
     return out

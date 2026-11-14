@@ -173,7 +173,9 @@ def render(g: dict) -> None:
             st.caption(f"Setor {SECTOR_PROFILE[fs]['tipo'].lower()} · resultados do pipeline até {PIPE_ASOF} · "
                        "clica numa empresa do mapa para ver a sua ficha")
             f1, f2, f3, f4, f5 = st.columns(5)
-            metrica(f1, "Score de risco", fm.num(r["score_final"], 0), f"{int(r['rank'])}.º de {len(sc)}")
+            metrica(f1, "Score de risco", fm.num(r["score_final"], 0),
+                    f"grupo {int(r['grupo'])} de {int(sc['grupo'].max())}"
+                    + (f" · posições {int(r['rank_p05'])}–{int(r['rank_p95'])}" if "rank_p05" in r and r["rank_p05"] != r["rank_p95"] else ""))
             metrica(f2, "P × I", str(p_ * i_), f"P{p_} × I{i_} · nível {pi_level(p_, i_)}")
             metrica(f3, f"ES {N_CVAR} para {PREV_DATA}", fm.pct(off.loc[fs, "es975"]), f"VaR 99%: {fm.pct(off.loc[fs, 'var99'])}",
                     ajuda=f"Previsão oficial ({OFICIAL}) da perda a 1 dia.")

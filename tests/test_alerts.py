@@ -158,15 +158,17 @@ def test_stress_mais_severo():
 
 def test_nota_semanal(ontem):
     hoje = copy.deepcopy(ontem) | {"asof": "2026-11-13", "ligacoes": ["juros|XLRE|+", "petroleo|XLE|-"]}
-    hoje["setores"]["XLE"] |= {"score": 85.0, "rank": 1}
-    hoje["setores"]["XLK"] |= {"rank": 2}
+    hoje["setores"]["XLE"] |= {"score": 85.0, "rank": 1, "grupo": 1}
+    hoje["setores"]["XLK"] |= {"rank": 2, "grupo": 1}
+    ontem = copy.deepcopy(ontem)
+    ontem["setores"]["XLE"]["grupo"], ontem["setores"]["XLK"]["grupo"] = 2, 1
     exc = pd.DataFrame(columns=["data", "setor", "perda", "var", "es", "acima_es"])
     st = {"cenario": "2008 · Crise", "perda_carteira": 0.5, "proxy": True, "setor": "XLF",
           "perda_setor": 0.8, "proxy_setor": False}
     fm, md = wk.weekly_note(hoje, ontem, exc, st, dias=5)
     assert fm["semana"] == "2026-W46" and fm["top1"] == "XLE" and fm["top3"] == "[XLE, XLK, XLU]"
     assert fm["ligacoes_novas"] == 1 and fm["ligacoes_sairam"] == 1 and fm["excecoes"] == 0
-    assert "+25,0 (+1 pos.)" in md and "Nenhuma exceção" in md and "1,4 (2,5% × 5 dias" in md
+    assert "+25,0 (grupo 2 → 1)" in md and "| 1 | [[XLK]]" in md and "Nenhuma exceção" in md and "1,4 (2,5% × 5 dias" in md
     assert md.startswith("---\ntipo: relatorio-semanal")
     _, md0 = wk.weekly_note(hoje, None, exc, st, dias=5)
     assert "Sem estado anterior" in md0
@@ -199,3 +201,20 @@ def test_alerta_de_dados_atrasados():
     assert al.stale_alert("2026-11-11", "2026-11-11") is None
     a = al.stale_alert("2026-11-10", "2026-11-11")
     assert a["severidade"] == "alta" and "2026-11-10" in a["texto"] and "2026-11-11" in a["texto"]
+
+
+def test_mudanca_de_grupo(ontem):
+    """Só a mudança de grupo gera alerta; mudar de posição dentro do mesmo grupo não. Sem grupo no estado de ontem
+    (estados antigos), não há alerta."""
+    ontem = copy.deepcopy(ontem)
+    for t, g in (("XLK", 2), ("XLE", 2), ("XLU", 3)):
+        ontem["setores"][t]["grupo"] = g
+    hoje = copy.deepcopy(ontem) | {"asof": "2026-11-10"}
+    hoje["setores"]["XLK"] |= {"grupo": 1, "rank": 1}                     # sobe ao grupo 1: média
+    hoje["setores"]["XLU"] |= {"grupo": 3, "rank": 9}                     # muda de posição, mesmo grupo: nada
+    hoje["setores"]["XLE"] |= {"grupo": 3}                                # desce de grupo: baixa
+    assert {a for a in tipos(al.compare(ontem, hoje)) if a[0] == "grupo"} == {("grupo", "XLK", "média"), ("grupo", "XLE", "baixa")}
+    sem = copy.deepcopy(ontem)
+    for s in sem["setores"].values():
+        s.pop("grupo", None)
+    assert not [a for a in al.compare(sem, hoje) if a["tipo"] == "grupo"]

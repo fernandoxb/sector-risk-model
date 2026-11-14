@@ -63,7 +63,7 @@ Kupiec, Christoffersen and the Acerbi–Székely Z2 test at 97.5%:
 | Factor models | Weekly HAC regressions on rates, breakeven inflation, credit spreads, VIX, oil and the dollar, one at a time and jointly; company risk split into market, sector and own | `src/models/factor_links.py`, `decomposicao.py` |
 | Scenario engine | Shock → other factors (conditional normal) → sectors (joint regression, bootstrapped residuals widened in intense shocks, 50 bootstrapped parameter sets) → companies (beta to their ETF); validated out of sample on 2008, 2020 and 2022 | `src/models/cenarios.py` |
 | Portfolio | Ledoit-Wolf covariance, Euler contributions to volatility and CVaR, 2008/2020/2022 stress tests, any Yahoo ticker, Hierarchical Risk Parity on the joint-crash distance tested out of sample | `src/models/portfolio.py`, `carteira.py` |
-| Scorecard 0–100 | Five components, the tail also against each sector's own history, Basel-light model-risk multiplier, rank intervals from Dirichlet weight draws | `src/models/scorecard.py` |
+| Scorecard 0–100 | Five components, the tail also against each sector's own history, Basel-light model-risk multiplier, rank intervals from Dirichlet weight draws, shown as groups of sectors that cannot be told apart | `src/models/scorecard.py` |
 | Automation | Prefect flow (one task per step), launchd on NYSE trading days, data contracts (pandera), alerts and a weekly report in Obsidian, weekly snapshot published to its own branch | `flows/`, `src/report/` |
 
 | Risk web | Open sector |

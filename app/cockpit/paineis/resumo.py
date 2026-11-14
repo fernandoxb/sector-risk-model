@@ -42,12 +42,14 @@ def render(g: dict) -> None:
                 c2.markdown(texto if texto.lower().startswith(a["tipo"].lower()) else f"**{tipo}** · {texto}")
 
         st.subheader("Setores de maior risco")
+        st.caption("Os setores do mesmo grupo não se distinguem: a posição entre eles muda quando os pesos do score "
+                   "variam (separador Teia de risco, score dos 11 setores).")
         cols = st.columns(3)
         for col, t in zip(cols, sc.index[:3]):
             r = sc.loc[t]
             nv = pi_level(r["probabilidade"], r["impacto"])
             with col.container(border=True):
-                st.markdown(f"**{int(r['rank'])}. {nome(t)}**")
+                st.markdown(f"**Grupo {int(r['grupo'])} · {nome(t)}**")
                 metrica(st, "Score de risco (0–100)", fm.num(r["score_final"], 0),
                         f"P{int(r['probabilidade'])} × I{int(r['impacto'])} = "
                         f"{int(r['probabilidade'] * r['impacto'])} · nível {nv}")

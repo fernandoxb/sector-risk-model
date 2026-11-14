@@ -160,3 +160,21 @@ def test_incerteza_do_ranking(raw, verde):
     oficial = sc.scorecard(raw, verde)["rank"]
     assert (fixo["rank_p05"] == fixo["rank_p95"]).all() and (fixo["rank_p05"] == oficial.reindex(fixo.index)).all()
 
+
+
+def test_grupos_juntam_intervalos_que_se_sobrepoem():
+    sc = pd.DataFrame({"score_final": [90, 70, 68, 60, 40, 39],
+                       "rank_p05": [1, 2, 2, 3, 5, 5], "rank_p95": [1, 4, 3, 4, 6, 6]}, index=list("ABCDEF"))
+    assert sc.pipe(sc_grupos).tolist() == [1, 2, 2, 2, 3, 3]
+    sem = pd.DataFrame({"score_final": [2, 1], "rank": [1, 2]}, index=list("XY"))
+    assert sem.pipe(sc_grupos).tolist() == [1, 2]                              # sem intervalos: a posição
+
+
+def sc_grupos(df):
+    return sc.grupos(df)
+
+
+def test_grupos_exigem_sobreposicao_com_todos():
+    """C toca em B mas não em A: com a regra 'todos', C abre um grupo novo (em cadeia ficaria com A e B)."""
+    sc_ = pd.DataFrame({"score_final": [3, 2, 1], "rank_p05": [1, 1, 2], "rank_p95": [1, 2, 3]}, index=list("ABC"))
+    assert sc_grupos(sc_).tolist() == [1, 1, 2]

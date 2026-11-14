@@ -107,16 +107,16 @@ def weekly_note(cur: dict, ref: dict | None, exc: pd.DataFrame, stress: dict, di
          + (" (início desta semana: ainda não há estado da semana anterior)."
             if ref and ref["asof"] >= fm["inicio"] else "."), "",
          f"## Top {WEEKLY_TOP} do scorecard (0–100)", "",
-         "| # | Setor | Score | Variação | P × I | Nível | Semáforo |", "| --- | --- | --- | --- | --- | --- | --- |"]
+         "| Grupo | Setor | Score | Variação | P × I | Nível | Semáforo |", "| --- | --- | --- | --- | --- | --- | --- |"]
     for t, s in top:
         if ref and t in ref["setores"]:
             r = ref["setores"][t]
-            mov = r["rank"] - s["rank"]
             d = s["score"] - r["score"]
-            var = ("=" if abs(d) < 0.05 else _num(d, "+.1f")) + (f" ({mov:+d} pos.)" if mov else "")
+            g0, g1 = r.get("grupo"), s.get("grupo")
+            var = ("=" if abs(d) < 0.05 else _num(d, "+.1f")) + (f" (grupo {g0} → {g1})" if g0 and g1 and g0 != g1 else "")
         else:
             var = "—"
-        L.append(f"| {s['rank']} | [[{t}]] {SECTORS[t]} | {_num(s['score'])} | {var} | "
+        L.append(f"| {s.get('grupo', s['rank'])} | [[{t}]] {SECTORS[t]} | {_num(s['score'])} | {var} | "
                  f"{s['probabilidade']} × {s['impacto']} = {s['pi']} | {s['nivel']} | {s['semaforo']} |")
 
     L += ["", f"## Exceções ao VaR {NIVEL_TXT} oficial ({METODO_TXT}, 1 dia)", ""]

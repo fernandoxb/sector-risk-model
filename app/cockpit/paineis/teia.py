@@ -147,7 +147,8 @@ def opcoes(sc: pd.DataFrame, links: pd.DataFrame | None, pares: pd.DataFrame | N
                               **({"formatter": f"{s}\n{fm.pct(cenario[s], 1, sinal=True)}", "lineHeight": 13}
                                  if esc and s in cenario.index else {})},
                     "dica": f"<b>{nome(s)}</b><br/>Score de risco {fm.num(sco, 0)}/100"
-                            f"<br/>ES 97,5% amanhã {fm.pct(es_s.get(s))}<br/>Cai junto com: {cai or '—'}"
+                            + (f" · grupo {int(sc.loc[s, 'grupo'])} de {int(sc['grupo'].max())}" if "grupo" in sc and s in sc.index else "")
+                            + f"<br/>ES 97,5% amanhã {fm.pct(es_s.get(s))}<br/>Cai junto com: {cai or '—'}"
                             + txt_cen(s) + "<br/><i>clica para abrir as empresas</i>"})
     # empresas
     es_e = comp_risk["es975_aj"] if comp_risk is not None else pd.Series(dtype=float)

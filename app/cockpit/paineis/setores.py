@@ -24,8 +24,12 @@ def render(g: dict) -> None:
         st.caption("Junta cinco medidas de risco num número: 100 = o setor mais arriscado em todas, 0 = o menos "
                    f"arriscado em todas. Dados até {PIPE_ASOF}.")
         s1, s2, s3 = st.columns(3)
-        lider = sc.index[0]
-        metrica(s1, "Setor de maior risco", lider, f"score {fm.num(sc.loc[lider, 'score_final'], 0)}/100")
+        g1 = sc[sc["grupo"] == sc["grupo"].min()]
+        metrica(s1, "Grupo de maior risco", ", ".join(g1.index),
+                f"score {fm.num(g1['score_final'].max(), 0)}/100" if len(g1) == 1 else
+                f"scores {fm.num(g1['score_final'].min(), 0)}–{fm.num(g1['score_final'].max(), 0)}",
+                ajuda="Os setores do mesmo grupo não se distinguem: os seus intervalos de posição sobrepõem-se quando os "
+                      "pesos do score variam à volta dos oficiais.")
         crit = sc[sc["impacto"] * sc["probabilidade"] >= CRIT_MIN]
         metrica(s2, f"Setores em nível {CRIT}", str(len(crit)), ", ".join(crit.index) or "nenhum",
                 ajuda=f"Nível {CRIT}: probabilidade × impacto (P × I) ≥ {CRIT_MIN}, numa escala de 1 a 25. "
@@ -54,7 +58,8 @@ def render(g: dict) -> None:
             st.plotly_chart(fig_sc, width="stretch")
         with col_t:
             st.dataframe(pd.DataFrame({
-                "Setor": [f"{int(r)}. {t}" for t, r in zip(sc.index, sc["rank"])],
+                "Grupo": sc["grupo"].astype(int).values,
+                "Setor": list(sc.index),
                 "Score": sc["score_final"].round(0).astype(int),
                 **({"Posição": [f"{a}–{b}" if a != b else f"{a}" for a, b in zip(sc["rank_p05"], sc["rank_p95"])]}
                    if "rank_p05" in sc else {}),
@@ -63,6 +68,8 @@ def render(g: dict) -> None:
                 "ES amanhã": sc["bruto_cauda"].map(fm.pct),
             }), hide_index=True, width="stretch", height=470, column_config={
                 "Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d"),
+                "Grupo": st.column_config.NumberColumn("Grupo", help="Setores do mesmo grupo não se distinguem: os "
+                                                       "intervalos de posição sobrepõem-se.", width="small"),
                 "Posição": st.column_config.TextColumn("Posição", help="Entre que posições o setor fica em 90% dos casos "
                                                        "quando os pesos do score variam à volta dos oficiais."),
                 "P × I": st.column_config.TextColumn("P × I", help="Probabilidade (1–5) × impacto (1–5) e nível."),

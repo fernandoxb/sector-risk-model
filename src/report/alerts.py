@@ -64,7 +64,7 @@ def build_state(asof: str, scorecard: pd.DataFrame, series: pd.DataFrame, links:
                 regime: dict | None) -> dict:
     """Estado compacto do dia `asof` (data dos dados).
 
-    scorecard: índice = setor, colunas score_final, semaforo, impacto, probabilidade, rank
+    scorecard: índice = setor, colunas score_final, semaforo, impacto, probabilidade, rank (e grupo, se houver)
     series:    var_backtest_series (data, setor, ret, var_<método>_<nível>, es_<método>_<nível>)
     links:     factor_links.csv (fator, setor, aceite, sinal)
     """
@@ -77,6 +77,8 @@ def build_state(asof: str, scorecard: pd.DataFrame, series: pd.DataFrame, links:
              "impacto": int(r["impacto"]), "probabilidade": int(r["probabilidade"]),
              "pi": int(r["impacto"]) * int(r["probabilidade"]),
              "nivel": pi_level(r["probabilidade"], r["impacto"])}
+        if "grupo" in r and pd.notna(r["grupo"]):
+            s["grupo"] = int(r["grupo"])
         if t in day.index and pd.notna(day.loc[t, var_col]):
             perda, var, es = -float(day.loc[t, "ret"]), float(day.loc[t, var_col]), float(day.loc[t, es_col])
             s |= {"perda": round(perda, 6), VAR_KEY: round(var, 6), ES_KEY: round(es, 6), "excecao": perda > var}
@@ -124,6 +126,10 @@ def compare(prev: dict | None, cur: dict) -> list[dict]:
                 out.append(_alert(sev, "nível P×I", t,
                                   f"[[{t}]]: nível {p['nivel']} → {s['nivel']} (P×I {p['pi']} → {s['pi']}, "
                                   f"score {_num(p['score'])} → {_num(s['score'])})"))
+            if p.get("grupo") and s.get("grupo") and p["grupo"] != s["grupo"]:   # posições dentro do grupo não contam
+                out.append(_alert("média" if s["grupo"] < p["grupo"] else "baixa", "grupo", t,
+                                  f"[[{t}]]: grupo {p['grupo']} → {s['grupo']} do scorecard "
+                                  f"(score {_num(p['score'])} → {_num(s['score'])})"))
         antes, agora = set(prev["ligacoes"]), set(cur["ligacoes"])
         for sev, verbo, ligs in (("média", "nova", agora - antes), ("baixa", "deixou de ser significativa", antes - agora)):
             for lig in sorted(ligs):

@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 6.2
+versao: 6.4
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -270,6 +270,8 @@ $$\text{score}_i = 100 \sum_k w_k\, c_{i,k},\qquad \sum_k w_k = 1$$
 
 **Incerteza do ranking (v5.3):** os pesos são uma escolha. Para ver quanto a posição de cada setor depende deles, sorteiam-se 5 000 conjuntos de pesos à volta dos oficiais, $w \sim \text{Dirichlet}(20 \cdot w^{oficial})$ (o peso de 0,30 varia com desvio-padrão de cerca de 0,10), e recalcula-se o ranking. O `scorecard.csv` guarda `rank_p05` e `rank_p95` (as posições entre as quais o setor fica em 90% dos sorteios) e `p_top3`. Mede só a incerteza dos pesos, não a dos dados.
 
+**Grupos em vez de posições (desde 2026-11-14):** como os intervalos se sobrepõem, o cockpit mostra grupos. Pela ordem do score, um setor entra no grupo em curso só se o seu intervalo de posição partilhar pelo menos uma posição com o de **todos** os que já lá estão (em uma dimensão, é o mesmo que haver uma posição comum a todos); senão abre o grupo seguinte (`scorecard.grupos`, coluna `grupo`). O grupo aparece no Resumo, na tabela do score, na ficha e na dica de cada setor na teia, e no relatório semanal; o Sentinela avisa quando um setor muda de grupo (média se sobe, baixa se desce), mas não quando só muda de posição dentro do grupo. A posição continua guardada no estado diário.
+
 ### C. Validação
 * O percentil na história própria e a mistura da cauda são verificados à mão; um setor pior em tudo fica em 1.º em todos os sorteios, e sem variação dos pesos o intervalo reduz-se à posição oficial.
 * A normalização é testada nos extremos (o menor dá 0, o maior dá 1), nos empates e com o regime intacto.
@@ -279,7 +281,7 @@ $$\text{score}_i = 100 \sum_k w_k\, c_{i,k},\qquad \sum_k w_k = 1$$
 
 ### D. Sensibilidade e leitura (2026-11-12)
 * **Topo:** o XLK é o 1.º com folga (score 91) e fica em 1.º em todos os sorteios de pesos. Tem o maior ES previsto (8,2%, no percentil 97% da sua própria história), a maior contribuição para o CVaR por unidade de peso (1,42×) e a volatilidade no percentil 89%.
-* **Logo abaixo:** XLY (72), XLE (69) e XLI (68) não se distinguem: os intervalos são 2–4, 2–5 e 2–4, e a probabilidade de estar no top 3 é 80%, 62% e 54%. A ordem entre eles depende dos pesos.
+* **Logo abaixo:** XLY (71), XLE (69), XLI (68) e XLF (62) não se distinguem (intervalos 2–4, 2–5, 2–4 e 3–5) e formam o grupo 2; os outros seis formam o grupo 3. Grupos de 2026-11-13: **1** XLK · **2** XLY, XLE, XLI, XLF · **3** XLB, XLV, XLP, XLU, XLRE, XLC.
 * **Fundo:** XLP, XLU, XLC e XLRE ficam entre o 7.º/8.º e o 11.º; a ordem entre eles também não é fiável.
 * **Efeito da história própria:** o XLC tinha cauda 0 por ser o último dos 11; o seu ES de hoje está no percentil 27% da sua história, por isso a cauda passa a 0,14. O XLP sobe para 0,73: é dos menos arriscados dos 11, mas está alto face ao seu próprio passado.
 * **Quebra na série:** as mudanças de 2026-11-13 (stress só com perdas, cauda com história própria) alteram o score sem que o mercado mude; os alertas desse dia sobre níveis P × I vêm daí.
@@ -377,6 +379,7 @@ Em cada run grava um estado compacto do dia em `data/state/estado_<data>.json`: 
 | Alerta | Regra | Severidade |
 | --- | --- | --- |
 | Semáforo | muda o semáforo de Basileia (VaR 99% do modelo oficial, 250 dias) | piora para vermelho: alta; piora para amarelo: média; melhoria: baixa |
+| Grupo | o setor muda de grupo do scorecard (secção 8) | média se sobe a um grupo de mais risco; baixa se desce |
 | Exceção | perda do dia > VaR 97,5% oficial previsto com dados até t−1 | média; alta se também > ES 97,5% |
 | Nível P × I | muda o nível de P × I: baixo ≤ 4, moderado ≤ 9, elevado ≤ 16, crítico ≤ 25 | sobe para crítico: alta; outra subida: média; descida: baixa |
 | Ligação medida | uma ligação fator → setor passa a ser aceite (\|t\| ≥ 2) ou deixa de o ser | entra: média; sai: baixa |

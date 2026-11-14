@@ -57,7 +57,7 @@ The user picks a shock (e.g. VIX +50% in a month). Unshocked factors follow the 
 
 * **Any portfolio** of the 110 companies, the ETFs, SPY or any Yahoo ticker (sector assigned automatically): Euler contributions to volatility and CVaR, 1-day, 10-day and 1-month forecasts with their own backtest, historical stress tests (2008, 2020, 2022) and the scenario engine's result for the portfolio.
 * **Hierarchical Risk Parity** on the joint-fall distance, with CVaR as the cluster risk. Re-estimated every 63 days on the previous 504 only (out of sample), on an example portfolio: CVaR 2.56% against 3.47% for the user's weights and 2.95% for equal weights.
-* **0–100 sector scorecard:** tail, systemic, stress, regime and momentum; the tail compares each sector both with the others and with its own history; Dirichlet draws of the weights give each sector a rank interval (XLK is first under every draw; ranks 2–4 are not distinguishable).
+* **0–100 sector scorecard:** tail, systemic, stress, regime and momentum; the tail compares each sector both with the others and with its own history; Dirichlet draws of the weights give each sector a rank interval (XLK is first under every draw); since the intervals overlap, the cockpit shows groups instead of ranks: XLK; then XLY, XLE, XLI and XLF; then the other six.
 
 ## 6. Engineering
 
