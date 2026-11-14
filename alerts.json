@@ -1,0 +1,24 @@
+{
+ "asof": "2026-11-13",
+ "referencia": "2026-11-12",
+ "alertas": [
+  {
+   "severidade": "baixa",
+   "tipo": "ligação",
+   "alvo": "spreads→XLB",
+   "texto": "Ligação medida deixou de ser significativa: Spread de crédito Baa (Moody's) → [[XLB]] (o adverso agrava)"
+  },
+  {
+   "severidade": "baixa",
+   "tipo": "ligação",
+   "alvo": "spreads→XLRE",
+   "texto": "Ligação medida deixou de ser significativa: Spread de crédito Baa (Moody's) → [[XLRE]] (o adverso agrava)"
+  },
+  {
+   "severidade": "baixa",
+   "tipo": "ligação",
+   "alvo": "spreads→XLV",
+   "texto": "Ligação medida deixou de ser significativa: Spread de crédito Baa (Moody's) → [[XLV]] (o adverso agrava)"
+  }
+ ]
+}

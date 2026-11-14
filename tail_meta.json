@@ -1,0 +1,332 @@
+{
+ "q": 0.05,
+ "anos": 3,
+ "grupos": {
+  "setores": {
+   "nu": 9.82,
+   "dias": 752,
+   "series": 11
+  },
+  "XLK": {
+   "nu": 11.09,
+   "dias": 752,
+   "series": 11
+  },
+  "XLF": {
+   "nu": 8.53,
+   "dias": 752,
+   "series": 11
+  },
+  "XLE": {
+   "nu": 9.92,
+   "dias": 752,
+   "series": 11
+  },
+  "XLV": {
+   "nu": 12.65,
+   "dias": 752,
+   "series": 11
+  },
+  "XLI": {
+   "nu": 9.7,
+   "dias": 661,
+   "series": 11
+  },
+  "XLY": {
+   "nu": 12.39,
+   "dias": 752,
+   "series": 11
+  },
+  "XLP": {
+   "nu": 14.77,
+   "dias": 752,
+   "series": 11
+  },
+  "XLU": {
+   "nu": 8.19,
+   "dias": 752,
+   "series": 11
+  },
+  "XLB": {
+   "nu": 14.42,
+   "dias": 752,
+   "series": 11
+  },
+  "XLRE": {
+   "nu": 10.58,
+   "dias": 752,
+   "series": 11
+  },
+  "XLC": {
+   "nu": 12.29,
+   "dias": 752,
+   "series": 11
+  }
+ },
+ "janelas": {
+  "1": {
+   "q": 0.1,
+   "grupos": {
+    "setores": {
+     "nu": 14.06,
+     "dias": 250,
+     "series": 11
+    },
+    "XLK": {
+     "nu": 11.17,
+     "dias": 250,
+     "series": 11
+    },
+    "XLF": {
+     "nu": 8.12,
+     "dias": 250,
+     "series": 11
+    },
+    "XLE": {
+     "nu": 13.82,
+     "dias": 250,
+     "series": 11
+    },
+    "XLV": {
+     "nu": 14.47,
+     "dias": 250,
+     "series": 11
+    },
+    "XLI": {
+     "nu": 12.16,
+     "dias": 250,
+     "series": 11
+    },
+    "XLY": {
+     "nu": 14.5,
+     "dias": 250,
+     "series": 11
+    },
+    "XLP": {
+     "nu": 21.67,
+     "dias": 250,
+     "series": 11
+    },
+    "XLU": {
+     "nu": 8.98,
+     "dias": 250,
+     "series": 11
+    },
+    "XLB": {
+     "nu": 19.07,
+     "dias": 250,
+     "series": 11
+    },
+    "XLRE": {
+     "nu": 12.65,
+     "dias": 250,
+     "series": 11
+    },
+    "XLC": {
+     "nu": 16.11,
+     "dias": 250,
+     "series": 11
+    }
+   }
+  },
+  "3": {
+   "q": 0.05,
+   "grupos": {
+    "setores": {
+     "nu": 9.82,
+     "dias": 752,
+     "series": 11
+    },
+    "XLK": {
+     "nu": 11.09,
+     "dias": 752,
+     "series": 11
+    },
+    "XLF": {
+     "nu": 8.53,
+     "dias": 752,
+     "series": 11
+    },
+    "XLE": {
+     "nu": 9.92,
+     "dias": 752,
+     "series": 11
+    },
+    "XLV": {
+     "nu": 12.65,
+     "dias": 752,
+     "series": 11
+    },
+    "XLI": {
+     "nu": 9.7,
+     "dias": 661,
+     "series": 11
+    },
+    "XLY": {
+     "nu": 12.39,
+     "dias": 752,
+     "series": 11
+    },
+    "XLP": {
+     "nu": 14.77,
+     "dias": 752,
+     "series": 11
+    },
+    "XLU": {
+     "nu": 8.19,
+     "dias": 752,
+     "series": 11
+    },
+    "XLB": {
+     "nu": 14.42,
+     "dias": 752,
+     "series": 11
+    },
+    "XLRE": {
+     "nu": 10.58,
+     "dias": 752,
+     "series": 11
+    },
+    "XLC": {
+     "nu": 12.29,
+     "dias": 752,
+     "series": 11
+    }
+   }
+  },
+  "5": {
+   "q": 0.05,
+   "grupos": {
+    "setores": {
+     "nu": 10.27,
+     "dias": 1254,
+     "series": 11
+    },
+    "XLK": {
+     "nu": 10.19,
+     "dias": 1254,
+     "series": 11
+    },
+    "XLF": {
+     "nu": 9.57,
+     "dias": 1254,
+     "series": 11
+    },
+    "XLE": {
+     "nu": 10.01,
+     "dias": 1254,
+     "series": 11
+    },
+    "XLV": {
+     "nu": 11.88,
+     "dias": 1254,
+     "series": 11
+    },
+    "XLI": {
+     "nu": 10.97,
+     "dias": 1254,
+     "series": 10
+    },
+    "XLY": {
+     "nu": 12.97,
+     "dias": 1254,
+     "series": 11
+    },
+    "XLP": {
+     "nu": 13.14,
+     "dias": 1254,
+     "series": 11
+    },
+    "XLU": {
+     "nu": 9.03,
+     "dias": 1210,
+     "series": 11
+    },
+    "XLB": {
+     "nu": 13.93,
+     "dias": 1254,
+     "series": 11
+    },
+    "XLRE": {
+     "nu": 11.93,
+     "dias": 1254,
+     "series": 11
+    },
+    "XLC": {
+     "nu": 12.21,
+     "dias": 1254,
+     "series": 11
+    }
+   }
+  },
+  "10": {
+   "q": 0.05,
+   "grupos": {
+    "setores": {
+     "nu": 9.5,
+     "dias": 2113,
+     "series": 11
+    },
+    "XLK": {
+     "nu": 9.73,
+     "dias": 2513,
+     "series": 10
+    },
+    "XLF": {
+     "nu": 9.0,
+     "dias": 2513,
+     "series": 11
+    },
+    "XLE": {
+     "nu": 9.99,
+     "dias": 2513,
+     "series": 11
+    },
+    "XLV": {
+     "nu": 11.09,
+     "dias": 2513,
+     "series": 11
+    },
+    "XLI": {
+     "nu": 10.73,
+     "dias": 2513,
+     "series": 9
+    },
+    "XLY": {
+     "nu": 12.62,
+     "dias": 2513,
+     "series": 11
+    },
+    "XLP": {
+     "nu": 13.08,
+     "dias": 2513,
+     "series": 11
+    },
+    "XLU": {
+     "nu": 9.16,
+     "dias": 2513,
+     "series": 10
+    },
+    "XLB": {
+     "nu": 14.28,
+     "dias": 2513,
+     "series": 11
+    },
+    "XLRE": {
+     "nu": 10.55,
+     "dias": 2513,
+     "series": 11
+    },
+    "XLC": {
+     "nu": 10.86,
+     "dias": 2113,
+     "series": 11
+    }
+   }
+  }
+ },
+ "cenarios": {
+  "nu": 7.58,
+  "gama": -0.15
+ }
+}
