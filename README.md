@@ -4,15 +4,20 @@
 [![Cockpit online](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sector-risk-model.streamlit.app)
 [![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-blue.svg)](LICENSE)
 
-> **In English.** An end-to-end market-risk model for the 11 SPDR sector ETFs against the S&P 500. It is built as a
-> portfolio project for a Master's in Risk Management. Daily VaR and Expected Shortfall come from four methods
-> (historical, GJR-GARCH-t, Filtered Historical Simulation and conditional EVT) and are **backtested out of sample from 2008 to 2026**
-> with Kupiec, Christoffersen, Basel traffic lights and the Acerbi–Székely Z2 test. **Only the two methods that combine GARCH volatility with
-> the empirical tail (FHS and conditional EVT) pass**; conditional EVT is chosen on 2008–2018 data, confirmed on
-> 2019–2026 and on 109 single stocks, so it is the official model.
-> The project also covers portfolio risk (Ledoit-Wolf covariance, Euler risk contributions, 2008/2020/2022 stress tests),
-> a 0–100 risk scorecard, macro-factor → sector links estimated with HAC regressions, and an automated daily pipeline
-> (Prefect + launchd) with alerts and weekly reports. Tested with pytest, with CI on GitHub Actions.
+> **In English** · [short summary (PDF, 3 pages)](docs/summary-en.pdf) · [live cockpit](https://sector-risk-model.streamlit.app)
+>
+> An end-to-end market-risk system for the 11 SPDR sector ETFs and their 110 largest holdings, built as a portfolio
+> project for a Master's in Risk Management. Daily VaR and Expected Shortfall come from four methods (historical,
+> GJR-GARCH-t, Filtered Historical Simulation and conditional EVT) and are **backtested out of sample from 2008 to 2026**
+> with Kupiec, Christoffersen, the Acerbi–Székely Z2 and McNeil–Frey ES tests and Basel traffic lights. **Only the two
+> methods that combine GARCH volatility with the empirical tail pass**; conditional EVT is chosen on 2008–2018 data,
+> confirmed on 2019–2026 and on 109 single stocks, so it is the official model.
+> A risk web links macro factors → sectors → companies by joint crashes (t and skewed-t copulas, QRM ch. 5) and
+> multivariate factor regressions, and a **Monte Carlo scenario engine** propagates a macro shock to every sector,
+> company and user portfolio, validated out of sample on 2008, 2020 and 2022 (it places sectors well given the market
+> move, and says plainly that it understates crises from macro factors alone). Also: 10-day and 1-month horizons,
+> Hierarchical Risk Parity tested out of sample, a 0–100 scorecard with rank uncertainty, and an automated daily
+> pipeline (Prefect + launchd) with alerts and weekly reports. Tested with pytest, CI on GitHub Actions.
 
 Pipeline em Python que mede o risco de mercado dos 11 ETFs setoriais SPDR (XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLU,
 XLB, XLRE, XLC) face ao SPY, setor a setor e em carteira. Corre sozinho todos os dias úteis e publica os resultados em dois
@@ -211,7 +216,7 @@ flows/                  flow Prefect e agendamento launchd
 app/cockpit/            cockpit Streamlit: app.py (dados, barra lateral), paineis/ (um ficheiro por separador), snapshot/
 scripts/                capturas de ecrã e PDF da nota metodológica (Chrome headless)
 tests/                  testes (pytest), sem rede (inclui o cockpit em modo snapshot)
-docs/                   nota metodológica (.md e .pdf) e capturas
+docs/                   nota metodológica (.md e .pdf), resumo em inglês (summary-en) e capturas
 ```
 
 Licença MIT.

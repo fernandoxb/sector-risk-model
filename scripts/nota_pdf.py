@@ -1,13 +1,15 @@
-"""docs/nota-metodologica.md → docs/nota-metodologica.pdf.
+"""docs/nota-metodologica.md → docs/nota-metodologica.pdf (ou outro .md com frontmatter → .pdf).
 
 Markdown (markdown-it, CommonMark + tabelas) → HTML com as fórmulas em KaTeX → PDF A4 pelo Chrome headless.
 As fórmulas ($…$ e $$…$$) são protegidas antes da conversão e repostas para o KaTeX as desenhar.
-Uso:  .venv/bin/python -m scripts.nota_pdf
+Uso:  .venv/bin/python -m scripts.nota_pdf [ENTRADA.md SAIDA.pdf]
+No frontmatter, `capa` e `rodape` substituem o texto da capa e do rodapé, e `lingua` o atributo lang (padrão pt-PT).
 """
 import asyncio
 import base64
 import html
 import re
+import sys
 import tempfile
 from pathlib import Path
 
@@ -68,11 +70,11 @@ def to_html(md_text: str) -> str:
 
     out = re.sub(r"<p>MATHPH(\d+)X</p>", put, out)
     out = re.sub(r"MATHPH(\d+)X", put, out)
-    capa = (f"<div class='capa'>{html.escape(meta.get('projeto', ''))} · versão {html.escape(meta.get('versao', ''))}"
-            " · código e dados: github.com/fernandoxb/sector-risk-model</div>") if meta else ""
+    capa = (f"<div class='capa'>{html.escape(meta['capa'] if 'capa' in meta else meta.get('projeto', '') + ' · versão ' + meta.get('versao', '') + ' · código e dados: github.com/fernandoxb/sector-risk-model')}</div>"
+            if meta else "")
     out = out.replace("</h1>", "</h1>" + capa, 1)
-    return f"""<!doctype html><html lang="pt-PT"><head><meta charset="utf-8">
-<title>Nota metodológica</title><style>{CSS}</style>
+    return f"""<!doctype html><html lang="{meta.get('lingua', 'pt-PT') if meta else 'pt-PT'}"><head><meta charset="utf-8">
+<title>{html.escape(meta.get('rodape', 'Nota metodológica') if meta else 'Nota metodológica')}</title><style>{CSS}</style>
 <link rel="stylesheet" href="{KATEX}/katex.min.css">
 <script defer src="{KATEX}/katex.min.js"></script>
 <script defer src="{KATEX}/contrib/auto-render.min.js"
@@ -81,9 +83,12 @@ def to_html(md_text: str) -> str:
 </head><body>{out}</body></html>"""
 
 
-async def main():
+async def main(src: Path = SRC, out: Path = OUT):
+    texto = src.read_text()
+    rodape = re.search(r"^rodape:\s*(.+)$", texto, re.M)
+    rodape = rodape.group(1).strip() if rodape else "Nota metodológica · Modelo de Risco Setorial"
     page = Path(tempfile.mkdtemp()) / "nota.html"
-    page.write_text(to_html(SRC.read_text()), encoding="utf-8")
+    page.write_text(to_html(texto), encoding="utf-8")
     async with chrome(1000, 1400, 1) as cmd:
         await cmd("Page.navigate", url=page.as_uri())
         if not await wait_for(cmd, "window.__ok === true", 60):
@@ -92,14 +97,15 @@ async def main():
         erros = await cmd("Runtime.evaluate", expression="document.querySelectorAll('.katex-error').length",
                           returnByValue=True)
         footer = ("<div style='font-size:8px;width:100%;text-align:center;color:#9ca3af'>"
-                  "Nota metodológica · Modelo de Risco Setorial · <span class='pageNumber'></span>/"
+                  f"{html.escape(rodape)} · <span class='pageNumber'></span>/"
                   "<span class='totalPages'></span></div>")
         pdf = await cmd("Page.printToPDF", printBackground=True, preferCSSPageSize=True,
                         displayHeaderFooter=True, headerTemplate="<div></div>", footerTemplate=footer)
-    OUT.write_bytes(base64.b64decode(pdf["data"]))
-    print(f"gravado {OUT} ({OUT.stat().st_size / 1e3:.0f} KB); fórmulas com erro no KaTeX: "
+    out.write_bytes(base64.b64decode(pdf["data"]))
+    print(f"gravado {out} ({out.stat().st_size / 1e3:.0f} KB); fórmulas com erro no KaTeX: "
           f"{erros['result']['value']}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    a = sys.argv[1:]
+    asyncio.run(main(Path(a[0]), Path(a[1])) if len(a) == 2 else main())
