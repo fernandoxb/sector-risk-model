@@ -2,7 +2,6 @@
 import pandas as pd
 
 from src.collect import empresas as emp
-from src.report import snapshot as sn
 
 
 def test_posicoes_do_etf():
@@ -25,17 +24,6 @@ def test_ficha_e_noticias():
     n = emp.parse_news([novo, antigo, sem_link], n=5)
     assert [x["titulo"] for x in n] == ["T1", "T2"] and n[0]["fonte"] == "Reuters" and n[1]["fonte"] == "AP"
     assert n[1]["data"].startswith("2026-11") and len(emp.parse_news([novo] * 9, n=3)) == 3
-
-
-def test_ficha_que_falha_mantem_a_anterior():
-    def info(t):
-        if t == "B":
-            raise RuntimeError("Yahoo em baixo")
-        return {"nome": t}
-    out, falhas = sn.companies_payload(["A", "B", "C"], {"B": {"info": {"nome": "antigo"}, "noticias": []}},
-                                       info, lambda t: [])
-    assert falhas == ["B"] and out["B"]["info"]["nome"] == "antigo" and out["A"]["info"] == {"nome": "A"}
-    assert list(out) == ["A", "B", "C"]
 
 
 def test_acao_fora_do_mapa_vai_para_o_etf_do_seu_setor():

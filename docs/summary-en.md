@@ -42,16 +42,16 @@ Correlation describes normal days; contagion is about bad days. For every pair o
 
 ## 4. What if a factor moves? A Monte Carlo scenario engine
 
-The user picks a shock (e.g. VIX +50% in a month). Unshocked factors follow the conditional normal distribution given the shock; sectors respond through a joint regression on the six macro factors plus the market, with bootstrapped weekly residuals widened when the shock is unusually intense; companies respond through their beta to their own sector ETF. 5,000 scenarios run live in about 0.05 s, and the web is coloured by the result.
+The user picks a shock (e.g. VIX +50% in a month). Unshocked factors follow the conditional normal distribution given the shock; sectors respond through a joint regression on the six macro factors plus the market, with bootstrapped weekly residuals widened when the shock is unusually intense and with parameter uncertainty (50 bootstrap re-estimations); companies respond through their beta to their own sector ETF. 5,000 scenarios run live in about 0.05 s, and the web is coloured by the result.
 
 | Out-of-sample test (model fitted before each crisis) | Macro factors imposed | Macro factors and market imposed |
 |---|---|---|
-| Lehman 2008: predicted minus realised sector loss, average | +18.1 pts | +0.5 pts |
-| COVID-19 2020 | +16.9 pts | +3.6 pts |
-| Rate hikes 2022 | +9.6 pts | −7.8 pts |
-| Sectors inside the 90% interval | 16% | 42% |
+| Lehman 2008: predicted minus realised sector loss, average | +17.7 pts | +0.5 pts |
+| COVID-19 2020 | +16.8 pts | +3.5 pts |
+| Rate hikes 2022 | +10.4 pts | −7.7 pts |
+| Sector-crises inside the 90% model interval (≈28 of 31 expected) | 7 of 31 | 16 of 31 |
 
-**Reading:** given the market move, the engine places sectors well; from macro factors alone it understates crises by about 15 points, because the factor–market link estimated in calm years misses panic. Intervals remain too narrow in crises. The cockpit states this next to the results.
+**Reading:** given the market move, the engine places sectors well; from macro factors alone it understates crises by about 15 points, because the factor–market link estimated in calm years misses panic. The 90% intervals are **model intervals, not confidence intervals**: in crises they are too narrow, and the cockpit shows the measured coverage next to every result.
 
 ## 5. Portfolio tools
 

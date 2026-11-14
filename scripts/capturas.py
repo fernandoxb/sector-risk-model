@@ -17,6 +17,13 @@ import time
 from scripts.cdp import chrome, wait_for
 
 
+def comprimir(caminho: str, cores: int = 256) -> None:
+    """PNG com uma paleta de `cores` cores: cerca de 4× mais leve, sem diferença visível num ecrã escuro."""
+    from PIL import Image
+    im = Image.open(caminho).convert("RGB")
+    im.quantize(colors=cores, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(caminho, optimize=True)
+
+
 async def main(url, out, wait_text, w=1440, h=1250, scroll_text=None, tab=None):
     async with chrome(w, h) as cmd:
         t0 = time.time()
@@ -44,6 +51,7 @@ async def main(url, out, wait_text, w=1440, h=1250, scroll_text=None, tab=None):
         shot = await cmd("Page.captureScreenshot", format="png")
         with open(out, "wb") as f:
             f.write(base64.b64decode(shot["data"]))
+        comprimir(out)
         print(f"gravado {out} em {time.time() - t0:.0f}s")
 
 

@@ -18,16 +18,6 @@ def test_ultima_sessao():
     assert ultima_sessao(pd.Timestamp("2026-11-11 22:30")) == date(2026, 11, 11)          # sem fuso = UTC
 
 
-def test_acoes_em_falta_vem_do_snapshot_anterior():
-    idx_old = pd.bdate_range("2026-11-02", periods=6)
-    idx_new = pd.bdate_range("2026-11-02", periods=7)
-    old = pd.DataFrame({"A": 1.0, "B": 2.0, "C": 3.0}, index=idx_old)
-    new = pd.DataFrame({"A": 10.0, "C": 30.0}, index=idx_new)          # B falhou no download
-    m, falta = sn.merge_stocks(new, old, ["A", "B", "C"])
-    assert falta == ["B"] and list(m.columns) == ["A", "B", "C"]
-    assert m["A"].iloc[-1] == 10.0 and m["B"].iloc[0] == 2.0 and pd.isna(m["B"].iloc[-1])
-
-
 def test_ultimo_fecho_e_dados_completos():
     from src.collect.sessao import dados_completos, ultimo_fecho
     p = pd.DataFrame({"SPY": [1.0, 2.0, None], "XLK": [1.0, 2.0, 3.0]},
@@ -60,7 +50,7 @@ def test_feriados_conhecidos():
 def test_calendario_bate_com_as_sessoes_reais_do_spy():
     """Validação independente: os dias em que o SPY negociou (snapshot versionado, 3 anos) são exatamente
     as sessões do calendário."""
-    p = pd.read_parquet(sn.SNAPSHOT / "prices.parquet")
+    p = pd.read_parquet(sn.SNAPSHOT / "indices.parquet")
     real = set(p["SPY"].dropna().index.date)
     assert real == set(ss.dias_uteis(min(real), max(real)))
 

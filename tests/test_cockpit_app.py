@@ -97,7 +97,7 @@ def test_cenario_na_teia(monkeypatch):
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("O que o modelo espera para os outros fatores" in m.value for m in at.markdown)
-    assert any("Testado em 2008, 2020 e 2022" in c.value for c in at.caption)
+    assert any("Os intervalos são do modelo" in w.value for w in at.warning)          # cobertura medida, declarada
 
 
 def test_teia_mostra_score_fatores_e_a_carteira_no_cenario(monkeypatch):

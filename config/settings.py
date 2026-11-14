@@ -212,6 +212,7 @@ SHOCK_MARKET = (-40.0, 20.0, -10.0, 1.0)
 # reamostrados) → empresas (beta ao seu ETF + resíduos), por Monte Carlo, em semanas.
 CENARIO_ANOS = 10                       # janela de estimação (inclui a COVID-19 e 2022)
 CENARIO_NSIM = 5000                     # cenários por simulação
+CENARIO_NBOOT = 50                      # réplicas dos parâmetros (semanas reamostradas): a incerteza das sensibilidades
 CENARIO_HORIZONTES = {"1 semana": 1, "1 mês": 4, "3 meses": 13}
 # Validação fora da amostra: o modelo estimado só com as semanas anteriores recebe as variações reais dos fatores
 # (sextas-feiras; o episódio são as semanas em (início, fim]).
@@ -255,7 +256,7 @@ SNAPSHOT_PUBLISH_REMOTE = "origin"
 SNAPSHOT_REMOTE_URL = "https://raw.githubusercontent.com/fernandoxb/sector-risk-model/snapshot"
 SNAPSHOT_REMOTE_TTL = 6 * 3600       # segundos entre leituras do ramo pelo cockpit
 SNAPSHOT_REMOTE_TIMEOUT = 10         # segundos por ficheiro
-SNAPSHOT_FILES = ("meta.json", "prices.parquet", "rates.parquet", "companies.json") + SNAPSHOT_FEATURES
+SNAPSHOT_FILES = ("meta.json", "indices.parquet", "rates.parquet") + SNAPSHOT_FEATURES
 
 
 # --- Empresas de cada setor (mapa de risco: setor → empresas → ficha) ---------

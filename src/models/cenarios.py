@@ -14,7 +14,8 @@ Três camadas, simuladas por Monte Carlo:
                semanas que os resíduos dos setores
 Retornos log somados no horizonte de h semanas e devolvidos como retornos simples (e^r − 1).
 
-Funções puras: semanal, ajustar, simular, resumo, episodio. I/O em main().
+Funções puras: semanal, ajustar, ajustar_varios, simular, simular_varios, resumo, episodio. I/O em main().
+Incerteza dos parâmetros: os cenários repartem-se por CENARIO_NBOOT conjuntos de parâmetros (semanas reamostradas).
 Saídas: data/features/cenario_semanal.parquet (os dados do cockpit) e cenario_validacao.csv (episódios históricos).
 """
 from __future__ import annotations
@@ -26,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config.settings import (CENARIO_ANOS, CENARIO_EPISODIOS, CENARIO_NSIM, BT_SEED, CLEAN, FEATURES,  # noqa: E402
+from config.settings import (CENARIO_ANOS, CENARIO_EPISODIOS, CENARIO_NBOOT, CENARIO_NSIM, BT_SEED, CLEAN, FEATURES,  # noqa: E402
                              MACRO_FACTORS, MARKET, SECTORS)
 from src.collect.empresas import load_holdings  # noqa: E402
 from src.models.factor_links import factor_changes, sector_returns, weekly_cut, weekly_levels  # noqa: E402
@@ -93,6 +94,27 @@ def ajustar(dados: pd.DataFrame, hold: pd.DataFrame, setores: list[str] = list(S
             "res_e": _preenche(res_e.to_numpy(), rng), "semanas": len(d), "inicio": d.index[0], "fim": d.index[-1]}
 
 
+def ajustar_varios(dados: pd.DataFrame, hold: pd.DataFrame, n_boot: int = CENARIO_NBOOT, seed: int = BT_SEED,
+                   **kw) -> list[dict]:
+    """O modelo estimado na amostra e em `n_boot` − 1 amostras de semanas reamostradas com reposição: cada cenário usa
+    um destes conjuntos de parâmetros, para os intervalos incluírem também a incerteza das sensibilidades."""
+    ok = dados[FAT].notna().all(axis=1)
+    d = dados[ok]
+    rng = np.random.default_rng(seed)
+    mods = [ajustar(d, hold, seed=seed, **kw)]
+    for b in range(1, n_boot):
+        amostra = d.iloc[np.sort(rng.integers(0, len(d), len(d)))]
+        mods.append(ajustar(amostra.set_axis(d.index), hold, seed=seed + b, **kw))
+    return mods
+
+
+def simular_varios(mods: list[dict], choque: dict[str, float], h: int = 1, n: int = CENARIO_NSIM,
+                   seed: int = BT_SEED) -> pd.DataFrame:
+    """`n` cenários repartidos pelos conjuntos de parâmetros de `ajustar_varios` (as mesmas colunas em todos)."""
+    k = -(-n // len(mods))
+    return pd.concat([simular(m, choque, h, k, seed + i) for i, m in enumerate(mods)], ignore_index=True).iloc[:n]
+
+
 def fator_escala(mod: dict, x: np.ndarray, h: int) -> float:
     """Quanto alargar os resíduos num cenário: a dispersão prevista pela intensidade do choque (distância de Mahalanobis
     da mediana do movimento por semana, x/h, à média) a dividir pela de uma semana típica; nunca menos de 1."""
@@ -138,17 +160,17 @@ def resumo(sims: pd.DataFrame, colunas: list[str] | None = None) -> pd.DataFrame
 
 
 def episodio(dados: pd.DataFrame, hold: pd.DataFrame, inicio: str, fim: str, fatores: list[str] = FAT,
-             anos: int = CENARIO_ANOS, n: int = CENARIO_NSIM, seed: int = BT_SEED) -> pd.DataFrame:
+             anos: int = CENARIO_ANOS, n: int = CENARIO_NSIM, seed: int = BT_SEED, n_boot: int = CENARIO_NBOOT) -> pd.DataFrame:
     """Validação fora da amostra: estima o modelo só com as semanas antes de `inicio` (até `anos` anos), impõe as
     variações reais de `fatores` entre `inicio` e `fim` (os outros ficam condicionais) e compara a previsão de cada
     setor com o que aconteceu."""
     ini, fim_ = pd.Timestamp(inicio), pd.Timestamp(fim)
     antes = dados[(dados.index <= ini) & (dados.index > ini - pd.DateOffset(years=anos))]
     dentro = dados[(dados.index > ini) & (dados.index <= fim_)]
-    mod = ajustar(antes, hold.iloc[:0], seed=seed)
+    mods = ajustar_varios(antes, hold.iloc[:0], n_boot, seed)
     choque = dentro[fatores].sum().to_dict()
-    res = resumo(simular(mod, choque, h=len(dentro), n=n, seed=seed), mod["setores"])
-    real = np.expm1(dentro[mod["setores"]].sum())
+    res = resumo(simular_varios(mods, choque, h=len(dentro), n=n, seed=seed), mods[0]["setores"])
+    real = np.expm1(dentro[mods[0]["setores"]].sum())
     return res.assign(real=real, dentro_90=(real >= res["q05"]) & (real <= res["q95"]),
                       semanas=len(dentro), semanas_estimacao=len(antes)).rename_axis("setor").reset_index()
 

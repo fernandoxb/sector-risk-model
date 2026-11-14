@@ -95,7 +95,7 @@ SNAPSHOT, SNAP_ORIGEM = pasta_snapshot()
 
 @st.cache_data(show_spinner=False)
 def snap_precos() -> pd.DataFrame:
-    return pd.read_parquet(SNAPSHOT / "prices.parquet").astype(float)
+    return pd.read_parquet(SNAPSHOT / "indices.parquet").astype(float)   # base 100: o cockpit só usa retornos
 
 
 def precos_snapshot(tickers: tuple[str, ...], period: str) -> pd.DataFrame:
@@ -185,7 +185,6 @@ comp_fat = feat_csv("company_factors.csv", index_col="empresa")
 hold = feat_csv("holdings.csv")
 if hold is None:
     hold = emp.fallback_holdings()
-SNAP_EMP = json.loads((SNAPSHOT / "companies.json").read_text()) if (SNAPSHOT / "companies.json").exists() else {}
 
 
 @st.cache_data(ttl=COMPANY_TTL, show_spinner="📰 A ler a ficha e as notícias da empresa…")
@@ -218,7 +217,7 @@ def empresa_dados(ticker: str) -> tuple[dict, str]:
             return empresa_vivo(ticker), "ao vivo"
         except Exception:  # noqa: BLE001
             pass
-    return SNAP_EMP.get(ticker, {"info": {}, "noticias": []}), f"snapshot de {SNAP_META.get('dados_ate', '?')}"
+    return {"info": {}, "noticias": []}, "sem ligação ao Yahoo: ficha e notícias só ao vivo"
 alertas = json.loads((FEAT / "alerts.json").read_text()) if (FEAT / "alerts.json").exists() else None
 PIPE_ASOF = str(off["dados_ate"].iloc[0]) if off is not None else "—"
 PREV_DATA = str(off["data_previsao"].iloc[0]) if off is not None else "—"

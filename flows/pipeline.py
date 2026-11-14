@@ -12,7 +12,7 @@ Uso:  .venv/bin/python -m flows.pipeline                 (tudo, com download)
       .venv/bin/python -m flows.pipeline --semanal       (força o relatório semanal)
       .venv/bin/python -m flows.pipeline --sem-notificacao
       .venv/bin/python -m flows.pipeline --publicar        (publica o snapshot mesmo que não seja sexta)
-Agendamento: flows/com.fernando.sectorrisk.plist (launchd, dias úteis às 22:30), instalado com flows/install_launchd.sh.
+Agendamento: flows/pipeline.plist (launchd, dias úteis às 22:30), instalado com flows/install_launchd.sh (nome em LABEL).
 """
 import os
 import sys
@@ -119,9 +119,9 @@ def dependencia_cauda():
 
 
 @task(name="Snapshot")
-def snapshot_cockpit(offline: bool, fichas: bool = False):
+def snapshot_cockpit():
     """Grava data/snapshot (fora do Git); o Publicador envia-o para o ramo snapshot."""
-    snapshot.main(offline=offline, fichas=fichas)
+    snapshot.main()
 
 
 @task(name="Publicador")
@@ -166,7 +166,7 @@ def pipeline(offline: bool = False, semanal: bool = False, notificar: bool = Tru
     dependencia_cauda()
     al = sentinela(notificar)
     rel = relatorio(semanal)
-    snapshot_cockpit(offline, publicar_snapshot)              # depois do Sentinela: leva os alertas e o histórico do score de hoje
+    snapshot_cockpit()              # depois do Sentinela: leva os alertas e o histórico do score de hoje
     if not offline:
         publicador(publicar_snapshot, notificar)
     log.info(f"Fim: {len(al)} alertas" + (f"; relatório semanal em {rel}" if rel else ""))

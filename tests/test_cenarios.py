@@ -99,3 +99,13 @@ def test_residuos_alargam_quando_o_choque_e_intenso():
     largo = cn.resumo(cn.simular(mod, grande, h=1, seed=3), ["XLU"]).iloc[0]
     estreito = cn.resumo(cn.simular(mod, grande, h=1, seed=3, escalar=False), ["XLU"]).iloc[0]
     assert (largo.q95 - largo.q05) == pytest.approx(k * (estreito.q95 - estreito.q05), rel=0.05)
+
+
+def test_varios_conjuntos_de_parametros(dados):
+    d, hold = dados
+    mods = cn.ajustar_varios(d, hold, n_boot=5, setores=["XLU", "XLE"])
+    assert len(mods) == 5
+    assert np.allclose(mods[0]["B"], cn.ajustar(d, hold, setores=["XLU", "XLE"])["B"])     # o 1.º é o da amostra
+    assert np.std([m["B"][0, F.index("mercado")] for m in mods]) > 0                       # os outros variam
+    s = cn.simular_varios(mods, {"juros": 0.3}, h=4, n=1001)
+    assert len(s) == 1001 and list(s.columns) == list(cn.simular(mods[0], {"juros": 0.3}, h=4, n=10).columns)

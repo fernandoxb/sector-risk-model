@@ -14,10 +14,10 @@ from paineis.comum import nome
 NOMES_F = {f: MACRO_FACTORS[f].get("curto_longo", MACRO_FACTORS[f]["curto"]) for f in MACRO_FACTORS} | {cn.MERCADO: "Mercado (S&P 500)"}
 
 
-@st.cache_resource(show_spinner=False)
-def _modelo(versao: str, _dados: pd.DataFrame, _hold: pd.DataFrame) -> dict:
-    """`versao`: a última semana dos dados e as ações fora do mapa (muda quando o utilizador acrescenta uma)."""
-    return cn.ajustar(_dados.astype(float), _hold)
+@st.cache_resource(show_spinner="🎲 A estimar o modelo de cenários…")
+def _modelo(versao: str, _dados: pd.DataFrame, _hold: pd.DataFrame) -> list[dict]:
+    """Os conjuntos de parâmetros (`cn.ajustar_varios`). `versao`: a última semana dos dados e as ações fora do mapa."""
+    return cn.ajustar_varios(_dados.astype(float), _hold)
 
 
 def com_extras(dados: pd.DataFrame, hold: pd.DataFrame, extras: dict, precos) -> tuple[pd.DataFrame, pd.DataFrame, list]:
@@ -88,8 +88,9 @@ def render(g: dict, versao: str, pesos: pd.Series | None = None) -> tuple[pd.Ser
             return None, [], {}
         extras = st.session_state.get("extras", {})
         d_m, h_m, sem_px = com_extras(dados, g["hold"], extras, g["precos"])
-        mod = _modelo(versao + "|" + ",".join(sorted(extras)), d_m, h_m)
-        sims = cn.simular(mod, choque, CENARIO_HORIZONTES[hz])
+        mods = _modelo(versao + "|" + ",".join(sorted(extras)), d_m, h_m)
+        mod = mods[0]
+        sims = cn.simular_varios(mods, choque, CENARIO_HORIZONTES[hz])
         res = cn.resumo(sims)
         outros = [f for f in cn.FAT if f not in choque]
         st.markdown("**O que o modelo espera para os outros fatores** (mediana): "
@@ -106,20 +107,23 @@ def render(g: dict, versao: str, pesos: pd.Series | None = None) -> tuple[pd.Ser
         st.dataframe(pd.DataFrame({
             "Setor": [nome(s) for s in rs.index],
             f"Retorno em {hz} (mediana)": rs["mediana"].map(lambda v: fm.pct(v, 1, sinal=True)).values,
-            "Os 5% piores": rs["q05"].map(lambda v: fm.pct(v, 1, sinal=True)).values,
-            "Os 5% melhores": rs["q95"].map(lambda v: fm.pct(v, 1, sinal=True)).values,
+            "5% piores (modelo)": rs["q05"].map(lambda v: fm.pct(v, 1, sinal=True)).values,
+            "5% melhores (modelo)": rs["q95"].map(lambda v: fm.pct(v, 1, sinal=True)).values,
             "Probabilidade de perder": rs["p_perda"].map(lambda v: fm.pct(v, 0)).values,
         }), hide_index=True, width="stretch")
         txt_v = ""
         if val is not None:
-            v = val.groupby("condicao").apply(lambda d: ((d["mediana"] - d["real"]).mean(), d["dentro_90"].mean()),
+            v = val.groupby("condicao").apply(lambda d: ((d["mediana"] - d["real"]).mean(), int(d["dentro_90"].sum()), len(d)),
                                               include_groups=False)
-            txt_v = (f" Testado em 2008, 2020 e 2022 com os dados de antes de cada crise: com os fatores macro reais, a "
-                     f"perda prevista ficou em média {fm.pct(abs(v['macro'][0]), 0)} abaixo da real; com o mercado real "
-                     f"também, o desvio desce para {fm.pct(abs(v['macro_mercado'][0]), 0)}. Só "
-                     f"{fm.pct(v['macro_mercado'][1], 0)} dos setores ficaram dentro do intervalo de 90%: nas crises, os "
-                     "intervalos são estreitos demais.")
-        st.caption(f"{len(sims):,} cenários".replace(",", " ") + f", estimados em {mod['semanas']} semanas "
+            st.warning(f"**Os intervalos são do modelo, não de confiança.** Testados em 2008, 2020 e 2022 com os dados "
+                       f"de antes de cada crise, o resultado real ficou dentro do intervalo de 90% em {v['macro'][1]} de "
+                       f"{v['macro'][2]} setores (só fatores macro) e em {v['macro_mercado'][1]} de {v['macro_mercado'][2]} "
+                       f"(com o mercado real); deviam ser cerca de {round(0.9 * v['macro'][2])}. Nas crises, o modelo está "
+                       "confiante demais: lê os números como direção e ordem entre setores, não como dimensão exata.", icon="⚠️")
+            txt_v = (f" Só com os fatores macro, a perda prevista nas crises ficou em média {fm.pct(abs(v['macro'][0]), 0)} "
+                     f"abaixo da real; com o mercado real, o desvio desce para {fm.pct(abs(v['macro_mercado'][0]), 0)}.")
+        st.caption(f"{len(sims):,} cenários".replace(",", " ") + f", repartidos por {len(mods)} conjuntos de parâmetros "
+                   f"(semanas reamostradas, para incluir a incerteza das sensibilidades), estimados em {mod['semanas']} semanas "
                    f"({mod['inicio'].date()} → {mod['fim'].date()}). O mercado é um fator: se não o escolheres, cai ou "
                    "sobe com o que costuma acompanhar o choque." + txt_v + " Na teia, a cor dos setores e das empresas "
                    "passa a ser a mediana do cenário (vermelho perde, verde ganha).")

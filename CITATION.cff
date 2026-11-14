@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this project, please cite it as below."
+title: "Sector Risk Model: VaR/ES backtesting, tail dependence and Monte Carlo scenarios for the 11 S&P 500 sectors"
+authors:
+  - name: "fernandoxb"
+type: software
+license: MIT
+repository-code: "https://github.com/fernandoxb/sector-risk-model"
+url: "https://sector-risk-model.streamlit.app"
+keywords:
+  - risk management
+  - value at risk
+  - expected shortfall
+  - backtesting
+  - extreme value theory
+  - copulas
+  - monte carlo

@@ -1,7 +1,7 @@
 ---
 tipo: documentacao-metodologica
 projeto: Modelo de Risco Setorial Interativo
-versao: 6.1
+versao: 6.2
 motor: Python (Streamlit + NetworkX + Plotly + yfinance + FRED)
 app: app/cockpit/app.py
 ---
@@ -793,6 +793,10 @@ $$\mathbb{E}[x_u \mid x_s] = h\mu_u + \Sigma_{us}\Sigma_{ss}^{-1}(x_s - h\mu_s),
 
 **Alargamento nas crises (desde 2026-11-14):** nas semanas agitadas os setores afastam-se mais do que os fatores explicam. Estima-se, na janela, a dispersão dos resíduos de cada semana em função da intensidade do movimento dos fatores (distância de Mahalanobis à média), $s(I) = a + bI$, e os resíduos do cenário são multiplicados por $k = \max\{1,\ s(I^*)/s(\tilde I)\}$, em que $I^*$ é a intensidade do choque por semana e $\tilde I$ a de uma semana típica. Num choque normal $k = 1$; na COVID-19, $k \approx 1{,}5$. Sortear só as semanas mais parecidas com o choque, ou estimar $B$ só nelas, foi testado e não melhorou.
 
+**Incerteza dos parâmetros (desde 2026-11-14):** os 5 000 cenários repartem-se por 50 conjuntos de parâmetros (`CENARIO_NBOOT`): o estimado na amostra e 49 estimados em semanas reamostradas com reposição. Assim, os intervalos incluem também a incerteza de $B$, de $\beta_i$ e da covariância dos fatores.
+
+**Intervalos do modelo, não de confiança:** os quantis de 5% e 95% são os do modelo, dados os seus pressupostos. A cobertura real medida nas crises (secção C) é mostrada no cockpit ao lado dos resultados.
+
 Os retornos log somados passam a simples ($e^r - 1$). O painel mostra a mediana, os 5% piores e melhores e a probabilidade de perder, e a teia passa a ter a cor da mediana (vermelho perde, verde ganha). Os setores e as empresas da cadeia do fator chocado mostram a sua percentagem; cada ligação desse fator a um setor mostra o efeito direto, $e^{B_{s,f}\,x_f} - 1$, que é só o canal desse fator. A diferença para o número do setor é o que chega pelos outros fatores, sobretudo pelo mercado. Estimar e simular demora cerca de 0,05 s, por isso corre ao vivo.
 
 **Validação:** o coeficiente $B$ é recuperado em dados simulados; a média condicional bate com a fórmula; sem choque, a dispersão simulada dos fatores é a da janela; o teste dos episódios não usa nenhuma semana depois do início da crise.
@@ -802,18 +806,18 @@ Para cada crise, o modelo é estimado só com as semanas anteriores e recebe as 
 
 | Crise (semanas) | Fatores impostos | Setores dentro do intervalo de 90% | Correlação previsto × real | Erro médio | Desvio médio |
 |---|---|---|---|---|---|
-| Lehman, 2008 (10) | só macro | 1 de 9 | 0,24 | 21,2 p.p. | +18,1 p.p. |
-| | macro + mercado | 3 de 9 | 0,52 | 10,4 p.p. | +0,5 p.p. |
-| COVID-19, 2020 (4) | só macro | 0 de 11 | 0,77 | 16,8 p.p. | +16,8 p.p. |
-| | macro + mercado | 6 de 11 | 0,71 | 5,2 p.p. | +3,6 p.p. |
-| Juros, 2022 (24) | só macro | 4 de 11 | 0,17 | 17,4 p.p. | +9,6 p.p. |
-| | macro + mercado | 4 de 11 | 0,35 | 12,9 p.p. | −7,8 p.p. |
+| Lehman, 2008 (10) | só macro | 2 de 9 | 0,23 | 21,2 p.p. | +17,7 p.p. |
+| | macro + mercado | 5 de 9 | 0,50 | 10,8 p.p. | +0,5 p.p. |
+| COVID-19, 2020 (4) | só macro | 1 de 11 | 0,79 | 16,8 p.p. | +16,8 p.p. |
+| | macro + mercado | 6 de 11 | 0,73 | 5,0 p.p. | +3,5 p.p. |
+| Juros, 2022 (24) | só macro | 4 de 11 | 0,20 | 17,8 p.p. | +10,4 p.p. |
+| | macro + mercado | 5 de 11 | 0,38 | 12,8 p.p. | −7,7 p.p. |
 
 Desvio positivo = o modelo previu perdas menores do que as reais.
 
 * **Só com os fatores macro, o modelo subestima as crises:** a perda prevista ficou em média 15 pontos abaixo da real. A relação entre os fatores e o mercado estimada em tempos calmos é linear e não capta o pânico.
 * **Com o mercado real, a mediana acerta bem** em 2008 e 2020 (desvio de 0,5 e 3,6 pontos). Em 2022 os setores dividiram-se mais do que o modelo prevê (energia +34%, comunicações −31%).
-* **Os intervalos continuam estreitos:** com o alargamento, 42% dos setores ficaram dentro do intervalo de 90% quando o mercado é conhecido (antes 32%); só com os fatores macro, 16%, porque aí o que falha é a mediana, não a largura.
+* **Os intervalos continuam estreitos:** num intervalo de 90% deviam cair cerca de 28 dos 31 setores-crise. Com o mercado conhecido caem 16 (52%; 13 antes da incerteza dos parâmetros e 10 antes do alargamento nas crises); só com os fatores macro, 7 (23%), porque aí o que falha é a mediana, não a largura. Por isso o cockpit chama-lhes intervalos do modelo e mostra esta cobertura ao lado.
 * **Leitura:** o motor serve para ver para onde um choque empurra cada setor e quais sofrem mais do que outros. Não serve para dar a dimensão exata de uma crise; o painel diz isto ao lado dos resultados.
 
 ### D. Limitações

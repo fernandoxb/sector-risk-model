@@ -42,7 +42,7 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   o score dos setores e os fatores macro, que deixaram de ser separadores); empresas em
   `data/features/holdings.csv` (`src/collect/empresas.py`). O mapa HTML antigo foi apagado.
 - Empresas: `backtest_empresas.py` reutiliza `backtest.run` (sem lógica nova) → `company_backtest.csv`, `company_risk.csv`
-  (`validado`, `es_subestimado`). Carteira do utilizador: `carteira.py`; previsão = FHS sobre os retornos da carteira.
+  (`validado`, `es_subestimado`). Carteira do utilizador: `carteira.py`; previsão = modelo oficial sobre os retornos da carteira.
 - Dependência de cauda (`src/models/cauda.py`, QRM cap. 5): `tail_dependence.csv` (3 anos) liga o mapa de risco por quedas
   conjuntas (padrão) ou correlação; as janelas 1/5/10 anos (`CAUDA_JANELAS`) vão para `tail_dependence_janelas.csv`, e a
   janela da barra lateral escolhe qual o mapa usa. Empresas e fatores desde 2005 (backtest das empresas desde `COMPANY_BT_START`).
@@ -58,8 +58,8 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
   `carteira.hrp_fora_da_amostra` (`HRP_OOS_JANELA`, `HRP_OOS_PASSO`); ambos em cache no `app.py`.
 - HRP (v5.0): `carteira.calcular_pesos_hrp` (distância = 1 − quedas conjuntas, risco de cada ramo = CVaR); expander no
   separador Minha carteira.
-- Cenários conjuntos (Fase D): `cauda.scenarios` simula a cópula t → `tail_scenarios.csv` (colunas simuladas e
-  observadas); a simulação subestima o observado, por isso o cockpit mostra o observado primeiro.
+- Cenários conjuntos (Fase D): `cauda.scenarios` simula uma cópula t assimétrica ajustada aos retornos (γ pelo método dos
+  momentos, `ajustar_gama`) → `tail_scenarios.csv` (colunas simuladas e observadas); o cockpit mostra o observado primeiro.
 - Horizontes (Fase E): `horizonte.py` simula trajetórias do GARCH a 10 e 21 dias → `horizon_risk.csv` (diário) e
   `horizon_backtest.csv` (semanal); `backtest.garch_filter` devolve também ω, α, γ, β por dia.
 - Teia (Fase 2): `app/cockpit/paineis/teia.py` em ECharts (`streamlit-echarts`, componente v2: um servidor Streamlit
@@ -87,14 +87,9 @@ Idioma do código, comentários, UI e documentação: **português europeu**.
 3. ✅ Sprint 3 — visão conjunta: Ledoit-Wolf, contribuição para o risco, stress tests (2008, 2020, 2022).
 4. ✅ Sprint 4 — bots com Prefect (agendamento launchd), alertas do Sentinela e relatório semanal no Obsidian.
 5. ✅ Sprint 5 — montra: README com resultados e capturas, nota metodológica em PDF, cockpit no Streamlit Cloud (modo snapshot).
-
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-Rules:
-- When graphify-out/graph.json exists, run `graphify query "<question>"` before your first grep, search or source-file read for a codebase question, and put this rule in every subagent prompt that explores code. Read raw files only for lines the graph or an earlier read already located. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
-- A committed graphify-out/graph.json is rewritten whole on every build, so a large diff to it in a pull request is expected. Do not flag it as churn or suggest skipping the graph rebuild or its hooks.
+6. ✅ QRM (Fases A–E) — dependência de cauda, EVT condicional (modelo oficial), modelos de fatores, cenários conjuntos,
+   horizontes de 10 e 21 dias.
+7. ✅ v5–v6 — teia de risco em ECharts, motor de cenários Monte Carlo, ações fora do mapa, HRP fora da amostra, janelas
+   de 1 a 10 anos, scorecard com história própria e incerteza do ranking.
+8. Lançamento — revisão pré-lançamento: dados brutos fora do repositório,
+   histórico limpo, README em inglês, release v1.0.0.
